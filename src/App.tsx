@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { ChatInput } from './components/ChatInput'
 import { DevScenarioBar } from './components/DevScenarioBar'
 import { MessageList } from './components/MessageList'
+import { ThemeToggle } from './components/ThemeToggle'
 import type { AgentEvent, ApprovalDecision } from './lib/agentProtocol'
 import { mockAgent as agent } from './lib/mockAgent'
 import type { ChatMessage } from './types'
@@ -126,9 +127,12 @@ function App() {
 
   return (
     <div className="mx-auto flex h-screen max-w-3xl flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-      <header className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 sm:px-6">
-        <h1 className="text-lg font-semibold">BOSUN</h1>
-        <p className="text-xs text-neutral-400">말로 컨테이너를 관리하세요</p>
+      <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 sm:px-6">
+        <div>
+          <h1 className="text-lg font-semibold">BOSUN</h1>
+          <p className="text-xs text-neutral-400">말로 컨테이너를 관리하세요</p>
+        </div>
+        <ThemeToggle />
       </header>
 
       <MessageList

@@ -1,7 +1,14 @@
 @import "tailwindcss";
 
+/* dark: 스타일을 OS 설정 대신 <html class="dark"> 기준으로 적용 (src/lib/theme.ts에서 토글) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
 }
 
 html, body, #root {
