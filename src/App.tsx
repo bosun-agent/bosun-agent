@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { ChatInput } from './components/ChatInput'
+import { DevScenarioBar } from './components/DevScenarioBar'
 import { MessageList } from './components/MessageList'
 import type { AgentEvent, ApprovalDecision } from './lib/agentProtocol'
 import { mockAgent as agent } from './lib/mockAgent'
@@ -133,6 +134,9 @@ function App() {
         onApprove={(id) => handleDecision(id, 'approve')}
         onDeny={(id) => handleDecision(id, 'deny')}
       />
+      {import.meta.env.DEV && (
+        <DevScenarioBar disabled={pending} onRun={handleSend} />
+      )}
       <ChatInput disabled={pending} onSend={handleSend} />
     </div>
   )
