@@ -177,7 +177,7 @@ async function* sendDecision(
     type: 'tool_status',
     tool: pending.tool,
     status: 'running',
-    summary: '실행 중…',
+    summary: '실행 중',
   }
   await wait(600)
   if (pending.willFail) {

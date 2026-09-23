@@ -17,6 +17,11 @@ export interface ApprovalRequest {
   reasons: RiskReason[]
 }
 
+export interface ToolStatus {
+  status: 'running' | 'succeeded' | 'failed'
+  summary: string
+}
+
 export interface ChatMessage {
   id: string
   role: ChatRole
@@ -26,5 +31,5 @@ export interface ChatMessage {
   rejectionReason?: string
   errorMessage?: string
   // 도구 실행 진행 상황 한 줄(tool_status 이벤트)
-  toolStatus?: string
+  toolStatus?: ToolStatus
 }

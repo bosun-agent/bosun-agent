@@ -39,7 +39,9 @@ function App() {
             updateMessage(id, { status: 'streaming', content })
             break
           case 'tool_status':
-            updateMessage(id, { toolStatus: event.summary })
+            updateMessage(id, {
+              toolStatus: { status: event.status, summary: event.summary },
+            })
             break
           case 'approval_required':
             awaitingApproval = true
