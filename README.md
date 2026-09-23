@@ -19,7 +19,7 @@ npm run dev
 
 - 메시지 목록(`MessageList`) + 입력창(`ChatInput`)
 - 메시지 상태 4종(`MessageStatus`): `thinking`(생각 중) → `streaming`(응답 중, 단어 단위로 흘러나옴) / `pending_approval`(Secure 승인 대기, 승인·거부 버튼 카드) / `rejected`(하드 차단, 사유만 표시하고 버튼 없음)
-- AI Agent 연동은 `src/lib/mockAgent.ts`에 목업으로 분리 — 실제 연동 시 이 파일의 `askAgent(text)` 함수만 실제 API/WebSocket 호출로 교체하면 됨. 지금은 파괴적 키워드(삭제/지워/제거/중지/재시작) 포함 여부로 `reply` / `approval_required` / `rejected`를 분기하는 규칙 기반 목업
+- AI Agent 연동은 `src/lib/mockAgent.ts`에 목업으로 분리 — [인터페이스 초안](docs/interface-web-agent.md)의 SSE 이벤트 스트림(`AgentClient` 인터페이스, `src/lib/agentProtocol.ts`)을 그대로 흉내냄. 실제 연동 시 같은 인터페이스를 SSE로 구현한 클라이언트로 교체하면 `App.tsx`는 수정 불필요
 - 아직 없음: 로그인(JWT), AI Agent와의 실제 인터페이스, 세션 유지
 
 ## 디자인 결정 기록
@@ -33,9 +33,9 @@ npm run dev
 
 ## 인터페이스 계약 (WEB ↔ AI Agent)
 
-아키텍처 설계 문서 기준 `WEB - AI Agent : 메시지`. 현재 목업은 `AgentResult`(`reply` | `approval_required` | `rejected`) 판별 유니온으로 표현됨(`src/lib/mockAgent.ts`). 실제 연동 시 AI Agent·Secure 담당자와 다음을 확정해야 함:
+초안: [docs/interface-web-agent.md](docs/interface-web-agent.md) (v0.1, 합의 전). 요약:
 
-- 이 판별 유니온이 실제 AI Agent/Secure 응답 스키마와 얼마나 맞는지 (특히 `approval_required`의 `details`가 실제 Secure의 위험 사유와 대응하는지)
-- 스트리밍이 실제로 토큰 단위 스트림(SSE/WebSocket)인지, 완성된 문장 단위인지
-- 승인/거부 결정을 WEB이 어떤 API로 다시 Secure에 전달하는지
-- 세션/컨텍스트 유지 방식
+- 전송: 메시지 전송은 HTTP POST + SSE 응답 스트림, 승인·거부는 별도 POST(`approvalId` + `decision`만 전송)
+- 이벤트 6종: `text_delta` / `tool_status` / `approval_required` / `rejected` / `error` / `done`
+- 승인은 서버가 발급한 1회용 `approvalId`에 묶임 — WEB은 파라미터를 다시 보내지 않음
+- 미확정 질문은 문서 6장에 담당자별로 정리

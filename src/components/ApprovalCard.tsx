@@ -1,16 +1,14 @@
+import type { ApprovalRequest } from '../types'
+
 interface ApprovalCardProps {
-  summary: string
-  details: string[]
+  approval: ApprovalRequest
   onApprove: () => void
   onDeny: () => void
 }
 
-export function ApprovalCard({
-  summary,
-  details,
-  onApprove,
-  onDeny,
-}: ApprovalCardProps) {
+export function ApprovalCard({ approval, onApprove, onDeny }: ApprovalCardProps) {
+  const { summary, action, reasons } = approval
+
   return (
     <div className="max-w-[85%] rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-[15px] dark:border-amber-700/60 dark:bg-amber-950/40">
       <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
@@ -18,10 +16,14 @@ export function ApprovalCard({
         승인이 필요해요
       </div>
       <p className="text-neutral-900 dark:text-neutral-100">{summary}</p>
-      {details.length > 0 && (
+      <p className="mt-2 font-mono text-xs text-neutral-500 dark:text-neutral-400">
+        {action.tool}
+        {action.target && ` → ${action.target}`}
+      </p>
+      {reasons.length > 0 && (
         <ul className="mt-2 space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
-          {details.map((detail) => (
-            <li key={detail}>· {detail}</li>
+          {reasons.map((reason) => (
+            <li key={reason.code}>· {reason.message}</li>
           ))}
         </ul>
       )}

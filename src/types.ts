@@ -1,3 +1,5 @@
+import type { ProposedAction, RiskReason } from './lib/agentProtocol'
+
 export type ChatRole = 'user' | 'assistant'
 
 export type MessageStatus =
@@ -6,10 +8,13 @@ export type MessageStatus =
   | 'streaming'
   | 'pending_approval'
   | 'rejected'
+  | 'error'
 
 export interface ApprovalRequest {
+  approvalId: string
   summary: string
-  details: string[]
+  action: ProposedAction
+  reasons: RiskReason[]
 }
 
 export interface ChatMessage {
@@ -19,4 +24,7 @@ export interface ChatMessage {
   status: MessageStatus
   approval?: ApprovalRequest
   rejectionReason?: string
+  errorMessage?: string
+  // 도구 실행 진행 상황 한 줄(tool_status 이벤트)
+  toolStatus?: string
 }
