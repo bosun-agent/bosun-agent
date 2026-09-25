@@ -55,4 +55,4 @@ npm run dev
 - 전송: 메시지 전송은 HTTP POST + SSE 응답 스트림, 승인·거부는 별도 POST(`approvalId` + `decision`만 전송)
 - 이벤트 6종: `text_delta` / `tool_status` / `approval_required` / `rejected` / `error` / `done`
 - 승인은 서버가 발급한 1회용 `approvalId`에 묶임 — WEB은 파라미터를 다시 보내지 않음
-- 미확정 질문은 문서 6장에 담당자별로 정리
+- 팀이 정할 결정은 문서 6장, Docker Agent API 서버 조사 결과는 7장에 정리
