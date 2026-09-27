@@ -18,6 +18,7 @@ export const DEV_SCENARIOS = [
   { command: '/approval', label: '승인 대기' },
   { command: '/approval-fail', label: '승인 후 실행 실패' },
   { command: '/expired', label: '만료된 승인' },
+  { command: '/expiring', label: '10초 뒤 만료' },
   { command: '/reject', label: '하드 차단' },
   { command: '/error', label: '시스템 오류' },
   { command: '/disconnect', label: '연결 끊김' },
@@ -34,7 +35,7 @@ const pendingApprovals = new Map<string, PendingApproval>()
 
 function approvalEvent(
   sessionId: string,
-  { willFail = false, store = true } = {},
+  { willFail = false, store = true, ttlMs = 5 * 60_000 - 5_000 } = {},
 ): AgentEvent {
   const approvalId = `ap_${crypto.randomUUID().slice(0, 8)}`
   const tool = 'docker_container_remove'
@@ -52,8 +53,8 @@ function approvalEvent(
         message: '대상 리소스와 옵션을 다시 한번 확인해주세요.',
       },
     ],
-    // Airlock 기본 대기 5분에서 몇 초 앞당긴 값
-    expiresAt: new Date(Date.now() + 5 * 60_000 - 5_000).toISOString(),
+    // 기본값은 Airlock 기본 대기 5분에서 몇 초 앞당긴 값
+    expiresAt: new Date(Date.now() + ttlMs).toISOString(),
   }
 }
 
@@ -89,6 +90,9 @@ async function* runScenario(
       return
     case '/expired':
       yield approvalEvent(sessionId, { store: false })
+      return
+    case '/expiring':
+      yield approvalEvent(sessionId, { ttlMs: 10_000 })
       return
     case '/reject':
       yield BATCH_REJECTED

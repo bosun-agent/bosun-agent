@@ -7,6 +7,7 @@ export type MessageStatus =
   | 'thinking'
   | 'streaming'
   | 'pending_approval'
+  | 'approval_expired'
   | 'rejected'
   | 'error'
 
@@ -15,6 +16,7 @@ export interface ApprovalRequest {
   summary: string
   action: ProposedAction
   reasons: RiskReason[]
+  expiresAt: string
 }
 
 export interface ToolStatus {

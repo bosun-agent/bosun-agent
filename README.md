@@ -26,6 +26,7 @@ npm run dev
 | 승인 대기 | `/approval` | 승인 카드 → 승인하면 실행 완료, 거부하면 취소 |
 | 승인 후 실행 실패 | `/approval-fail` | 승인했지만 도구 실행이 실패 |
 | 만료된 승인 | `/expired` | 승인을 눌렀는데 서버에 없는 approvalId(409) |
+| 10초 뒤 만료 | `/expiring` | 승인 카드 남은 시간이 줄어들다 만료 → 버튼이 사라지고 입력창이 다시 열림 |
 | 하드 차단 | `/reject` | Secure 차단 안내(버튼 없음) |
 | 시스템 오류 | `/error` | Portainer 연결 실패 같은 `error` 이벤트 |
 | 연결 끊김 | `/disconnect` | 스트림 도중 연결이 끊김 |

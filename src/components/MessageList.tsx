@@ -6,9 +6,15 @@ interface MessageListProps {
   messages: ChatMessage[]
   onApprove?: (id: string) => void
   onDeny?: (id: string) => void
+  onExpire?: (id: string) => void
 }
 
-export function MessageList({ messages, onApprove, onDeny }: MessageListProps) {
+export function MessageList({
+  messages,
+  onApprove,
+  onDeny,
+  onExpire,
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -33,6 +39,7 @@ export function MessageList({ messages, onApprove, onDeny }: MessageListProps) {
           message={message}
           onApprove={onApprove}
           onDeny={onDeny}
+          onExpire={onExpire}
         />
       ))}
       <div ref={bottomRef} />

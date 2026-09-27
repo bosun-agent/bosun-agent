@@ -6,22 +6,30 @@ interface ChatMessageBubbleProps {
   message: ChatMessage
   onApprove?: (id: string) => void
   onDeny?: (id: string) => void
+  onExpire?: (id: string) => void
 }
 
 export function ChatMessageBubble({
   message,
   onApprove,
   onDeny,
+  onExpire,
 }: ChatMessageBubbleProps) {
   const isUser = message.role === 'user'
 
-  if (message.status === 'pending_approval' && message.approval) {
+  if (
+    (message.status === 'pending_approval' ||
+      message.status === 'approval_expired') &&
+    message.approval
+  ) {
     return (
       <div className="flex justify-start">
         <ApprovalCard
           approval={message.approval}
+          expired={message.status === 'approval_expired'}
           onApprove={() => onApprove?.(message.id)}
           onDeny={() => onDeny?.(message.id)}
+          onExpire={() => onExpire?.(message.id)}
         />
       </div>
     )

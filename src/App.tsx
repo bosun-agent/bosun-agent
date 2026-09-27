@@ -53,6 +53,7 @@ function App() {
                 summary: event.summary,
                 action: event.action,
                 reasons: event.reasons,
+                expiresAt: event.expiresAt,
               },
             })
             break
@@ -109,6 +110,18 @@ function App() {
     await consume(assistantId, agent.sendMessage(sessionId, text))
   }
 
+  // 승인 대기 시간이 지나면 카드를 만료 상태로 바꾸고 입력을 다시 연다.
+  function handleExpire(id: string) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === id && m.status === 'pending_approval'
+          ? { ...m, status: 'approval_expired' }
+          : m,
+      ),
+    )
+    setPending(false)
+  }
+
   async function handleDecision(id: string, decision: ApprovalDecision) {
     const message = messages.find((m) => m.id === id)
     if (!message?.approval) return
@@ -139,6 +152,7 @@ function App() {
         messages={messages}
         onApprove={(id) => handleDecision(id, 'approve')}
         onDeny={(id) => handleDecision(id, 'deny')}
+        onExpire={handleExpire}
       />
       {import.meta.env.DEV && (
         <DevScenarioBar disabled={pending} onRun={handleSend} />
