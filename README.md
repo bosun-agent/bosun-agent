@@ -49,11 +49,12 @@ npm run dev
 - **대기 상태 표시**: "생각 중"(`thinking`, 점 3개 애니메이션)과 "승인 대기중"(`pending_approval`, 카드+버튼)을 다른 컴포넌트로 분리 — 같은 대기라도 사용자가 취할 수 있는 행동이 다르기 때문(전자는 기다리기만, 후자는 승인/거부 결정 필요).
 - **컴포넌트 조립 방식**: 오픈소스 채팅 UI 템플릿을 통째로 가져오는 대신, shadcn류 스타일로 작은 컴포넌트(`ApprovalCard`/`RejectedNotice`/`ChatMessageBubble`)를 직접 조립하는 방식을 선택 — 상태별 UI 분기가 프로젝트 고유 요구사항(Secure 승인/차단)이라 범용 템플릿보다 커스텀 조립이 맞다고 판단.
 
-## 인터페이스 계약 (WEB ↔ AI Agent)
+## 문서
 
-초안: [docs/interface-web-agent.md](docs/interface-web-agent.md) (v0.1, 합의 전). 요약:
+| 원본 | 팀 공유용 이름 | 내용 |
+|---|---|---|
+| [docs/architecture-web.md](docs/architecture-web.md) | `WEB_아키텍처_설계서.md` | WEB 범위·경계, 화면 상태, 기술 선택, WEB 백엔드 역할, 구현 현황 |
+| [docs/interface-web-agent.md](docs/interface-web-agent.md) | `WEB_인터페이스_계약.md` | 브라우저 ↔ WEB 백엔드 형식, WEB 백엔드 ↔ Agent/Airlock 승인 흐름, 정할 것 |
 
-- 전송: 메시지 전송은 HTTP POST + SSE 응답 스트림, 승인·거부는 별도 POST(`approvalId` + `decision`만 전송)
-- 이벤트 6종: `text_delta` / `tool_status` / `approval_required` / `rejected` / `error` / `done`
-- 승인은 서버가 발급한 1회용 `approvalId`에 묶임 — WEB은 파라미터를 다시 보내지 않음
-- 팀이 정할 결정은 문서 6장, Docker Agent API 서버 조사 결과는 7장에 정리
+- 원본은 이 저장소에서 고치고, 팀에 공유할 때 공유용 이름으로 복사한다. 설계서 본문은 공유용 이름으로 서로를 가리킨다.
+- 요약: 브라우저는 WEB 백엔드하고만 통신한다(HTTP POST + SSE). 승인은 Airlock이 붙잡고, WEB 백엔드가 webhook으로 받아 카드로 띄운 뒤 결정을 management API로 전달한다.
