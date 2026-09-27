@@ -52,6 +52,8 @@ function approvalEvent(
         message: '대상 리소스와 옵션을 다시 한번 확인해주세요.',
       },
     ],
+    // Airlock 기본 대기 5분에서 몇 초 앞당긴 값
+    expiresAt: new Date(Date.now() + 5 * 60_000 - 5_000).toISOString(),
   }
 }
 
