@@ -125,7 +125,11 @@ function App() {
             updateMessage(id, (m) => ({
               status: 'rejected',
               rejectionReason: event.reason,
-              steps: finishActive(m.steps ?? [], 'failed', '정책에 따라 차단됨'),
+              // 진행 중이던 단계는 끝난 것으로 두고, 차단을 따로 한 줄 남긴다.
+              steps: finishActive(
+                startStep(m.steps ?? [], { label: '정책에 따라 차단됨' }),
+                'failed',
+              ),
             }))
             break
           case 'error':
