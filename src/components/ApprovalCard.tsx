@@ -28,19 +28,19 @@ export function ApprovalCard({
 
   if (expired) {
     return (
-      <div className="max-w-[85%] rounded-2xl border border-neutral-300 bg-neutral-50 px-4 py-3 text-[15px] dark:border-neutral-700 dark:bg-neutral-900">
-        <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+      <div className="max-w-[85%] rounded-2xl border border-neutral-300 bg-neutral-50 px-4 py-3 text-[15px]">
+        <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-neutral-500">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-400" />
           승인 시간이 지났어요
         </div>
-        <p className="text-neutral-500 line-through dark:text-neutral-400">
+        <p className="text-neutral-500 line-through">
           {summary}
         </p>
         <p className="mt-2 font-mono text-xs text-neutral-400">
           {action.tool}
           {action.target && ` → ${action.target}`}
         </p>
-        <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="mt-2 text-sm text-neutral-600">
           실행되지 않았어요. 필요하면 다시 요청해주세요.
         </p>
       </div>
@@ -50,46 +50,46 @@ export function ApprovalCard({
   const urgent = remainingMs <= URGENT_MS
 
   return (
-    <div className="max-w-[85%] rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-[15px] dark:border-amber-700/60 dark:bg-amber-950/40">
+    <div className="max-w-[85%] rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-[15px]">
       <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium">
-        <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+        <span className="flex items-center gap-1.5 text-amber-700">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
           승인이 필요해요
         </span>
         <span
           className={`tabular-nums ${
             urgent
-              ? 'text-red-600 dark:text-red-400'
-              : 'text-neutral-500 dark:text-neutral-400'
+              ? 'text-red-600'
+              : 'text-neutral-500'
           }`}
         >
           {formatRemaining(remainingMs)} 남음
         </span>
       </div>
-      <p className="text-neutral-900 dark:text-neutral-100">{summary}</p>
-      <p className="mt-2 font-mono text-xs text-neutral-500 dark:text-neutral-400">
+      <p className="text-neutral-900">{summary}</p>
+      <p className="mt-2 font-mono text-xs text-neutral-500">
         {action.tool}
         {action.target && ` → ${action.target}`}
       </p>
       {reasons.length > 0 && (
-        <ul className="mt-2 space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
+        <ul className="mt-2 space-y-1 text-sm text-neutral-600">
           {reasons.map((reason) => (
             <li key={reason.code}>· {reason.message}</li>
           ))}
         </ul>
       )}
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex justify-end gap-2">
         <button
           type="button"
           onClick={onApprove}
-          className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
+          className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white"
         >
           승인
         </button>
         <button
           type="button"
           onClick={onDeny}
-          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 dark:border-neutral-600 dark:text-neutral-300"
+          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700"
         >
           거부
         </button>

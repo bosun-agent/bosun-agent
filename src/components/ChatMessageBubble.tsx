@@ -1,5 +1,6 @@
-import type { ChatMessage, ToolStatus } from '../types'
+import type { ChatMessage, MessageStatus } from '../types'
 import { ApprovalCard } from './ApprovalCard'
+import { ProcessSteps } from './ProcessSteps'
 import { RejectedNotice } from './RejectedNotice'
 
 interface ChatMessageBubbleProps {
@@ -9,104 +10,107 @@ interface ChatMessageBubbleProps {
   onExpire?: (id: string) => void
 }
 
+// 이 상태에서는 처리 과정을 펼쳐서 실시간으로 보여준다.
+const LIVE_STATUSES: MessageStatus[] = ['thinking', 'streaming', 'pending_approval']
+
 export function ChatMessageBubble({
   message,
   onApprove,
   onDeny,
   onExpire,
 }: ChatMessageBubbleProps) {
-  const isUser = message.role === 'user'
+  if (message.role === 'user') {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[75%] rounded-2xl bg-neutral-900 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-white">
+          {message.content}
+        </div>
+      </div>
+    )
+  }
 
+  const steps = message.steps ?? []
+
+  return (
+    <div className="flex flex-col items-start">
+      <ProcessSteps
+        steps={steps}
+        live={LIVE_STATUSES.includes(message.status)}
+      />
+      <AssistantBody
+        message={message}
+        hasSteps={steps.length > 0}
+        onApprove={onApprove}
+        onDeny={onDeny}
+        onExpire={onExpire}
+      />
+    </div>
+  )
+}
+
+function AssistantBody({
+  message,
+  hasSteps,
+  onApprove,
+  onDeny,
+  onExpire,
+}: ChatMessageBubbleProps & { hasSteps: boolean }) {
   if (
     (message.status === 'pending_approval' ||
       message.status === 'approval_expired') &&
     message.approval
   ) {
     return (
-      <div className="flex justify-start">
-        <ApprovalCard
-          approval={message.approval}
-          expired={message.status === 'approval_expired'}
-          onApprove={() => onApprove?.(message.id)}
-          onDeny={() => onDeny?.(message.id)}
-          onExpire={() => onExpire?.(message.id)}
-        />
-      </div>
+      <ApprovalCard
+        approval={message.approval}
+        expired={message.status === 'approval_expired'}
+        onApprove={() => onApprove?.(message.id)}
+        onDeny={() => onDeny?.(message.id)}
+        onExpire={() => onExpire?.(message.id)}
+      />
     )
   }
 
   if (message.status === 'rejected') {
     return (
-      <div className="flex justify-start">
-        <RejectedNotice
-          reason={message.rejectionReason ?? '알 수 없는 이유로 차단되었습니다.'}
-        />
-      </div>
+      <RejectedNotice
+        reason={message.rejectionReason ?? '알 수 없는 이유로 차단되었습니다.'}
+      />
     )
   }
 
   if (message.status === 'error') {
     return (
-      <div className="flex justify-start">
-        <div className="max-w-[75%] rounded-2xl border border-neutral-300 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">
-          {/* 끊기기 전까지 받은 내용은 남기고, 그 아래에 오류를 붙인다 */}
-          {message.content && (
-            <p className="mb-1.5 whitespace-pre-wrap text-neutral-900 dark:text-neutral-100">
-              {message.content}
-            </p>
-          )}
-          <p
-            className={
-              message.content ? 'text-sm text-red-600 dark:text-red-400' : ''
-            }
-          >
-            {message.errorMessage ?? '알 수 없는 오류가 발생했어요.'}
+      <div className="max-w-[75%] rounded-2xl border border-neutral-300 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-600">
+        {/* 끊기기 전까지 받은 내용은 남기고, 그 아래에 오류를 붙인다 */}
+        {message.content && (
+          <p className="mb-1.5 whitespace-pre-wrap text-neutral-900">
+            {message.content}
           </p>
-        </div>
+        )}
+        <p className={message.content ? 'text-sm text-red-600' : ''}>
+          {message.errorMessage ?? '알 수 없는 오류가 발생했어요.'}
+        </p>
       </div>
     )
   }
 
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap ${
-          isUser
-            ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900'
-            : 'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
-        }`}
-      >
-        {message.status === 'thinking' ? (
-          <TypingDots />
-        ) : (
-          <>
-            {message.content}
-            {message.status === 'streaming' && <StreamCursor />}
-          </>
-        )}
-        {message.toolStatus && <ToolStatusLine toolStatus={message.toolStatus} />}
+  // 처리 과정이 보이는 동안에는 빈 말풍선에 점 애니메이션을 따로 띄우지 않는다.
+  if (message.status === 'thinking' && !message.content) {
+    return hasSteps ? null : (
+      <div className="rounded-2xl bg-neutral-100 px-4 py-2.5">
+        <TypingDots />
       </div>
-    </div>
-  )
-}
+    )
+  }
 
-const TOOL_STATUS_STYLE: Record<ToolStatus['status'], string> = {
-  running: 'text-neutral-500 dark:text-neutral-400',
-  succeeded: 'text-emerald-600 dark:text-emerald-400',
-  failed: 'text-red-600 dark:text-red-400',
-}
+  if (!message.content) return null
 
-const TOOL_STATUS_ICON: Record<ToolStatus['status'], string> = {
-  running: '…',
-  succeeded: '✓',
-  failed: '✕',
-}
-
-function ToolStatusLine({ toolStatus }: { toolStatus: ToolStatus }) {
   return (
-    <p className={`mt-1 text-xs ${TOOL_STATUS_STYLE[toolStatus.status]}`}>
-      {TOOL_STATUS_ICON[toolStatus.status]} {toolStatus.summary}
-    </p>
+    <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-neutral-900">
+      {message.content}
+      {message.status === 'streaming' && <StreamCursor />}
+    </div>
   )
 }
 

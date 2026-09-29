@@ -58,6 +58,21 @@ function approvalEvent(
   }
 }
 
+// Airlock은 도구 호출을 붙잡고 승인을 요청하므로, 호출 표시가 승인 요청보다 먼저 온다.
+async function* requestApproval(
+  sessionId: string,
+  options?: Parameters<typeof approvalEvent>[1],
+): AsyncGenerator<AgentEvent> {
+  yield {
+    type: 'tool_status',
+    tool: 'docker_container_remove',
+    status: 'running',
+    summary: '도구 호출하는 중',
+  }
+  await wait(400)
+  yield approvalEvent(sessionId, options)
+}
+
 const BATCH_REJECTED: AgentEvent = {
   type: 'rejected',
   code: 'BATCH_DESTRUCTIVE',
@@ -83,16 +98,16 @@ async function* runScenario(
       yield* streamText('오래 걸리는 작업을 마쳤어요. (목업 응답)')
       break
     case '/approval':
-      yield approvalEvent(sessionId)
+      yield* requestApproval(sessionId)
       return
     case '/approval-fail':
-      yield approvalEvent(sessionId, { willFail: true })
+      yield* requestApproval(sessionId, { willFail: true })
       return
     case '/expired':
-      yield approvalEvent(sessionId, { store: false })
+      yield* requestApproval(sessionId, { store: false })
       return
     case '/expiring':
-      yield approvalEvent(sessionId, { ttlMs: 10_000 })
+      yield* requestApproval(sessionId, { ttlMs: 10_000 })
       return
     case '/reject':
       yield BATCH_REJECTED
@@ -119,6 +134,10 @@ async function* sendMessage(
   sessionId: string,
   text: string,
 ): AsyncGenerator<AgentEvent> {
+  // Docker Agent는 실행을 시작할 때 도구 목록을 불러온 뒤 모델을 부른다.
+  yield { type: 'progress', step: 'loading_tools' }
+  await wait(300)
+  yield { type: 'progress', step: 'understanding' }
   await wait(500 + Math.random() * 700)
 
   if (text.startsWith('/')) {
@@ -136,7 +155,7 @@ async function* sendMessage(
   }
 
   if (isDestructive) {
-    yield approvalEvent(sessionId)
+    yield* requestApproval(sessionId)
     return
   }
 
@@ -145,8 +164,22 @@ async function* sendMessage(
       '웹 서버(nginx) 컨테이너를 생성할게요. 외부 포트는 8080으로 열까요? 확인해주시면 진행하겠습니다.',
     )
   } else if (STATUS_KEYWORDS.some((kw) => text.includes(kw))) {
+    // 조회는 승인 없이 바로 실행된다.
+    yield {
+      type: 'tool_status',
+      tool: 'docker_proxy',
+      status: 'running',
+      summary: '도구 호출하는 중',
+    }
+    await wait(600)
+    yield {
+      type: 'tool_status',
+      tool: 'docker_proxy',
+      status: 'succeeded',
+      summary: '조회 완료',
+    }
     yield* streamText(
-      '현재 실행 중인 컨테이너 목록을 불러오는 중이에요. (목업 응답)',
+      '실행 중인 컨테이너는 3개예요: nginx-web, postgres-db, redis-cache. (목업 응답)',
     )
   } else {
     yield* streamText(
@@ -179,12 +212,6 @@ async function* sendDecision(
     return
   }
 
-  yield {
-    type: 'tool_status',
-    tool: pending.tool,
-    status: 'running',
-    summary: '실행 중',
-  }
   await wait(600)
   if (pending.willFail) {
     yield {
