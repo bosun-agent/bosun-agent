@@ -65,6 +65,8 @@ npm run dev
 |---|---|---|
 | [docs/architecture-web.md](docs/architecture-web.md) | `WEB_아키텍처_설계서.md` | WEB 범위·경계, 화면 상태, 기술 선택, WEB 백엔드 역할, 구현 현황 |
 | [docs/interface-web-agent.md](docs/interface-web-agent.md) | `WEB_인터페이스_계약.md` | 브라우저 ↔ WEB 백엔드 형식, WEB 백엔드 ↔ Agent/Airlock 승인 흐름, 정할 것 |
+| [docs/web-data-io.md](docs/web-data-io.md) | `WEB_데이터_입출력.md` | WEB이 필요한 데이터와 줄 수 있는 데이터(상대별 값·형식·통신), 연동 전에 받을 설정값 |
+| [docs/webui-review.md](docs/webui-review.md) | `WEB_채팅UI_검토.md` | open-webui 등 기존 채팅 UI를 쓸지, 직접 만들지 검토(직접 제작 유지) |
 
 - 원본은 이 저장소에서 고치고, 팀에 공유할 때 공유용 이름으로 복사한다. 설계서 본문은 공유용 이름으로 서로를 가리킨다.
 - 요약: 브라우저는 WEB 백엔드하고만 통신한다(HTTP POST + SSE). 승인은 Airlock이 붙잡고, WEB 백엔드가 webhook으로 받아 카드로 띄운 뒤 결정을 management API로 전달한다.
