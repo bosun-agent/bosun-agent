@@ -3,6 +3,7 @@
 import { serve } from '@hono/node-server'
 import { app } from './app.ts'
 import { config } from './config.ts'
+import { cancelPendingCards } from './store.ts'
 import { cleanupPending, pollPending } from './turns.ts'
 
 if (!config.airlockSecret) console.warn('[config] AIRLOCK_MGMT_SECRET is empty: approve/deny will fail')
@@ -16,6 +17,9 @@ serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => 
   console.info(`[web] listening on http://${info.address}:${info.port}`)
   console.info(`[web] agent ${config.agentUrl} (agent "${config.agentName}"), airlock ${config.airlockUrl}`)
 })
+
+const cancelled = cancelPendingCards()
+if (cancelled > 0) console.info(`[store] marked ${cancelled} pending card(s) as cancelled`)
 
 cleanupPending().catch((err) => console.warn('[airlock] startup cleanup skipped:', err.message))
 

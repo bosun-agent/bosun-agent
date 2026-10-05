@@ -29,6 +29,9 @@ export const config = {
   // Airlock webhook provider의 headers에 `Authorization: Bearer <값>`으로 넣을 값.
   webhookToken: process.env.WEBHOOK_TOKEN ?? '',
 
+  // 승인·차단 카드와 승인 감사 기록을 두는 SQLite 파일. 대화 내용은 Docker Agent session.db에 있다.
+  dbPath: process.env.WEB_DB_PATH ?? 'server/data/web.db',
+
   // expiresAt은 webhook 받은 시각 + timeoutMs에서 이만큼 앞당긴다(계약 7.1).
   approvalMarginMs: num('APPROVAL_MARGIN_MS', 20_000),
   // 브라우저가 만료 거부를 먼저 보낼 수 있게, 서버 쪽 자동 거부는 expiresAt보다 조금 늦게 한다.

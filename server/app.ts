@@ -2,12 +2,12 @@
 
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import type { ApprovalDecision } from '../src/lib/agentProtocol.ts'
+import type { ApprovalDecision, RestoredCard, RestoredMessage, SessionSummary } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import type { AirlockWebhookBody } from './airlockClient.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
-import { cardsFor, type Card } from './store.ts'
+import { cardsFor } from './store.ts'
 import { HttpError, decide, detach, onAirlockRequests, startTurn, type Sink } from './turns.ts'
 
 export const app = new Hono()
@@ -68,14 +68,13 @@ app.post('/api/sessions', async (c) => {
 
 app.get('/api/sessions', async (c) => {
   const list = await agent.listSessions()
-  const sessions = list
+  const sessions: SessionSummary[] = list
     .map((s) => ({ sessionId: s.id, title: s.title, updatedAt: s.created_at }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   return c.json({ sessions })
 })
 
 // 대화 복원(계약 3장). 사용자·Agent 문장만 내보내고 도구 인자·결과 원본은 내보내지 않는다(계약 5장 4항).
-// 응답 모양은 초안이다. 화면 쪽 복원을 붙일 때 같이 확정한다.
 app.get('/api/sessions/:id/messages', async (c) => {
   const sessionId = c.req.param('id')
   const session = await agent.getSession(sessionId).catch((err) => {
@@ -86,7 +85,7 @@ app.get('/api/sessions/:id/messages', async (c) => {
   })
 
   // 사용자 메시지 하나와 그 뒤 Agent 문장들을 한 턴으로 묶는다. 카드는 턴 번호로 붙인다.
-  const turns: { user: string; reply: string[]; cards: Card[] }[] = []
+  const turns: { user: string; reply: string[]; cards: RestoredCard[] }[] = []
   for (const item of session.messages ?? []) {
     const m = item.message
     if (!m || item.implicit) continue
@@ -95,8 +94,8 @@ app.get('/api/sessions/:id/messages', async (c) => {
   }
   for (const { turn, card } of cardsFor(sessionId)) turns[turn]?.cards.push(card)
 
-  const messages = turns.flatMap((t) => [
-    { role: 'user' as const, content: t.user },
+  const messages: RestoredMessage[] = turns.flatMap((t): RestoredMessage[] => [
+    { role: 'user', content: t.user },
     ...(t.reply.length || t.cards.length
       ? [{ role: 'assistant' as const, content: t.reply.join('\n'), ...(t.cards.length ? { cards: t.cards } : {}) }]
       : []),
