@@ -75,6 +75,7 @@ function AssistantBody({
     return (
       <RejectedNotice
         reason={message.rejectionReason ?? '알 수 없는 이유로 차단되었습니다.'}
+        detail={message.content}
       />
     )
   }

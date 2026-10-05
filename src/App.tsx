@@ -84,7 +84,11 @@ function App() {
             break
           case 'text_delta':
             content += event.delta
-            updateMessage(id, () => ({ status: 'streaming', content }))
+            // 차단 뒤에 오는 Agent 설명은 차단 카드 안에 붙인다(계약 6장).
+            updateMessage(id, (m) => ({
+              status: m.status === 'rejected' ? 'rejected' : 'streaming',
+              content,
+            }))
             break
           case 'tool_status':
             updateSteps(id, (steps) => {
