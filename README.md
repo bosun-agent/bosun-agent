@@ -37,7 +37,7 @@ npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 | `tools.ts` | 도구 이름 → 화면 문구, 승인 카드 템플릿 |
 | `agentClient.ts`, `airlockClient.ts` | Docker Agent API, Airlock management API 클라이언트 |
 | `mask.ts` | 알려진 비밀값 형식 가리기 |
-| `store.ts` | 승인·차단 카드와 승인 감사 기록(지금은 메모리) |
+| `store.ts` | 승인·차단 카드와 승인 감사 기록(SQLite, `server/data/web.db`. 커밋하지 않는다) |
 
 ## 목업으로 화면 상태 테스트하기
 
@@ -66,7 +66,8 @@ npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 - 화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`)
 - 라이트 모드 고정(다크 모드는 2026-09-29 피드백에 따라 제거)
 - WEB 백엔드(`server/`): 가짜 Agent·Airlock으로 승인·거부·만료·차단까지 확인함
-- 아직 없음: 로그인(JWT), 실제 Agent·Airlock 연동, 카드 저장소 SQLite, 화면의 대화 복원(백엔드 API는 있음)
+- 대화 복원(`npm run dev:http`): 사이드바에 서버 대화 목록이 나오고, 고르면 내용과 승인·차단 카드가 돌아온다. 새로고침해도 대기 중인 승인 카드를 다시 승인할 수 있다
+- 아직 없음: 로그인(JWT), 실제 Agent·Airlock 연동
 
 ## 디자인 결정 기록
 

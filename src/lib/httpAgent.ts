@@ -1,7 +1,7 @@
 // WEB 백엔드에 붙는 실제 클라이언트. 목업과 같은 AgentClient 인터페이스라 화면 코드는 그대로다.
 // 개발 중에는 Vite가 /api를 백엔드로 넘긴다(vite.config.ts).
 
-import type { AgentClient, AgentEvent } from './agentProtocol'
+import type { AgentClient, AgentEvent, RestoredMessage, SessionSummary } from './agentProtocol'
 import { readSSE } from './sse'
 
 // 백엔드가 SSE를 열기 전에 거절하면(409, 404, 502 등) JSON으로 사유를 준다.
@@ -45,10 +45,22 @@ export const httpAgent: AgentClient = {
     return stream(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, { text })
   },
 
-  sendDecision(sessionId, approvalId, decision) {
+  sendDecision(sessionId, approvalId, decision, reason) {
     return stream(
       `/api/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(approvalId)}`,
-      { decision },
+      reason ? { decision, reason } : { decision },
     )
+  },
+
+  async listSessions() {
+    const res = await fetch('/api/sessions')
+    if (!res.ok) throw new Error(`listSessions ${res.status}`)
+    return ((await res.json()) as { sessions: SessionSummary[] }).sessions
+  },
+
+  async loadMessages(sessionId) {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`)
+    if (!res.ok) throw new Error(`loadMessages ${res.status}`)
+    return ((await res.json()) as { messages: RestoredMessage[] }).messages
   },
 }

@@ -60,14 +60,23 @@ function AssistantBody({
       message.status === 'approval_expired') &&
     message.approval
   ) {
+    const expired = message.status === 'approval_expired'
     return (
-      <ApprovalCard
-        approval={message.approval}
-        expired={message.status === 'approval_expired'}
-        onApprove={() => onApprove?.(message.id)}
-        onDeny={() => onDeny?.(message.id)}
-        onExpire={() => onExpire?.(message.id)}
-      />
+      <div className="flex w-full flex-col items-start gap-2">
+        <ApprovalCard
+          approval={message.approval}
+          expired={expired}
+          onApprove={() => onApprove?.(message.id)}
+          onDeny={() => onDeny?.(message.id)}
+          onExpire={() => onExpire?.(message.id)}
+        />
+        {/* 만료 뒤 Agent가 이어서 한 말 */}
+        {expired && message.content && (
+          <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-neutral-900">
+            {message.content}
+          </div>
+        )}
+      </div>
     )
   }
 

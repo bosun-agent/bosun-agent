@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChatInput } from './components/ChatInput'
 import { DevScenarioBar } from './components/DevScenarioBar'
 import { MessageList } from './components/MessageList'
@@ -6,6 +6,7 @@ import { SessionSidebar, SidebarToggle } from './components/SessionSidebar'
 import type { AgentEvent, ApprovalDecision, ProgressStep } from './lib/agentProtocol'
 import { agent, usingMock } from './lib/agent'
 import { finishActive, hasActive, startStep } from './lib/processSteps'
+import { toChatMessages } from './lib/restore'
 import type { ChatMessage, ChatSession, ProcessStep } from './types'
 
 const PROGRESS_LABEL: Record<ProgressStep, { label: string; doneLabel: string }> = {
@@ -30,6 +31,36 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const active = sessions.find((s) => s.id === activeId) ?? sessions[0]
+
+  // 서버에 있는 대화 목록을 사이드바에 붙인다. 내용은 대화를 고를 때 불러온다. 목업에는 목록이 없다.
+  useEffect(() => {
+    const listSessions = agent.listSessions
+    if (!listSessions) return
+    let cancelled = false
+    listSessions()
+      .then((list) => {
+        if (cancelled) return
+        setSessions((prev) => {
+          const known = new Set(prev.map((s) => s.serverId))
+          const restored = list
+            .filter((s) => !known.has(s.sessionId))
+            .map((s) => ({
+              id: crypto.randomUUID(),
+              serverId: s.sessionId,
+              loaded: false,
+              title: s.title || '제목 없음',
+              messages: [],
+            }))
+          return [...prev, ...restored]
+        })
+      })
+      .catch(() => {
+        // 목록을 못 불러와도 새 대화는 쓸 수 있다.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function patchSession(id: string, fn: (s: ChatSession) => ChatSession) {
     setSessions((prev) => prev.map((s) => (s.id === id ? fn(s) : s)))
@@ -83,10 +114,14 @@ function App() {
             )
             break
           case 'text_delta':
-            content += event.delta
-            // 차단 뒤에 오는 Agent 설명은 차단 카드 안에 붙인다(계약 6장).
+            // 앞에 받은 내용이 없으면 맨 앞 줄바꿈은 버린다(복원된 카드를 승인한 뒤 등).
+            content += content ? event.delta : event.delta.replace(/^\n+/, '')
+            // 차단·만료 뒤에 오는 Agent 설명은 그 카드와 같이 보여준다(계약 6장).
             updateMessage(id, (m) => ({
-              status: m.status === 'rejected' ? 'rejected' : 'streaming',
+              status:
+                m.status === 'rejected' || m.status === 'approval_expired'
+                  ? m.status
+                  : 'streaming',
               content,
             }))
             break
@@ -138,7 +173,8 @@ function App() {
             break
           case 'error':
             updateMessage(id, (m) => ({
-              status: 'error',
+              // 만료 거부가 늦어 이미 처리된 경우(409)에는 만료 카드를 그대로 둔다.
+              status: m.status === 'approval_expired' ? m.status : 'error',
               errorMessage: event.message,
               steps: finishActive(m.steps ?? [], 'failed'),
             }))
@@ -208,8 +244,11 @@ function App() {
     await consume(assistantId, agent.sendMessage(serverId, text))
   }
 
-  // 승인 대기 시간이 지나면 카드를 만료 상태로 바꾸고 입력을 다시 연다.
-  function handleExpire(id: string) {
+  // 승인 대기 시간이 지나면 카드를 만료로 바꾸고, 서버에 만료 거부를 보내 Agent의 이어지는 말을 받는다.
+  // 입력 잠금은 그 스트림이 끝날 때 푼다(계약 6장).
+  async function handleExpire(id: string) {
+    const session = sessions.find((s) => s.messages.some((m) => m.id === id))
+    const message = session?.messages.find((m) => m.id === id)
     updateMessage(id, (m) =>
       m.status === 'pending_approval'
         ? {
@@ -218,7 +257,16 @@ function App() {
           }
         : {},
     )
-    setBusyId(null)
+    if (!session?.serverId || !message?.approval) {
+      setBusyId(null)
+      return
+    }
+    await consume(
+      id,
+      agent.sendDecision(session.serverId, message.approval.approvalId, 'deny', 'expired'),
+      message.content ? `${message.content}
+` : '',
+    )
   }
 
   async function handleDecision(id: string, decision: ApprovalDecision) {
@@ -252,8 +300,8 @@ function App() {
 
   function handleNewSession() {
     if (isNarrowScreen()) setSidebarOpen(false)
-    // 비어 있는 대화가 이미 있으면 새로 만들지 않고 그리로 간다.
-    const empty = sessions.find((s) => s.messages.length === 0)
+    // 비어 있는 대화가 이미 있으면 새로 만들지 않고 그리로 간다. 아직 안 불러온 서버 대화는 빼고 본다.
+    const empty = sessions.find((s) => s.messages.length === 0 && !s.serverId)
     if (empty) {
       setActiveId(empty.id)
       return
@@ -266,6 +314,21 @@ function App() {
   function handleSelectSession(id: string) {
     setActiveId(id)
     if (isNarrowScreen()) setSidebarOpen(false)
+
+    const session = sessions.find((s) => s.id === id)
+    const loadMessages = agent.loadMessages
+    if (!session?.serverId || session.loaded !== false || !loadMessages) return
+    patchSession(id, (s) => ({ ...s, loaded: true }))
+    loadMessages(session.serverId)
+      .then((restored) => {
+        const messages = toChatMessages(restored)
+        patchSession(id, (s) => ({ ...s, messages }))
+        // 결정하지 않은 승인 카드가 있으면 그 대화가 처리 중이다.
+        if (messages.some((m) => m.status === 'pending_approval')) setBusyId(id)
+      })
+      .catch(() => {
+        patchSession(id, (s) => ({ ...s, loaded: false }))
+      })
   }
 
   const busyElsewhere = busyId !== null && busyId !== active.id

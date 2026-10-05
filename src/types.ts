@@ -48,6 +48,8 @@ export interface ChatSession {
   // 브라우저 안에서 쓰는 id. 서버 세션은 첫 메시지를 보낼 때 만든다.
   id: string
   serverId?: string
+  // 서버에서 목록만 받고 내용은 아직 안 불러온 대화면 false
+  loaded?: boolean
   title: string
   messages: ChatMessage[]
 }
