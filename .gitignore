@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 실제 연동용 비밀값(server/dev/dev.env는 개발용이라 커밋한다)
+.env
+.env.*
+!.env.http
+server/*.env

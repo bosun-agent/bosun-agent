@@ -4,7 +4,7 @@ import { DevScenarioBar } from './components/DevScenarioBar'
 import { MessageList } from './components/MessageList'
 import { SessionSidebar, SidebarToggle } from './components/SessionSidebar'
 import type { AgentEvent, ApprovalDecision, ProgressStep } from './lib/agentProtocol'
-import { mockAgent as agent } from './lib/mockAgent'
+import { agent, usingMock } from './lib/agent'
 import { finishActive, hasActive, startStep } from './lib/processSteps'
 import type { ChatMessage, ChatSession, ProcessStep } from './types'
 
@@ -190,7 +190,17 @@ function App() {
     }))
     setBusyId(session.id)
 
-    const serverId = await getServerId(session)
+    let serverId: string
+    try {
+      serverId = await getServerId(session)
+    } catch {
+      updateMessage(assistantId, () => ({
+        status: 'error',
+        errorMessage: '대화를 시작하지 못했어요. 잠시 후 다시 시도해주세요.',
+      }))
+      setBusyId(null)
+      return
+    }
     await consume(assistantId, agent.sendMessage(serverId, text))
   }
 
@@ -316,7 +326,7 @@ function App() {
           </>
         )}
 
-        {import.meta.env.DEV && (
+        {import.meta.env.DEV && usingMock && (
           <DevScenarioBar disabled={busyId !== null} onRun={handleSend} />
         )}
       </main>

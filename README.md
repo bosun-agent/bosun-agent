@@ -12,8 +12,32 @@ BOSUN 프로젝트의 WEB 파트. 사용자가 자연어로 컨테이너를 관�
 
 ```bash
 npm install
-npm run dev
+npm run dev          # 목업으로 화면만
 ```
+
+WEB 백엔드까지 같이 돌리려면 터미널 3개를 띄운다. 실제 Agent·Airlock이 없을 때는 가짜 서버를 쓴다.
+
+```bash
+npm run server:fake  # 가짜 Docker Agent(8080) + 가짜 Airlock(4113)
+npm run server       # WEB 백엔드(3001). 코드를 고치면 다시 뜬다
+npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
+npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
+```
+
+가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제(승인 카드), 만료(10초 뒤 만료), 명령(exec 승인 두 번), 차단, 없는 도구, 목록, 훅, 오류. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+
+### WEB 백엔드 구조 (`server/`)
+
+| 파일 | 하는 일 |
+|---|---|
+| `main.ts` | 진입점. 시작할 때 Airlock에 남은 대기 건을 거부하고, 대기 목록 보조 조회를 돌린다 |
+| `app.ts` | 브라우저용 `/api/*`와 Airlock 전용 `/internal/airlock/webhook` |
+| `turns.ts` | 한 턴의 Agent 스트림과 승인 요청 관리(계약 6장): 카드 띄우기, 결정 전달, 만료, 스트림 이어붙이기 |
+| `translate.ts` | Docker Agent 이벤트 → 화면 이벤트, 하드 차단 판별 |
+| `tools.ts` | 도구 이름 → 화면 문구, 승인 카드 템플릿 |
+| `agentClient.ts`, `airlockClient.ts` | Docker Agent API, Airlock management API 클라이언트 |
+| `mask.ts` | 알려진 비밀값 형식 가리기 |
+| `store.ts` | 승인·차단 카드와 승인 감사 기록(지금은 메모리) |
 
 ## 목업으로 화면 상태 테스트하기
 
@@ -39,9 +63,10 @@ npm run dev
 - **대화 목록**(`SessionSidebar`): ☰로 열고 닫는 사이드바, 새 대화, 처리 중 표시. 대화가 여러 개여도 처리는 한 번에 한 대화만 한다(인터페이스 계약 3장)
 - **처리 과정**(`ProcessSteps`): 도구 목록 불러오기 → 요청 이해 → 도구 호출 → 승인 대기 → 실행을 실시간으로 보여주고, 끝나면 "처리 과정 보기"로 접는다. 도구 인자와 원본 결과는 보여주지 않는다
 - **메시지 상태**(`MessageStatus`): `thinking`, `streaming`, `done`, `pending_approval`(승인 카드), `approval_expired`, `rejected`(하드 차단, 버튼 없음), `error`
-- AI Agent 연동은 `src/lib/mockAgent.ts`에 목업으로 분리 — [인터페이스 계약](docs/interface-web-agent.md)의 이벤트 스트림(`AgentClient` 인터페이스, `src/lib/agentProtocol.ts`)을 그대로 흉내낸다. 실제 연동 시 같은 인터페이스를 SSE로 구현한 클라이언트로 교체하면 `App.tsx`는 수정 불필요
+- 화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`)
 - 라이트 모드 고정(다크 모드는 2026-09-29 피드백에 따라 제거)
-- 아직 없음: WEB 백엔드, 로그인(JWT), 실제 Agent·Airlock 연동, 새로고침 뒤 대화 복원(지금 대화 목록은 브라우저 메모리에만 있음)
+- WEB 백엔드(`server/`): 가짜 Agent·Airlock으로 승인·거부·만료·차단까지 확인함
+- 아직 없음: 로그인(JWT), 실제 Agent·Airlock 연동, 카드 저장소 SQLite, 화면의 대화 복원(백엔드 API는 있음)
 
 ## 디자인 결정 기록
 
