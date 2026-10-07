@@ -95,6 +95,14 @@ export class Translator {
           return { events: [{ type: 'rejected', code: 'HOOK_BLOCKED', reason: HOOK_BLOCKED_REASON }] }
         }
         this.failed = true
+        // 키가 틀리거나 만료되면 모델 호출이 401로 실패한다. 다시 시도해도 같으므로 따로 안내한다.
+        if (err.code === 'model_error' && /HTTP 401\b/.test(err.error)) {
+          return {
+            events: [
+              { type: 'error', code: 'INVALID_API_KEY', message: 'AI 모델 API 키가 올바르지 않아요. 관리자에게 알려주세요.' },
+            ],
+          }
+        }
         return {
           events: [
             {

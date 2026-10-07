@@ -169,6 +169,10 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
       throw new HttpError(409, 'BUSY', 'AI Agent가 이 대화를 처리하고 있어요. 잠시 후 다시 보내주세요.')
     }
     console.error('[agent] start failed', err)
+    // Docker Agent는 모델 API 키가 없으면 실행 요청을 500으로 거절한다.
+    if (err instanceof agent.AgentHttpError && err.message.includes('environment variables must be set')) {
+      throw new HttpError(502, 'NO_API_KEY', 'AI 모델 API 키가 설정되지 않았어요. 관리자에게 알려주세요.')
+    }
     throw new HttpError(502, 'AGENT_UNAVAILABLE', 'AI Agent에 연결하지 못했어요.')
   }
 

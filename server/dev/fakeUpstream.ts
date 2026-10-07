@@ -229,6 +229,11 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
   s.messages.push({ agent_name: '', message: { role: 'user', content: text } })
   if (!s.title) s.title = text.slice(0, 30)
 
+  // 키가 없으면 Docker Agent는 스트림을 열기 전에 500으로 거절한다(실측 2026-10-05, v1.145.0).
+  if (/키 없음/.test(text)) {
+    return c.json({ message: 'failed to run session: load "agent": The following environment variables must be set:\n - OPENROUTER_API_KEY\n' }, 500)
+  }
+
   return streamSSE(c, async (stream) => {
     const r = new Run(stream, s)
     await r.init()
@@ -237,13 +242,18 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
       await r.send({ type: 'error', error: 'user_prompt_submit hook blocked the request', code: 'hook_blocked' })
       return r.stop()
     }
+    if (/키 오류/.test(text)) {
+      // 키가 틀리면 모델 호출에서 실패한다(실측 2026-10-05, OpenRouter).
+      await r.send({ type: 'error', error: 'model failed: error receiving from stream: HTTP 401: User not found.', code: 'model_error' })
+      return r.stop()
+    }
     if (/오류/.test(text)) {
       await r.send({ type: 'error', error: 'model provider returned 500' })
       return r.stop()
     }
     const scenario = SCENARIOS.find((sc) => sc.match.test(text))
     if (scenario) await scenario.run(r)
-    else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 명령, 차단, 없는 도구, 목록, 훅, 오류`)
+    else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 명령, 차단, 없는 도구, 목록, 훅, 오류, 키 없음, 키 오류`)
     await r.stop()
   })
 })

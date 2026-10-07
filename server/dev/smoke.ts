@@ -118,6 +118,14 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
 }
 
 {
+  const s3 = await newSession()
+  const noKey = await post(`/api/sessions/${s3}/messages`, { text: '키 없음' })
+  check('키가 없으면 NO_API_KEY', (noKey.json as { error?: string })?.error === 'NO_API_KEY', noKey)
+  const badKey = await post(`/api/sessions/${s3}/messages`, { text: '키 오류' })
+  const err = badKey.events.at(-1)
+  check('키가 틀리면 INVALID_API_KEY', err?.type === 'error' && err.code === 'INVALID_API_KEY', badKey.events)
+}
+{
   const put = (model: string) =>
     fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) })
   const bad = await put('openrouter/unknown/model')
