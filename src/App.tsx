@@ -3,6 +3,7 @@ import { ChatInput } from './components/ChatInput'
 import { DevScenarioBar } from './components/DevScenarioBar'
 import { MessageList } from './components/MessageList'
 import { SessionSidebar, SidebarToggle } from './components/SessionSidebar'
+import { SettingsModal } from './components/SettingsModal'
 import type { AgentEvent, ApprovalDecision, ProgressStep } from './lib/agentProtocol'
 import { agent, usingMock } from './lib/agent'
 import { finishActive, hasActive, startStep } from './lib/processSteps'
@@ -15,6 +16,9 @@ const PROGRESS_LABEL: Record<ProgressStep, { label: string; doneLabel: string }>
 }
 
 const TITLE_MAX = 30
+
+// Home의 "Go to Portainer" 버튼이 여는 주소. 정하지 않으면 버튼을 비활성으로 둔다.
+const PORTAINER_URL: string | undefined = import.meta.env.VITE_PORTAINER_URL
 
 // 좁은 화면에서는 사이드바가 채팅 위에 겹치므로, 대화를 고르면 닫는다. Tailwind md 기준과 같다.
 const isNarrowScreen = () => !window.matchMedia('(min-width: 768px)').matches
@@ -29,6 +33,7 @@ function App() {
   // 처리 중인 대화. 백엔드가 Agent 스트림을 하나만 열기 때문에 한 번에 한 대화만 처리한다(인터페이스 계약 3장).
   const [busyId, setBusyId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const active = sessions.find((s) => s.id === activeId) ?? sessions[0]
 
@@ -342,9 +347,12 @@ function App() {
         </p>
       )}
       <ChatInput disabled={busyId !== null} onSend={handleSend} />
-      <p className="py-2 text-center text-xs text-neutral-400">
-        AI는 실수할 수 있어요. 승인 카드의 내용을 꼭 확인해주세요.
-      </p>
+      {/* Home에서는 와이어프레임대로 입력창 바로 아래에 Portainer 버튼을 둔다. */}
+      {!isEmpty && (
+        <p className="py-2 text-center text-xs text-neutral-400">
+          AI는 실수할 수 있어요. 승인 카드의 내용을 꼭 확인해주세요.
+        </p>
+      )}
     </div>
   )
 
@@ -372,14 +380,29 @@ function App() {
         )}
 
         {isEmpty ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-6">
-            <div className="px-4 text-center">
-              <p className="text-2xl font-semibold">BOSUN</p>
-              <p className="mt-1 text-sm text-neutral-500">
-                "웹사이트 하나 띄워줘"처럼, 원하는 작업을 말로 설명해보세요.
-              </p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-4">
+            {/* 로고 이미지를 받으면 이 자리를 <img>로 바꾼다. */}
+            <div className="flex h-36 w-56 items-end justify-center rounded-md border border-dashed border-neutral-300 pb-3 text-4xl font-black tracking-tight">
+              BOSUN
             </div>
             {composer}
+            {PORTAINER_URL ? (
+              <a
+                href={PORTAINER_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-neutral-100 px-8 py-1 text-xs text-neutral-600 hover:bg-neutral-200"
+              >
+                Go to Portainer
+              </a>
+            ) : (
+              <span
+                title="VITE_PORTAINER_URL을 정하면 열린다"
+                className="cursor-not-allowed rounded-full bg-neutral-100 px-8 py-1 text-xs text-neutral-400"
+              >
+                Go to Portainer
+              </span>
+            )}
           </div>
         ) : (
           <>
@@ -393,11 +416,34 @@ function App() {
           </>
         )}
 
+        {/* 좁은 화면에서는 아래쪽 입력창과 겹치지 않게 오른쪽 위에 둔다. */}
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="설정"
+          className={`absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-md text-neutral-700 hover:bg-neutral-100 md:top-auto ${
+            import.meta.env.DEV && usingMock ? 'md:bottom-14' : 'md:bottom-3'
+          }`}
+        >
+          <GearIcon />
+        </button>
+
         {import.meta.env.DEV && usingMock && (
           <DevScenarioBar disabled={busyId !== null} onRun={handleSend} />
         )}
       </main>
+
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
+  )
+}
+
+function GearIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   )
 }
 
