@@ -92,16 +92,18 @@ export async function getSession(id: string): Promise<DASession> {
 
 // 메시지를 보내고 응답 스트림을 연다. 같은 이름의 Docker Agent `.../messages`는 모델을 부르지 않으므로 쓰지 않는다(계약 8.1).
 // fetch는 응답 헤더까지만 기다리므로, 승인 대기 중 이벤트가 끊겨도 본문 읽기는 타임아웃 없이 기다린다(계약 7.1).
+// model을 주면 이 대화의 모델을 바꾼다. Docker Agent가 대화에 저장하므로 다음 턴도 같은 모델을 쓴다.
 export async function runAgent(
   sessionId: string,
   text: string,
   signal: AbortSignal,
+  model?: string,
 ): Promise<AsyncGenerator<DAEvent>> {
   const res = await request(
     `/api/sessions/${encodeURIComponent(sessionId)}/agent/${encodeURIComponent(config.agentName)}`,
     {
       method: 'POST',
-      body: JSON.stringify({ messages: [{ role: 'user', content: text }] }),
+      body: JSON.stringify({ messages: [{ role: 'user', content: text }], ...(model ? { model } : {}) }),
       signal,
     },
   )

@@ -74,6 +74,8 @@ interface Session {
   title: string
   created_at: string
   messages: { agent_name: string; message: { role: string; content: string } }[]
+  // 실행 요청에 model이 오면 기억한다. 진짜 Docker Agent도 대화에 저장한다. 스모크 테스트가 읽는다.
+  model?: string
 }
 const sessions = new Map<string, Session>()
 
@@ -221,8 +223,9 @@ agentApp.get('/api/sessions/:id', (c) => {
 agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
   const s = sessions.get(c.req.param('id'))
   if (!s) return c.json({ message: 'session not found' }, 404)
-  const { messages } = await c.req.json<{ messages: { content: string }[] }>()
+  const { messages, model } = await c.req.json<{ messages: { content: string }[]; model?: string }>()
   const text = messages.at(-1)?.content ?? ''
+  if (model) s.model = model
   s.messages.push({ agent_name: '', message: { role: 'user', content: text } })
   if (!s.title) s.title = text.slice(0, 30)
 

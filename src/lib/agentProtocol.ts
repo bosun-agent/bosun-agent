@@ -65,6 +65,12 @@ export interface SessionSummary {
 
 // 실제 클라이언트도 이 모양을 구현하면 App.tsx는 바꿀 필요가 없다.
 // 목록·복원은 서버가 있어야 하므로 목업에는 없다.
+// 설정 화면 값(계약 3장). model이 null이면 agent.yaml에 적힌 모델을 쓴다.
+export interface Settings {
+  model: string | null
+  models: string[]
+}
+
 export interface AgentClient {
   createSession(): Promise<string>
   sendMessage(sessionId: string, text: string): AsyncIterable<AgentEvent>
@@ -77,4 +83,6 @@ export interface AgentClient {
   ): AsyncIterable<AgentEvent>
   listSessions?(): Promise<SessionSummary[]>
   loadMessages?(sessionId: string): Promise<RestoredMessage[]>
+  getSettings?(): Promise<Settings>
+  saveModel?(model: string): Promise<Settings>
 }

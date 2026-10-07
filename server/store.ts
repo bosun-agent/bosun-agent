@@ -53,6 +53,11 @@ db.exec(`
     tool        TEXT NOT NULL,
     decision    TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `)
 
 const insertCard = db.prepare(
@@ -93,4 +98,17 @@ export function logDecision(entry: Omit<AuditEntry, 'at'>): void {
   const row = { at: new Date().toISOString(), ...entry }
   insertAudit.run(row.at, row.user, row.sessionId, row.approvalId, row.airlockId, row.tool, row.decision)
   console.info('[audit]', JSON.stringify(row))
+}
+
+// 설정 화면 값. 지금은 고른 모델(`model`)만 둔다.
+export function getSetting(key: string): string | undefined {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key)
+  return row ? (row.value as string) : undefined
+}
+
+export function setSetting(key: string, value: string): void {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+    key,
+    value,
+  )
 }

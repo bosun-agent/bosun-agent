@@ -12,6 +12,7 @@ import type { DAEvent } from './agentClient.ts'
 import * as airlock from './airlockClient.ts'
 import type { AirlockRequest } from './airlockClient.ts'
 import { config } from './config.ts'
+import { currentModel } from './settings.ts'
 import { addCard, logDecision, updateApprovalCard, type ApprovalStatus } from './store.ts'
 import { approvalCard, execCommand } from './tools.ts'
 import { Translator } from './translate.ts'
@@ -158,7 +159,7 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
   try {
     const session = await agent.getSession(sessionId)
     t.index = (session.messages ?? []).filter((m) => m.message?.role === 'user' && !m.implicit).length
-    upstream = await agent.runAgent(sessionId, text, t.abort.signal)
+    upstream = await agent.runAgent(sessionId, text, t.abort.signal, currentModel())
   } catch (err) {
     turn = null
     if (err instanceof agent.AgentHttpError && err.status === 404) {

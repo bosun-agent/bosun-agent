@@ -20,6 +20,12 @@ export const config = {
   agentName: process.env.AGENT_NAME ?? 'agent',
   // `serve api --auth-token`을 켰을 때만 넣는다.
   agentToken: process.env.AGENT_TOKEN ?? '',
+  // 설정 화면에서 고를 수 있는 모델. 쉼표로 나눈 `provider/model` 또는 agent.yaml models의 이름.
+  // 비어 있으면 모델을 고르지 않고 agent.yaml에 적힌 모델을 쓴다.
+  agentModels: (process.env.AGENT_MODELS ?? '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean),
 
   // Airlock management API. secret은 브라우저에 절대 내려보내지 않는다(계약 6장).
   airlockUrl: process.env.AIRLOCK_MGMT_URL ?? 'http://127.0.0.1:4113',

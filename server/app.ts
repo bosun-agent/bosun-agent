@@ -7,6 +7,7 @@ import * as agent from './agentClient.ts'
 import type { AirlockWebhookBody } from './airlockClient.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
+import { getSettings, saveModel } from './settings.ts'
 import { cardsFor } from './store.ts'
 import { HttpError, decide, detach, onAirlockRequests, startTurn, type Sink } from './turns.ts'
 
@@ -123,6 +124,17 @@ app.post('/api/sessions/:id/approvals/:approvalId', async (c) => {
   const reason = body.decision === 'deny' && body.reason === 'expired' ? 'expired' : undefined
   const attach = await decide(c.req.param('id'), c.req.param('approvalId'), body.decision as ApprovalDecision, reason)
   return streamTo(c, attach)
+})
+
+// 설정 화면(계약 3장). 지금은 모델 선택만 있다.
+app.get('/api/settings', (c) => c.json(getSettings()))
+
+app.put('/api/settings', async (c) => {
+  const body = await c.req.json<{ model?: unknown }>().catch(() => ({}) as { model?: unknown })
+  if (typeof body.model !== 'string' || !saveModel(body.model)) {
+    throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 모델이에요.')
+  }
+  return c.json(getSettings())
 })
 
 // ---- Airlock 전용 /internal ----

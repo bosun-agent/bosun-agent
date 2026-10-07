@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import type { Settings } from '../lib/agentProtocol'
+import { agent } from '../lib/agent'
 
-// 1차 범위(모델 선택, API 키)와 2차에 들어올 항목 자리. 레이아웃만 잡아둔 단계라 내용은 회색 블록이다.
+// 1차 범위(모델 선택, API 키)와 2차에 들어올 항목 자리. 모델 말고는 아직 회색 블록이다.
 const SECTIONS = [
   { id: 'model', label: '모델' },
   { id: 'api-key', label: 'API 키' },
@@ -65,11 +67,79 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               ✕
             </button>
           </div>
-          <div aria-hidden className="h-40 shrink-0 rounded-md bg-neutral-300/70" />
-          <div aria-hidden className="h-10 shrink-0 rounded-md bg-neutral-300/70" />
-          <div aria-hidden className="h-40 shrink-0 rounded-md bg-neutral-300/70" />
+          {sectionId === 'model' ? (
+            <ModelSection />
+          ) : (
+            <>
+              <div aria-hidden className="h-40 shrink-0 rounded-md bg-neutral-300/70" />
+              <div aria-hidden className="h-10 shrink-0 rounded-md bg-neutral-300/70" />
+              <div aria-hidden className="h-40 shrink-0 rounded-md bg-neutral-300/70" />
+            </>
+          )}
         </section>
       </div>
+    </div>
+  )
+}
+
+// 고르면 바로 저장한다. 다음 메시지부터 그 모델로 보낸다.
+function ModelSection() {
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!agent.getSettings) {
+      setFailed(true)
+      return
+    }
+    agent.getSettings().then(setSettings, () => setFailed(true))
+  }, [])
+
+  async function choose(model: string) {
+    if (!agent.saveModel || saving) return
+    setSaving(true)
+    setFailed(false)
+    try {
+      setSettings(await agent.saveModel(model))
+    } catch {
+      setFailed(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (failed && !settings) {
+    return <p className="px-1 text-sm text-red-600">설정을 불러오지 못했어요.</p>
+  }
+  if (!settings) return <p className="px-1 text-sm text-neutral-500">불러오는 중…</p>
+  if (settings.models.length === 0) {
+    return (
+      <p className="px-1 text-sm text-neutral-500">
+        고를 수 있는 모델이 없어요. AI Agent 설정에 적힌 모델을 써요.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="px-1 text-xs text-neutral-500">다음 메시지부터 고른 모델로 답해요.</p>
+      {settings.models.map((model) => (
+        <label
+          key={model}
+          className="flex cursor-pointer items-center gap-2 rounded-md bg-white px-3 py-2 text-sm hover:bg-neutral-50"
+        >
+          <input
+            type="radio"
+            name="model"
+            checked={settings.model === model}
+            disabled={saving}
+            onChange={() => choose(model)}
+          />
+          <span className="font-mono text-[13px]">{model}</span>
+        </label>
+      ))}
+      {failed && <p className="px-1 text-sm text-red-600">저장하지 못했어요. 다시 골라주세요.</p>}
     </div>
   )
 }

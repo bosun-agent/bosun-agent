@@ -117,5 +117,21 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   check('브라우저 만료 거부 뒤 Agent 설명이 이어진다', last(d.events) === 'done', types(d.events))
 }
 
+{
+  const put = (model: string) =>
+    fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) })
+  const bad = await put('openrouter/unknown/model')
+  check('목록에 없는 모델은 400', bad.status === 400, bad.status)
+  const settings = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { models: string[] }
+  const chosen = settings.models.at(-1)!
+  const ok = await put(chosen)
+  check('모델을 고르면 저장된다', ok.status === 200 && ((await ok.json()) as { model: string }).model === chosen, chosen)
+  const s2 = await newSession()
+  await post(`/api/sessions/${s2}/messages`, { text: '안녕' })
+  const upstream = (await fetch(`${process.env.AGENT_URL}/api/sessions/${s2}`).then((r) => r.json())) as { model?: string }
+  check('고른 모델이 Agent 실행 요청에 실린다', upstream.model === chosen, upstream.model)
+  await put(settings.models[0])
+}
+
 console.info(failures ? `${failures} failure(s)` : 'all passed')
 process.exit(failures ? 1 : 0)
