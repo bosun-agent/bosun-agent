@@ -1,0 +1,10 @@
+# WEB 연동 확인용 최소 설정. 진짜 Agent 설정(Agent 담당)이 아니다.
+# 도구 없이 모델 대화만 확인한다. Portainer MCP는 Agent 담당 쪽 연결 테스트 뒤에 붙인다.
+# 실행: docker-agent serve api server/dev/agent.yaml (키는 OPENROUTER_API_KEY)
+
+agents:
+  root:
+    model: openrouter/deepseek/deepseek-v4.1-flash
+    description: BOSUN WEB 연동 확인용
+    instruction: |
+      너는 BOSUN의 Docker 관리 도우미다. 한국어로 짧게 답한다.
