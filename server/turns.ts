@@ -1,7 +1,8 @@
 // 한 턴(메시지 하나에 대한 Agent 처리)과 그 안의 승인 요청을 관리한다. 계약 6장 흐름을 코드로 옮긴 것이다.
 //
 // - WEB 백엔드 전체에서 Agent 스트림은 한 번에 하나만 연다(계약 3장). 그래서 상태도 하나다.
-// - 승인 요청은 Airlock webhook으로 와서 지금 도구를 실행 중인 턴에 붙는다(계약 7장).
+// - 승인 요청은 Agent 스트림의 tool_call_confirmation으로 온다. 결정은 Docker Agent /resume으로 보낸다.
+//   Docker Agent는 승인을 한 번에 하나만 기다리고 resume에는 도구 호출 ID가 없다. 그래서 카드도 한 번에 한 장이다.
 // - 승인 카드를 보내면 브라우저 쪽 응답만 끝내고 Agent 스트림은 열어 둔다. 승인·거부 POST가 오면
 //   그 응답으로 나머지를 이어서 보낸다. 그 사이에 온 이벤트는 모아 뒀다가 보낸다.
 
@@ -9,8 +10,6 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent, ApprovalDecision } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import type { DAEvent } from './agentClient.ts'
-import * as airlock from './airlockClient.ts'
-import type { AirlockRequest } from './airlockClient.ts'
 import { config } from './config.ts'
 import { currentModel } from './settings.ts'
 import { addCard, logDecision, updateApprovalCard, type ApprovalStatus } from './store.ts'
@@ -26,11 +25,12 @@ type ApprovalEvent = Extract<AgentEvent, { type: 'approval_required' }>
 
 interface Approval {
   id: string
-  airlockId: string
   sessionId: string
   tool: string
   toolCallId: string
   status: ApprovalStatus
+  // Agent에 결정을 보내는 중. 그 사이 만료 타이머나 두 번째 결정이 또 보내지 않게 막는다.
+  sending: boolean
   timer?: NodeJS.Timeout
   event: ApprovalEvent
 }
@@ -38,7 +38,6 @@ interface Approval {
 interface RunningCall {
   name: string
   args: Record<string, unknown>
-  approvalId?: string
 }
 
 interface Turn {
@@ -49,17 +48,15 @@ interface Turn {
   running: Map<string, RunningCall>
   sink: Sink | null
   buffer: AgentEvent[]
-  // 브라우저에 띄운 카드. 결정이 오기 전까지 다음 카드는 queue에서 기다린다(계약 6장, 한 번에 한 장).
-  shown: Approval | null
-  queue: Approval[]
+  // 결정을 기다리는 카드. 브라우저 스트림이 열려 있으면 바로 보내고, 아니면 다음에 붙을 때 보낸다.
+  waiting: Approval | null
+  // waiting을 브라우저에 보냈는지
+  shown: boolean
   finished: boolean
 }
 
-const AIRLOCK_DEFAULT_TIMEOUT_MS = 300_000
-
 let turn: Turn | null = null
 const approvals = new Map<string, Approval>()
-const seenAirlockIds = new Set<string>()
 // exec 생성 결과로 받은 exec ID → 명령(계약 7장 exec 승인 카드 두 번 문제)
 const execCommands = new Map<string, string>()
 
@@ -105,19 +102,17 @@ function attach(t: Turn, sink: Sink): void {
     sink.end()
     return
   }
-  showNext(t)
+  show(t)
 }
 
 export function detach(sink: Sink): void {
   if (turn?.sink === sink) turn.sink = null
 }
 
-function showNext(t: Turn): void {
-  if (t.shown || !t.sink || t.finished) return
-  const next = t.queue.shift()
-  if (!next) return
-  t.shown = next
-  t.sink.send(next.event)
+function show(t: Turn): void {
+  if (!t.waiting || t.shown || !t.sink || t.finished) return
+  t.shown = true
+  t.sink.send(t.waiting.event)
   // 브라우저 쪽 스트림은 approval_required로 끝난다(계약 4장). Agent 스트림은 계속 열어 둔다.
   const sink = t.sink
   t.sink = null
@@ -127,10 +122,8 @@ function showNext(t: Turn): void {
 function finish(t: Turn): void {
   if (t.finished) return
   t.finished = true
-  // 승인 대기 건은 그걸 기다리는 도구 호출보다 오래 살 수 없다(계약 6장).
-  for (const ap of approvals.values()) {
-    if (ap.status === 'pending' && ap.sessionId === t.sessionId) resolve(ap, 'cancelled', 'turn ended')
-  }
+  // Agent 스트림을 끊으면 Docker Agent도 기다리던 승인을 취소한다. 카드도 취소로 둔다(계약 6장).
+  if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
   t.sink?.end()
   t.sink = null
   t.abort.abort()
@@ -148,8 +141,8 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
     running: new Map(),
     sink: null,
     buffer: [],
-    shown: null,
-    queue: [],
+    waiting: null,
+    shown: false,
     finished: false,
   }
   // 기다리는 동안 다른 요청이 끼어들지 않게 먼저 자리를 잡는다.
@@ -186,6 +179,15 @@ async function pump(t: Turn, upstream: AsyncGenerator<DAEvent>): Promise<void> {
     for await (const ev of upstream) {
       if (t.finished) break
       track(t, ev)
+      if (ev.type === 'tool_call_confirmation') {
+        ask(t, ev as Extract<DAEvent, { type: 'tool_call_confirmation' }>)
+        continue
+      }
+      if (ev.type === 'max_iterations_reached') {
+        // agent.yaml의 max_iterations에 닿으면 Docker Agent가 계속할지 묻고 기다린다. WEB에는 그 화면이 없으므로 멈춘다.
+        agent.resume(t.sessionId, 'reject').catch((err) => console.error('[agent] resume failed', err))
+        continue
+      }
       const { events, abort } = translator.translate(ev)
       for (const event of events) {
         emit(t, event)
@@ -202,7 +204,8 @@ async function pump(t: Turn, upstream: AsyncGenerator<DAEvent>): Promise<void> {
   }
 }
 
-// 진행 중인 도구 호출을 기억한다. 인자는 승인 카드와 exec 명령 짝짓기에만 쓰고 브라우저로 보내지 않는다.
+// 실행 중인 도구 호출을 기억한다. 인자는 exec 명령 짝짓기에만 쓰고 브라우저로 보내지 않는다.
+// Docker Agent는 승인을 받은 뒤에 tool_call을 보낸다. 거부·차단된 호출에는 tool_call 없이 tool_call_response만 온다.
 function track(t: Turn, ev: DAEvent): void {
   if (ev.type === 'tool_call') {
     const call = (ev as Extract<DAEvent, { type: 'tool_call' }>).tool_call
@@ -217,12 +220,11 @@ function track(t: Turn, ev: DAEvent): void {
   }
   if (ev.type === 'tool_call_response') {
     const res = ev as Extract<DAEvent, { type: 'tool_call_response' }>
+    // 결정 전에 그 호출이 끝났으면(Agent 쪽 취소 등) 카드를 취소로 둔다.
+    if (t.waiting?.status === 'pending' && t.waiting.toolCallId === res.tool_call_id) resolve(t.waiting, 'cancelled')
     const call = t.running.get(res.tool_call_id)
     if (!call) return
     t.running.delete(res.tool_call_id)
-    // 도구 호출이 끝났는데 승인이 아직 대기 중이면 거부한다(계약 6장).
-    const ap = call.approvalId ? approvals.get(call.approvalId) : undefined
-    if (ap?.status === 'pending') resolve(ap, 'cancelled', 'tool call ended')
     rememberExec(call, res.response, res.result?.isError ?? false)
   }
 }
@@ -239,85 +241,68 @@ function rememberExec(call: RunningCall, response: string, isError: boolean): vo
   }
 }
 
-// ---- Airlock 승인 요청 ----
+// ---- 승인 요청 ----
 
-export async function onAirlockRequests(requests: AirlockRequest[]): Promise<void> {
-  for (const req of requests) {
-    if (seenAirlockIds.has(req.id)) continue
-    seenAirlockIds.add(req.id)
-    // 다른 Agent의 요청은 건드리지 않는다.
-    if (config.airlockAgentId && req.agentId !== config.airlockAgentId) continue
-    await register(req)
-  }
-}
+// Agent(LLM)가 거부 사유로 받는 문장. 사용자가 거부할 때는 사유를 붙이지 않는다.
+const EXPIRED_REASON = 'The approval request expired without a decision.'
 
-async function register(req: AirlockRequest): Promise<void> {
-  const receivedAt = Date.now()
-  // webhook이 Agent 스트림의 tool_call보다 먼저 올 수 있어 잠깐 기다린다.
-  let match = findCall(req.tool)
-  for (let i = 0; !match && i < 4; i++) {
-    await new Promise((r) => setTimeout(r, 500))
-    match = findCall(req.tool)
+function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>): void {
+  const call = ev.tool_call
+  const tool = call.function.name ?? ev.tool_definition?.name ?? ''
+  let args: Record<string, unknown> = {}
+  try {
+    args = JSON.parse(call.function.arguments || '{}')
+  } catch {
+    // 인자를 못 읽으면 공통 문구 카드를 띄운다.
   }
-  if (!match) {
-    console.warn('[airlock] no running tool call for', req.tool, req.id)
-    await airlock.deny(req.id, 'no matching tool call').catch((err) => console.error('[airlock] deny failed', err))
-    return
-  }
-  const { t, callId, call } = match
+  // Docker Agent는 결정을 받기 전에는 다음 승인을 보내지 않는다. 그래도 오면 앞 카드는 더 쓸 수 없다.
+  if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
 
-  // timeoutMs는 남은 시간이 아니라 설정값이고, webhook은 모았다가 온다. 그래서 넉넉히 앞당긴다(계약 7.1).
-  // 보조 조회로 찾은 건은 timeoutMs가 없고 생성 시각도 모르므로 더 앞당긴다.
-  const timeoutMs = req.timeoutMs || AIRLOCK_DEFAULT_TIMEOUT_MS - config.pendingPollMs * 2
-  const expiresAt = receivedAt + timeoutMs - config.approvalMarginMs
-  const card = approvalCard(req.tool, req.args ?? {}, execCommands)
+  const expiresAt = Date.now() + config.approvalTimeoutMs
+  const card = approvalCard(tool, args, execCommands)
   const ap: Approval = {
     id: `ap_${randomUUID()}`,
-    airlockId: req.id,
     sessionId: t.sessionId,
-    tool: req.tool,
-    toolCallId: callId,
+    tool,
+    toolCallId: call.id ?? '',
     status: 'pending',
+    sending: false,
     event: { type: 'approval_required', approvalId: '', ...card, expiresAt: new Date(expiresAt).toISOString() },
   }
   ap.event.approvalId = ap.id
   approvals.set(ap.id, ap)
-  call.approvalId = ap.id
-  ap.timer = setTimeout(() => expire(ap), Math.max(0, expiresAt + config.expiryGraceMs - Date.now()))
+  ap.timer = setTimeout(() => void expire(ap), config.approvalTimeoutMs + config.expiryGraceMs)
   addCard(t.sessionId, t.index, { kind: 'approval', approvalId: ap.id, status: 'pending', ...card, expiresAt: ap.event.expiresAt })
 
-  t.queue.push(ap)
-  showNext(t)
+  t.waiting = ap
+  t.shown = false
+  show(t)
 }
 
-function findCall(tool: string): { t: Turn; callId: string; call: RunningCall } | undefined {
-  const t = turn
-  if (!t || t.finished) return undefined
-  for (const [callId, call] of t.running) {
-    if (call.name === tool && !call.approvalId) return { t, callId, call }
-  }
-  return undefined
-}
-
-// denyReason을 주면 Airlock에도 거부를 보낸다. 사용자 결정처럼 이미 Airlock에 보낸 경우에는 주지 않는다.
-function resolve(ap: Approval, status: ApprovalStatus, denyReason?: string): void {
+function resolve(ap: Approval, status: ApprovalStatus): void {
   ap.status = status
   clearTimeout(ap.timer)
   updateApprovalCard(ap.id, status)
-  if (turn) {
-    turn.queue = turn.queue.filter((q) => q !== ap)
-    if (turn.shown === ap) turn.shown = null
-  }
-  if (denyReason !== undefined) {
-    airlock.deny(ap.airlockId, denyReason).catch((err) => console.error('[airlock] deny failed', ap.airlockId, err))
+  if (turn?.waiting === ap) {
+    turn.waiting = null
+    turn.shown = false
   }
 }
 
-// 사용자가 없어도 만료되면 거부한다. 이어지는 Agent 출력은 받을 곳이 없으면 버린다(대화 기록에는 남는다).
-function expire(ap: Approval): void {
+// 사용자가 없어도 만료되면 거부한다. 이어지는 Agent 출력은 받을 곳이 없으면 모아 둔다(대화 기록에는 남는다).
+async function expire(ap: Approval): Promise<void> {
+  if (ap.status !== 'pending' || ap.sending) return
+  ap.sending = true
+  try {
+    await agent.resume(ap.sessionId, 'reject', EXPIRED_REASON)
+  } catch (err) {
+    // 보내지 못해도 카드는 만료로 둔다. 턴이 끝나면 Agent 스트림을 끊어 정리된다.
+    console.error('[agent] expiry reject failed', err)
+  }
+  ap.sending = false
   if (ap.status !== 'pending') return
-  resolve(ap, 'expired', 'expired')
-  logDecision({ user: 'system', sessionId: ap.sessionId, approvalId: ap.id, airlockId: ap.airlockId, tool: ap.tool, decision: 'expired' })
+  resolve(ap, 'expired')
+  logDecision({ user: 'system', sessionId: ap.sessionId, approvalId: ap.id, toolCallId: ap.toolCallId, tool: ap.tool, decision: 'expired' })
 }
 
 // ---- 사용자 결정 ----
@@ -336,47 +321,31 @@ export async function decide(
   if (ap.status === 'expired' && decision === 'deny' && reason === 'expired' && t?.sessionId === sessionId) {
     return (sink) => attach(t, sink)
   }
-  if (ap.status !== 'pending' || !t || t.shown !== ap) {
+  if (ap.status !== 'pending' || ap.sending || !t || t.waiting !== ap) {
     throw new HttpError(409, 'APPROVAL_CLOSED', '이미 처리됐거나 만료된 승인이에요.')
   }
 
+  ap.sending = true
   try {
-    if (decision === 'approve') await airlock.approve(ap.airlockId)
-    else await airlock.deny(ap.airlockId, reason)
+    if (decision === 'approve') await agent.resume(sessionId, 'approve')
+    else await agent.resume(sessionId, 'reject', reason === 'expired' ? EXPIRED_REASON : undefined)
   } catch (err) {
-    // Airlock에 대기 건이 없으면(이미 만료) 404가 온다.
-    if (err instanceof airlock.AirlockError && err.status === 404) {
-      resolve(ap, 'expired')
+    ap.sending = false
+    // 턴이 이미 끝났으면 Docker Agent가 실행 중이 아니라고 거절한다.
+    if (err instanceof agent.AgentHttpError && (err.status === 404 || /not (running|found)/.test(err.message))) {
+      if (ap.status === 'pending') resolve(ap, 'cancelled')
       throw new HttpError(409, 'APPROVAL_CLOSED', '이미 처리됐거나 만료된 승인이에요.')
     }
-    console.error('[airlock] decision failed', err)
-    throw new HttpError(502, 'AIRLOCK_UNAVAILABLE', '승인 서버에 연결하지 못했어요. 다시 눌러주세요.')
+    console.error('[agent] decision failed', err)
+    throw new HttpError(502, 'AGENT_UNAVAILABLE', 'AI Agent에 연결하지 못했어요. 다시 눌러주세요.')
   }
+  ap.sending = false
 
   const status: ApprovalStatus =
     decision === 'approve' ? 'approved' : reason === 'expired' ? 'expired' : 'denied'
-  resolve(ap, status)
+  // 보내는 사이 턴이 끝나 취소됐으면 그 상태를 둔다.
+  if (ap.status === 'pending') resolve(ap, status)
   // 로그인을 붙이기 전이라 사용자는 단일 관리자로 기록한다(D4 A-1).
-  logDecision({ user: 'admin', sessionId, approvalId, airlockId: ap.airlockId, tool: ap.tool, decision: status })
+  logDecision({ user: 'admin', sessionId, approvalId, toolCallId: ap.toolCallId, tool: ap.tool, decision: status })
   return (sink) => attach(t, sink)
-}
-
-// ---- 시작 정리와 보조 조회 ----
-
-// 백엔드가 다시 켜지면 기다리는 도구 호출이 없으므로 남은 대기 건을 모두 거부한다(계약 6장).
-export async function cleanupPending(): Promise<void> {
-  const list = await airlock.pending()
-  for (const req of list) {
-    if (config.airlockAgentId && req.agentId !== config.airlockAgentId) continue
-    seenAirlockIds.add(req.id)
-    await airlock.deny(req.id, 'web backend restarted').catch((err) => console.error('[airlock] deny failed', err))
-  }
-  if (list.length > 0) console.info(`[airlock] cleaned up ${list.length} pending request(s)`)
-}
-
-// Airlock은 webhook 전송이 실패해도 다시 보내지 않는다. 도구 실행 중에는 대기 목록을 같이 본다(계약 6장).
-export async function pollPending(): Promise<void> {
-  if (!turn || turn.running.size === 0) return
-  const list = await airlock.pending()
-  await onAirlockRequests(list.filter((r) => !seenAirlockIds.has(r.id)))
 }

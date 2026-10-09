@@ -35,7 +35,7 @@ const pendingApprovals = new Map<string, PendingApproval>()
 
 function approvalEvent(
   sessionId: string,
-  { willFail = false, store = true, ttlMs = 5 * 60_000 - 5_000 } = {},
+  { willFail = false, store = true, ttlMs = 5 * 60_000 } = {},
 ): AgentEvent {
   const approvalId = `ap_${crypto.randomUUID().slice(0, 8)}`
   const tool = 'docker_container_remove'
@@ -53,22 +53,16 @@ function approvalEvent(
         message: '대상 리소스와 옵션을 다시 한번 확인해주세요.',
       },
     ],
-    // 기본값은 Airlock 기본 대기 5분에서 몇 초 앞당긴 값
+    // 기본값은 WEB 백엔드 승인 대기 시간(APPROVAL_TIMEOUT_MS) 기본값 5분
     expiresAt: new Date(Date.now() + ttlMs).toISOString(),
   }
 }
 
-// Airlock은 도구 호출을 붙잡고 승인을 요청하므로, 호출 표시가 승인 요청보다 먼저 온다.
+// Docker Agent는 도구를 실행하기 전에 승인을 묻는다. 호출 표시(tool_status running)는 승인 뒤에 온다.
 async function* requestApproval(
   sessionId: string,
   options?: Parameters<typeof approvalEvent>[1],
 ): AsyncGenerator<AgentEvent> {
-  yield {
-    type: 'tool_status',
-    tool: 'docker_container_remove',
-    status: 'running',
-    summary: '도구 호출하는 중',
-  }
   await wait(400)
   yield approvalEvent(sessionId, options)
 }
@@ -212,6 +206,12 @@ async function* sendDecision(
     return
   }
 
+  yield {
+    type: 'tool_status',
+    tool: pending.tool,
+    status: 'running',
+    summary: '도구 호출하는 중',
+  }
   await wait(600)
   if (pending.willFail) {
     yield {

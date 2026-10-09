@@ -1,4 +1,4 @@
-// 가짜 Agent·Airlock을 띄운 상태에서 WEB 백엔드 흐름을 확인하는 스모크 테스트.
+// 가짜 Agent를 띄운 상태에서 WEB 백엔드 흐름을 확인하는 스모크 테스트.
 // 실행: npm run server:fake, npm run server를 띄운 뒤 npm run server:smoke
 
 import type { AgentEvent } from '../../src/lib/agentProtocol.ts'
@@ -71,6 +71,7 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const ap = approvalOf(r.events)
   const d = await decide(ap!.approvalId, 'deny')
   check('거부 뒤 Agent 설명이 이어진다', last(d.events) === 'done' && text(d.events).includes('승인되지 않아서'), types(d.events))
+  check('사용자 거부는 차단 카드나 실패 줄을 만들지 않는다', !types(d.events).includes('rejected') && !types(d.events).includes('tool_status'), types(d.events))
 }
 {
   const r = await send('명령 실행해줘')
@@ -85,11 +86,15 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
 }
 {
   const r = await send('차단되는 작업')
-  check('arg_policy 위반은 rejected + done', types(r.events).includes('rejected') && last(r.events) === 'done', types(r.events))
+  check('tool_guard 거부는 rejected + done', types(r.events).includes('rejected') && last(r.events) === 'done', types(r.events))
+}
+{
+  const r = await send('금지된 도구 써줘')
+  check('permissions.deny는 rejected', types(r.events).includes('rejected'), types(r.events))
 }
 {
   const r = await send('없는 도구 써줘')
-  check('노출 안 된 도구는 rejected', types(r.events).includes('rejected'), types(r.events))
+  check('모델이 없는 도구를 부르면 실패 줄만', !types(r.events).includes('rejected') && types(r.events).includes('tool_status'), types(r.events))
 }
 {
   const r = await send('훅 테스트')
@@ -101,20 +106,30 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   check('Agent 오류는 error로 끝나고 done이 없다', last(r.events) === 'error' && !types(r.events).includes('done'), types(r.events))
 }
 {
+  const r = await send('반복 한도')
+  check('max_iterations에 닿으면 WEB이 멈추게 하고 done', last(r.events) === 'done' && text(r.events).includes('stopped'), types(r.events))
+}
+{
   const res = await fetch(`${BASE}/api/sessions/${sid}/messages`)
   const { messages } = (await res.json()) as { messages: { role: string; content: string; cards?: unknown[] }[] }
   const withCards = messages.filter((m) => m.cards?.length)
-  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 9, messages.length)
-  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length >= 5, withCards)
+  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 11, messages.length)
+  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 6, withCards)
 }
 {
   const r = await send('만료 테스트')
   const ap = approvalOf(r.events)
+  const timeout = Number(process.env.APPROVAL_TIMEOUT_MS || 300_000)
   const wait = new Date(ap!.expiresAt).getTime() - Date.now()
-  check('만료 시각은 Airlock 대기(30초)보다 20초 앞선다', wait > 5_000 && wait < 11_000, wait)
-  await new Promise((r) => setTimeout(r, wait))
+  check('만료 시각은 카드를 띄운 때 + APPROVAL_TIMEOUT_MS', wait > timeout - 5_000 && wait <= timeout, wait)
+  // 만료까지 기다리지 않고 브라우저가 보내는 만료 거부를 흉내 낸다.
   const d = await decide(ap!.approvalId, 'deny', 'expired')
-  check('브라우저 만료 거부 뒤 Agent 설명이 이어진다', last(d.events) === 'done', types(d.events))
+  check('만료 거부 뒤 Agent 설명이 이어진다', last(d.events) === 'done' && text(d.events).includes('승인되지 않아서'), types(d.events))
+  const { messages } = (await fetch(`${BASE}/api/sessions/${sid}/messages`).then((res) => res.json())) as {
+    messages: { cards?: { kind: string; approvalId?: string; status?: string }[] }[]
+  }
+  const card = messages.flatMap((m) => m.cards ?? []).find((c) => c.approvalId === ap!.approvalId)
+  check('만료 카드는 expired로 복원된다', card?.status === 'expired', card)
 }
 
 {

@@ -1,21 +1,21 @@
 // Docker Agent 이벤트 → WEB 이벤트(계약 8.1 대응표). 표에 없는 이벤트는 버린다.
-// 승인 요청(approval_required)은 여기서 만들지 않는다. Airlock webhook에서 온다(계약 6장).
+// 승인 요청(tool_call_confirmation)은 여기서 바꾸지 않는다. turns.ts가 카드를 만들고 결정을 기다린다(계약 6장).
 
 import type { AgentEvent } from '../src/lib/agentProtocol.ts'
 import type { DAEvent } from './agentClient.ts'
 import { maskText } from './mask.ts'
 import { toolSummary } from './tools.ts'
 
-// Airlock 0.2.38 하드 차단 문구(계약 6장).
-// arg_policy 위반은 isError 결과 본문으로 그대로 온다(`middleware/core/arg-policy.js` violationResponse).
-const ARG_POLICY_DENIED = /^[\w.[\]]+ .+ is not permitted for [\w.-]+\. Allowed /
-// 노출 안 된 도구는 MCP 오류(McpError)로 온다. Docker Agent가 "Error calling tool: failed to call tool: "로 감싸고
-// MCP SDK가 "MCP error <code>: "를 붙인다. 가운데 감싸는 문구는 실제 연동 때 한 번 확인한다.
-const TOOL_NOT_AVAILABLE = /^Error calling tool: .*MCP error -?\d+: Tool not available: /
+// 도구 호출이 정책으로 막혔을 때 Docker Agent가 도구 결과로 돌려주는 문구(v1.145.0 `pkg/runtime/toolexec`).
+// 도구 결과에는 컨테이너 이름·로그 같은 외부 문자열이 섞이므로 맨 앞부터 맞춰 본다(계약 6장).
+// - permissions.deny 또는 restricted 모드: "Tool 'x' is denied by permissions configuration." 등(denyErrorMessage)
+// - tool_guard·tool_input_transform·pre_tool_use·permission_request 훅 거부: blockToolHook
+const POLICY_DENIED = [/^Tool '[^']+' is denied by /, /^The tool call was rejected by a \w+ hook\./]
+// 사용자가 거부했거나 WEB이 만료로 거부한 경우(handleResume). 카드에 이미 결과가 나오므로 따로 알리지 않는다.
+const USER_REJECTED = /^The user rejected the tool call\./
 
-export function isHardBlock(response: string, isError: boolean): boolean {
-  if (!isError) return false
-  return ARG_POLICY_DENIED.test(response) || TOOL_NOT_AVAILABLE.test(response)
+export function isPolicyDenied(response: string, isError: boolean): boolean {
+  return isError && POLICY_DENIED.some((re) => re.test(response))
 }
 
 const HOOK_BLOCKED_REASON = '보안 규칙에 걸려 요청을 처리하지 않았어요.'
@@ -59,7 +59,8 @@ export class Translator {
         const res = ev as Extract<DAEvent, { type: 'tool_call_response' }>
         const name = res.tool_definition?.name ?? ''
         const isError = res.result?.isError ?? false
-        if (isHardBlock(res.response, isError)) {
+        if (isError && USER_REJECTED.test(res.response)) return { events: [] }
+        if (isPolicyDenied(res.response, isError)) {
           // 규칙 ID가 오지 않으므로 공통 코드를 쓴다. 이어지는 Agent 설명이 text_delta로 온다(계약 6장).
           return {
             events: [
@@ -72,9 +73,8 @@ export class Translator {
         return { events: [{ type: 'tool_status', tool: name, status, summary: toolSummary(name, status) }] }
       }
 
-      case 'tool_call_confirmation':
       case 'elicitation_request':
-        // Airlock 모드에서는 오면 안 된다. 조용히 멈추지 않게 설정 오류로 끝낸다(계약 6장).
+        // MCP 서버가 사용자 입력을 요청한 경우. WEB에는 이 입력 화면이 없으므로 조용히 멈추지 않게 설정 오류로 끝낸다.
         this.failed = true
         return {
           events: [

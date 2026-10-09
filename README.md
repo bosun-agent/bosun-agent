@@ -15,27 +15,27 @@ npm install
 npm run dev          # 목업으로 화면만
 ```
 
-WEB 백엔드까지 같이 돌리려면 터미널 3개를 띄운다. 실제 Agent·Airlock이 없을 때는 가짜 서버를 쓴다.
+WEB 백엔드까지 같이 돌리려면 터미널 3개를 띄운다. 실제 Agent가 없을 때는 가짜 서버를 쓴다.
 
 ```bash
-npm run server:fake  # 가짜 Docker Agent(8080) + 가짜 Airlock(4113)
+npm run server:fake  # 가짜 Docker Agent(8080)
 npm run server       # WEB 백엔드(3001). 코드를 고치면 다시 뜬다
 npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
 npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 ```
 
-가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제(승인 카드), 만료(10초 뒤 만료), 명령(exec 승인 두 번), 차단, 없는 도구, 목록, 훅, 오류. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제(승인 카드), 명령(exec 승인 두 번), 차단(훅 거부), 금지(permissions.deny), 없는 도구, 목록, 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
 
 ### WEB 백엔드 구조 (`server/`)
 
 | 파일 | 하는 일 |
 |---|---|
-| `main.ts` | 진입점. 시작할 때 Airlock에 남은 대기 건을 거부하고, 대기 목록 보조 조회를 돌린다 |
-| `app.ts` | 브라우저용 `/api/*`와 Airlock 전용 `/internal/airlock/webhook` |
-| `turns.ts` | 한 턴의 Agent 스트림과 승인 요청 관리(계약 6장): 카드 띄우기, 결정 전달, 만료, 스트림 이어붙이기 |
-| `translate.ts` | Docker Agent 이벤트 → 화면 이벤트, 하드 차단 판별 |
+| `main.ts` | 진입점. 시작할 때 대기 중이던 카드를 취소로 바꾼다 |
+| `app.ts` | 브라우저용 `/api/*` |
+| `turns.ts` | 한 턴의 Agent 스트림과 승인 요청 관리(계약 6장): `tool_call_confirmation` → 카드, `/resume`으로 결정 전달, 만료, 스트림 이어붙이기 |
+| `translate.ts` | Docker Agent 이벤트 → 화면 이벤트, 정책 차단 판별 |
 | `tools.ts` | 도구 이름 → 화면 문구, 승인 카드 템플릿 |
-| `agentClient.ts`, `airlockClient.ts` | Docker Agent API, Airlock management API 클라이언트 |
+| `agentClient.ts` | Docker Agent API 클라이언트 |
 | `mask.ts` | 알려진 비밀값 형식 가리기 |
 | `store.ts` | 승인·차단 카드와 승인 감사 기록(SQLite, `server/data/web.db`. 커밋하지 않는다) |
 
@@ -61,13 +61,13 @@ npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 
 - **레이아웃**(2026-09-29 팀 와이어프레임 기준): 빈 대화는 가운데에 제목·입력창(Home), 대화가 시작되면 가운데 칼럼에 메시지와 아래 입력창. 헤더 없이 왼쪽 위 ☰ 버튼만 둔다
 - **대화 목록**(`SessionSidebar`): ☰로 열고 닫는 사이드바, 새 대화, 처리 중 표시. 대화가 여러 개여도 처리는 한 번에 한 대화만 한다(인터페이스 계약 3장)
-- **처리 과정**(`ProcessSteps`): 도구 목록 불러오기 → 요청 이해 → 도구 호출 → 승인 대기 → 실행을 실시간으로 보여주고, 끝나면 "처리 과정 보기"로 접는다. 도구 인자와 원본 결과는 보여주지 않는다
+- **처리 과정**(`ProcessSteps`): 도구 목록 불러오기 → 요청 이해 → 승인 대기 → 도구 실행을 실시간으로 보여주고, 끝나면 "처리 과정 보기"로 접는다. 도구 인자와 원본 결과는 보여주지 않는다
 - **메시지 상태**(`MessageStatus`): `thinking`, `streaming`, `done`, `pending_approval`(승인 카드), `approval_expired`, `rejected`(하드 차단, 버튼 없음), `error`
 - 화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`)
 - 라이트 모드 고정(다크 모드는 2026-09-29 피드백에 따라 제거)
-- WEB 백엔드(`server/`): 가짜 Agent·Airlock으로 승인·거부·만료·차단까지 확인함
+- WEB 백엔드(`server/`): Docker Agent 자체 승인(`tool_call_confirmation` → `/resume`) 기준. 가짜 Agent로 승인·거부·만료·차단까지 확인함. Airlock은 일단 쓰지 않는다(2026-10-08)
 - 대화 복원(`npm run dev:http`): 사이드바에 서버 대화 목록이 나오고, 고르면 내용과 승인·차단 카드가 돌아온다. 새로고침해도 대기 중인 승인 카드를 다시 승인할 수 있다
-- 아직 없음: 로그인(JWT), 실제 Agent·Airlock 연동
+- 아직 없음: 로그인(JWT), Portainer MCP가 붙은 실제 Agent로 승인 카드 확인
 
 ## 디자인 결정 기록
 
@@ -81,7 +81,7 @@ npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 2026-09-29 UI 피드백 반영:
 
 - **레이아웃만 먼저**: 디자인은 뒤로 미루고 와이어프레임 5개 화면(Home, 응답 완료, 사이드바, 처리 과정 승인 대기, 처리 과정 자세히)의 배치를 따름.
-- **여러 대화**: 사이드바로 제공하되 처리는 한 번에 하나. Airlock 승인 알림에 대화 식별자가 없어서, 동시에 돌리면 승인 카드를 붙일 대화를 알 수 없기 때문.
+- **여러 대화**: 사이드바로 제공하되 처리는 한 번에 하나. 당시 Airlock 승인 알림에 대화 식별자가 없어서였다. 지금은 관리자 1명 기준이라 턴 상태를 하나로 두려고 유지한다.
 - **처리 과정**: 제안대로 실시간 표시 후 접기. 순서는 Docker Agent 실제 동작(도구 목록을 먼저 불러온 뒤 모델 호출)에 맞춤. 이를 위해 `progress` 이벤트 추가(계약 v0.2.8).
 - **다크 모드 제거**: 화면이 늘어날수록 스타일을 두 벌 맞추는 부담이 커서 라이트 모드로 고정.
 
@@ -90,8 +90,8 @@ npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 | 원본 | 팀 공유용 이름 | 내용 |
 |---|---|---|
 | [docs/architecture-web.md](docs/architecture-web.md) | `WEB_아키텍처_설계서.md` | WEB 범위·경계, 화면 상태, 기술 선택, WEB 백엔드 역할, 구현 현황 |
-| [docs/interface-web-agent.md](docs/interface-web-agent.md) | `WEB_인터페이스_계약.md` | 브라우저 ↔ WEB 백엔드 형식, WEB 백엔드 ↔ Agent/Airlock 승인 흐름, 정할 것 |
+| [docs/interface-web-agent.md](docs/interface-web-agent.md) | `WEB_인터페이스_계약.md` | 브라우저 ↔ WEB 백엔드 형식, WEB 백엔드 ↔ Agent 승인 흐름, 정할 것 |
 | [docs/web-summary.md](docs/web-summary.md) | `WEB_정리.md` | 팀 공유용 요약: WEB이 하는 일, 승인 흐름, 주고받는 데이터, 부탁드리는 것 |
 
 - 원본은 이 저장소에서 고치고, 팀에 공유할 때 공유용 이름으로 복사한다. 설계서 본문은 공유용 이름으로 서로를 가리킨다.
-- 요약: 브라우저는 WEB 백엔드하고만 통신한다(HTTP POST + SSE). 승인은 Airlock이 붙잡고, WEB 백엔드가 webhook으로 받아 카드로 띄운 뒤 결정을 management API로 전달한다.
+- 요약: 브라우저는 WEB 백엔드하고만 통신한다(HTTP POST + SSE). 승인은 Docker Agent 정책이 실행을 멈추고 묻고, WEB 백엔드가 그 요청을 카드로 띄운 뒤 결정을 Agent `/resume`으로 전달한다.

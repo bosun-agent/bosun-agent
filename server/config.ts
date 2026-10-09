@@ -1,5 +1,5 @@
 // WEB 백엔드 설정. 주소와 비밀값은 환경변수로 받는다.
-// 연동 전에 받을 값(Airlock secret, webhook 헤더 등)은 인터페이스 계약 7장에 있다.
+// 연동 전에 받을 값은 인터페이스 계약 7장에 있다.
 
 function num(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -27,23 +27,13 @@ export const config = {
     .map((m) => m.trim())
     .filter(Boolean),
 
-  // Airlock management API. secret은 브라우저에 절대 내려보내지 않는다(계약 6장).
-  airlockUrl: process.env.AIRLOCK_MGMT_URL ?? 'http://127.0.0.1:4113',
-  airlockSecret: process.env.AIRLOCK_MGMT_SECRET ?? '',
-  // 비어 있으면 모든 agentId를 받는다. Airlock config의 agent id와 맞춘다.
-  airlockAgentId: process.env.AIRLOCK_AGENT_ID ?? '',
-  // Airlock webhook provider의 headers에 `Authorization: Bearer <값>`으로 넣을 값.
-  webhookToken: process.env.WEBHOOK_TOKEN ?? '',
-
   // 승인·차단 카드와 승인 감사 기록을 두는 SQLite 파일. 대화 내용은 Docker Agent session.db에 있다.
   dbPath: process.env.WEB_DB_PATH ?? 'server/data/web.db',
 
-  // expiresAt은 webhook 받은 시각 + timeoutMs에서 이만큼 앞당긴다(계약 7.1).
-  approvalMarginMs: num('APPROVAL_MARGIN_MS', 20_000),
+  // 승인 카드를 띄운 뒤 이 시간이 지나면 거부한다. Docker Agent는 승인을 무기한 기다리므로 WEB이 정한다(계약 6장).
+  approvalTimeoutMs: num('APPROVAL_TIMEOUT_MS', 300_000),
   // 브라우저가 만료 거부를 먼저 보낼 수 있게, 서버 쪽 자동 거부는 expiresAt보다 조금 늦게 한다.
   expiryGraceMs: num('EXPIRY_GRACE_MS', 3_000),
-  // webhook을 놓쳤을 때를 대비한 GET /hitl/pending 보조 조회 간격(계약 6장).
-  pendingPollMs: num('PENDING_POLL_MS', 5_000),
   // 리버스 프록시 idle 타임아웃에 끊기지 않도록 보내는 SSE 주석 간격(계약 7.1).
   pingMs: num('PING_MS', 15_000),
 }

@@ -1,15 +1,14 @@
-// 브라우저 ↔ WEB 백엔드 엔드포인트(계약 3장)와 Airlock webhook 수신 경로(계약 7장).
+// 브라우저 ↔ WEB 백엔드 엔드포인트(계약 3장).
 
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { ApprovalDecision, RestoredCard, RestoredMessage, SessionSummary } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
-import type { AirlockWebhookBody } from './airlockClient.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
 import { getSettings, saveModel } from './settings.ts'
 import { cardsFor } from './store.ts'
-import { HttpError, decide, detach, onAirlockRequests, startTurn, type Sink } from './turns.ts'
+import { HttpError, decide, detach, startTurn, type Sink } from './turns.ts'
 
 export const app = new Hono()
 
@@ -135,18 +134,4 @@ app.put('/api/settings', async (c) => {
     throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 모델이에요.')
   }
   return c.json(getSettings())
-})
-
-// ---- Airlock 전용 /internal ----
-// 브라우저용 경로와 나눠 둔다. 배포 때는 리버스 프록시에서 /internal을 바깥에 열지 않는다.
-
-app.post('/internal/airlock/webhook', async (c) => {
-  if (config.webhookToken && c.req.header('Authorization') !== `Bearer ${config.webhookToken}`) {
-    return c.json({ error: 'UNAUTHORIZED' }, 401)
-  }
-  const body = await c.req.json<AirlockWebhookBody>().catch(() => null)
-  if (!body || !Array.isArray(body.requests)) return c.json({ error: 'BAD_REQUEST' }, 400)
-  // 받으면 바로 200을 돌려주고 처리는 뒤에서 한다(계약 6장).
-  void onAirlockRequests(body.requests).catch((err) => console.error('[airlock] webhook handling failed', err))
-  return c.json({ ok: true })
 })

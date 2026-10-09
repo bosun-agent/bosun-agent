@@ -287,11 +287,9 @@ function App() {
         status: 'thinking',
         approval: undefined,
         steps:
+          // 승인 뒤 도구 실행 줄은 Agent가 보내는 tool_status로 붙는다.
           decision === 'approve'
-            ? startStep(finishActive(steps, 'done', '승인함'), {
-                label: '승인된 작업 실행하는 중',
-                doneLabel: '승인된 작업 실행함',
-              })
+            ? finishActive(steps, 'done', '승인함')
             : finishActive(steps, 'stopped', '거부함'),
       }
     })

@@ -1,5 +1,5 @@
-// 개발용 가짜 Docker Agent + Airlock. LLM이나 Portainer 없이 WEB 백엔드 흐름을 끝까지 돌려 보려고 쓴다.
-// 이벤트·응답 모양은 실제 소스(docker-agent pkg/runtime/event.go, airlock-bot 0.2.38 hitl)를 따른다.
+// 개발용 가짜 Docker Agent. LLM이나 Portainer 없이 WEB 백엔드 흐름을 끝까지 돌려 보려고 쓴다.
+// 이벤트·응답 모양은 실제 소스(docker-agent v1.145.0 pkg/runtime/event.go, pkg/runtime/toolexec)를 따른다.
 // 실행: npm run server:fake → 메시지 내용의 키워드로 시나리오를 고른다(아래 SCENARIOS).
 
 import { randomUUID } from 'node:crypto'
@@ -8,66 +8,8 @@ import { Hono } from 'hono'
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming'
 
 const agentPort = Number(new URL(process.env.AGENT_URL ?? 'http://127.0.0.1:8080').port)
-const airlockPort = Number(new URL(process.env.AIRLOCK_MGMT_URL ?? 'http://127.0.0.1:4113').port)
-const secret = process.env.AIRLOCK_MGMT_SECRET ?? ''
-const webhookUrl = process.env.FAKE_WEBHOOK_URL ?? `http://127.0.0.1:${process.env.PORT ?? 3001}/internal/airlock/webhook`
-const webhookToken = process.env.WEBHOOK_TOKEN ?? ''
-const AGENT_ID = process.env.AIRLOCK_AGENT_ID || 'bosun-agent'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-// ---- 가짜 Airlock (management API + webhook 발송) ----
-
-type Outcome = 'approved' | 'denied' | 'timeout'
-interface Pending {
-  req: { id: string; code: string; agentId: string; tool: string; args: Record<string, unknown> }
-  settle: (o: Outcome) => void
-}
-const pending = new Map<string, Pending>()
-
-function askHuman(tool: string, args: Record<string, unknown>, timeoutMs: number): Promise<Outcome> {
-  const { _airlock, ...rest } = args
-  void _airlock
-  const req = { id: randomUUID(), code: randomUUID().slice(0, 8).toUpperCase(), agentId: AGENT_ID, tool, args: rest }
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => settle('timeout'), timeoutMs)
-    function settle(o: Outcome) {
-      clearTimeout(timer)
-      pending.delete(req.id)
-      resolve(o)
-    }
-    pending.set(req.id, { req, settle })
-    // 실제 Airlock처럼 잠깐 모았다가 보낸다. 실패해도 다시 보내지 않는다.
-    setTimeout(() => {
-      fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(webhookToken ? { Authorization: `Bearer ${webhookToken}` } : {}) },
-        body: JSON.stringify({ requests: [{ ...req, timeoutMs, badgeCount: pending.size }], text: `Approval needed: ${tool}` }),
-      }).catch((err) => console.warn('[fake airlock] webhook failed:', err.message))
-    }, 300)
-  })
-}
-
-const airlockApp = new Hono()
-airlockApp.use(async (c, next) => {
-  if (c.req.header('Authorization') !== `Bearer ${secret}`) return c.json({ error: 'Unauthorized' }, 401)
-  await next()
-})
-airlockApp.get('/hitl/pending', (c) => c.json([...pending.values()].map((p) => p.req)))
-airlockApp.post('/hitl/approve/:id', (c) => {
-  const p = pending.get(c.req.param('id'))
-  if (!p) return c.json({ error: 'Not found' }, 404)
-  p.settle('approved')
-  return c.json({ ok: true })
-})
-airlockApp.post('/hitl/deny/:id', (c) => {
-  const p = pending.get(c.req.param('id'))
-  if (!p) return c.json({ error: 'Not found' }, 404)
-  p.settle('denied')
-  return c.json({ ok: true })
-})
-
-// ---- 가짜 Docker Agent ----
 
 interface Session {
   id: string
@@ -79,10 +21,17 @@ interface Session {
 }
 const sessions = new Map<string, Session>()
 
+interface Resume {
+  confirmation: string
+  reason?: string
+}
+
 class Run {
   private stream: SSEStreamingApi
   private session: Session
   private reply = ''
+  // 승인을 기다리는 중이면 결정을 넘겨받을 함수. 진짜처럼 기다리는 건이 없으면 resume을 버린다.
+  waiting: ((r: Resume) => void) | null = null
   constructor(stream: SSEStreamingApi, session: Session) {
     this.stream = stream
     this.session = session
@@ -108,30 +57,52 @@ class Run {
     await sleep(200)
   }
 
-  // ask면 가짜 Airlock에 승인을 요청하고 결과에 따라 응답한다. 돌려주는 값은 Agent가 받는 도구 결과다.
-  async tool(
-    name: string,
-    args: Record<string, unknown>,
-    result: { ask?: boolean; timeoutMs?: number; output?: string; error?: string },
-  ): Promise<{ output: string; isError: boolean }> {
-    const id = `call_${randomUUID().slice(0, 8)}`
-    await this.send({ type: 'tool_call', tool_call: { id, type: 'function', function: { name, arguments: JSON.stringify(args) } } })
-    let res = { output: result.output ?? '{}', isError: false }
-    if (result.error !== undefined) res = { output: result.error, isError: true }
-    else if (result.ask) {
-      const outcome = await askHuman(name, args, result.timeoutMs ?? 300_000)
-      if (outcome === 'denied') res = { output: 'Request denied by operator', isError: true }
-      if (outcome === 'timeout') res = { output: 'Approval timed out. Re-request when operator is available.', isError: true }
-    }
-    await sleep(300)
-    await this.send({
+  private respond(id: string, name: string, output: string, isError: boolean) {
+    return this.send({
       type: 'tool_call_response',
       tool_call_id: id,
       tool_definition: { name },
-      response: res.output,
-      result: { output: res.output, ...(res.isError ? { isError: true } : {}) },
+      response: output,
+      result: { output, ...(isError ? { isError: true } : {}) },
     })
-    return res
+  }
+
+  // 진짜 Docker Agent 순서(toolexec dispatcher): 승인이 필요하면 tool_call_confirmation을 보내고 /resume을 기다린다.
+  // 승인되거나 승인이 필요 없으면 그때 tool_call을 보내고 실행한다. 막히면 tool_call 없이 오류 결과만 보낸다.
+  // 돌려주는 값은 모델이 받는 도구 결과다.
+  async tool(
+    name: string,
+    args: Record<string, unknown>,
+    result: { ask?: boolean; output?: string; deny?: string; hookBlock?: string },
+  ): Promise<{ output: string; isError: boolean }> {
+    const call = { id: `call_${randomUUID().slice(0, 8)}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }
+
+    if (result.deny !== undefined) {
+      await this.respond(call.id, name, result.deny, true)
+      return { output: result.deny, isError: true }
+    }
+    if (result.hookBlock !== undefined) {
+      const message = `The tool call was rejected by a tool_guard hook. Reason: ${result.hookBlock}`
+      await this.send({ type: 'hook_blocked', tool_call: call, tool_definition: { name }, message })
+      await this.respond(call.id, name, message, true)
+      return { output: message, isError: true }
+    }
+    if (result.ask) {
+      await this.send({ type: 'tool_call_confirmation', tool_call: call, tool_definition: { name } })
+      const decision = await new Promise<Resume>((r) => (this.waiting = r))
+      this.waiting = null
+      if (decision.confirmation !== 'approve') {
+        const reason = decision.reason?.trim()
+        const output = `The user rejected the tool call.${reason ? ` Reason: ${reason}` : ''}`
+        await this.respond(call.id, name, output, true)
+        return { output, isError: true }
+      }
+    }
+    await this.send({ type: 'tool_call', tool_call: call })
+    await sleep(300)
+    const output = result.output ?? '{}'
+    await this.respond(call.id, name, output, false)
+    return { output, isError: false }
   }
 
   async stop() {
@@ -140,23 +111,15 @@ class Run {
   }
 }
 
-const REASON = { _airlock: { reason: '사용자가 요청한 작업' } }
+// 세션 ID → 진행 중인 실행. resume이 여기로 결정을 넘긴다.
+const runs = new Map<string, Run>()
 
 const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
   {
-    // 승인 대기가 짧게 끝나는 경우. WEB expiresAt은 30초 - 20초 = 10초 뒤
-    match: /만료/,
+    match: /삭제|지워|만료/,
     run: async (r) => {
       await r.say('nginx-web 컨테이너를 삭제할게요.')
-      const res = await r.tool('proxy_delete', { environment_id: 1, method: 'DELETE', path: '/containers/nginx-web', ...REASON }, { ask: true, timeoutMs: 30_000 })
-      await r.say(res.isError ? '\n승인되지 않아서 삭제하지 않았어요.' : '\nnginx-web을 삭제했어요.')
-    },
-  },
-  {
-    match: /삭제|지워/,
-    run: async (r) => {
-      await r.say('nginx-web 컨테이너를 삭제할게요.')
-      const res = await r.tool('proxy_delete', { environment_id: 1, method: 'DELETE', path: '/containers/nginx-web', ...REASON }, { ask: true })
+      const res = await r.tool('proxy_delete', { environment_id: 1, method: 'DELETE', path: '/containers/nginx-web' }, { ask: true })
       await r.say(res.isError ? '\n승인되지 않아서 삭제하지 않았어요.' : '\nnginx-web을 삭제했어요.')
     },
   },
@@ -167,32 +130,38 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
       await r.say('web 컨테이너 안에서 ls -al을 실행할게요.')
       const created = await r.tool(
         'proxy_exec',
-        { environment_id: 1, method: 'POST', path: '/containers/web/exec', body: { Cmd: ['ls', '-al'], AttachStdout: true }, ...REASON },
+        { environment_id: 1, method: 'POST', path: '/containers/web/exec', body: { Cmd: ['ls', '-al'], AttachStdout: true } },
         { ask: true, output: '{"Id":"3f9a1c0e"}' },
       )
       if (created.isError) return r.say('\n승인되지 않아서 실행하지 않았어요.')
-      const started = await r.tool('proxy_exec', { environment_id: 1, method: 'POST', path: '/exec/3f9a1c0e/start', body: {}, ...REASON }, { ask: true, output: 'total 8\ndrwxr-xr-x 2 root root 4096 .' })
+      const started = await r.tool('proxy_exec', { environment_id: 1, method: 'POST', path: '/exec/3f9a1c0e/start', body: {} }, { ask: true, output: 'total 8\ndrwxr-xr-x 2 root root 4096 .' })
       await r.say(started.isError ? '\n실행은 승인되지 않았어요.' : '\n실행했어요. 파일이 하나 있어요.')
     },
   },
   {
-    // arg_policy 위반(하드 차단). isError 결과 본문으로 온다.
+    // tool_guard 훅 거부(Secure 검사). hook_blocked 이벤트와 오류 결과가 온다.
     match: /차단|privileged/,
     run: async (r) => {
-      await r.tool('proxy_lifecycle', { environment_id: 1, method: 'PATCH', path: '/containers/web/update', ...REASON }, {
-        error: 'method "PATCH" is not permitted for proxy_lifecycle. Allowed method: POST. Do not retry with a different value.',
+      await r.tool('proxy_lifecycle', { environment_id: 1, method: 'POST', path: '/containers/create' }, {
+        hookBlock: 'privileged containers are not allowed',
       })
       await r.say('그 작업은 보안 정책상 채팅으로 실행할 수 없어요. 필요하면 Portainer 대시보드에서 직접 해주세요.')
     },
   },
   {
-    // 노출 안 된 도구(하드 차단). MCP 오류를 Docker Agent가 감싼 형태
+    // agent.yaml permissions.deny
+    match: /금지/,
+    run: async (r) => {
+      await r.tool('proxy_admin', {}, { deny: "Tool 'proxy_admin' is denied by permissions configuration." })
+      await r.say('그 도구는 정책상 쓸 수 없어요.')
+    },
+  },
+  {
+    // 모델이 없는 도구를 부른 경우. 정책 차단이 아니라 모델 실수라서 실패로만 보인다.
     match: /없는 도구/,
     run: async (r) => {
-      await r.tool('proxy_admin', { ...REASON }, {
-        error: 'Error calling tool: failed to call tool: calling "tools/call": MCP error -32600: Tool not available: proxy_admin',
-      })
-      await r.say('그 도구는 쓸 수 없어요.')
+      await r.tool('proxy_unknown', {}, { deny: "Tool 'proxy_unknown' is not available. You can only use the tools provided to you." })
+      await r.say('그 도구는 없어요.')
     },
   },
   {
@@ -208,10 +177,11 @@ const agentApp = new Hono()
 
 agentApp.post('/api/sessions', async (c) => {
   const body = await c.req.json<{ safety_policy?: string }>().catch(() => ({}) as { safety_policy?: string })
-  if (body.safety_policy !== 'restricted') console.warn('[fake agent] session created without safety_policy=restricted')
+  // 정책은 agent.yaml에서 정한다. WEB이 세션마다 안전 모드를 덮어쓰면 안 된다(계약 6장).
+  if (body.safety_policy) console.warn(`[fake agent] session created with safety_policy=${body.safety_policy}`)
   const s: Session = { id: randomUUID(), title: '', created_at: new Date().toISOString(), messages: [] }
   sessions.set(s.id, s)
-  return c.json({ ...s, safety_policy: body.safety_policy })
+  return c.json(s)
 })
 agentApp.get('/api/sessions', (c) =>
   c.json([...sessions.values()].map((s) => ({ id: s.id, title: s.title, created_at: s.created_at, num_messages: s.messages.length }))),
@@ -219,6 +189,18 @@ agentApp.get('/api/sessions', (c) =>
 agentApp.get('/api/sessions/:id', (c) => {
   const s = sessions.get(c.req.param('id'))
   return s ? c.json(s) : c.json({ message: 'session not found' }, 404)
+})
+agentApp.post('/api/sessions/:id/resume', async (c) => {
+  const run = runs.get(c.req.param('id'))
+  // 진짜 Docker Agent는 실행 중이 아니면 500을 준다(session_manager.go ResumeSession).
+  if (!run) return c.json({ message: 'failed to resume session: session not running' }, 500)
+  const body = await c.req.json<Resume>()
+  if (!['approve', 'reject'].includes(body.confirmation)) {
+    // WEB은 approve·reject만 보내야 한다. 나머지는 세션 권한을 넓힌다(계약 5장).
+    console.warn(`[fake agent] unexpected confirmation ${body.confirmation}`)
+  }
+  run.waiting?.(body)
+  return c.json({ message: 'session resumed' })
 })
 agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
   const s = sessions.get(c.req.param('id'))
@@ -236,31 +218,46 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
 
   return streamSSE(c, async (stream) => {
     const r = new Run(stream, s)
-    await r.init()
-    if (/훅/.test(text)) {
-      // 입력 훅이 턴을 멈춘 경우(loop.go emitHookDrivenShutdown)
-      await r.send({ type: 'error', error: 'user_prompt_submit hook blocked the request', code: 'hook_blocked' })
-      return r.stop()
+    runs.set(s.id, r)
+    // 진짜처럼 클라이언트가 끊으면 실행을 취소한다. 기다리던 승인도 취소로 끝난다.
+    stream.onAbort(() => {
+      runs.delete(s.id)
+      r.waiting?.({ confirmation: 'reject', reason: 'canceled' })
+    })
+    try {
+      await r.init()
+      if (/훅/.test(text)) {
+        // 입력 훅이 턴을 멈춘 경우(loop.go emitHookDrivenShutdown)
+        await r.send({ type: 'error', error: 'user_prompt_submit hook blocked the request', code: 'hook_blocked' })
+        return await r.stop()
+      }
+      if (/키 오류/.test(text)) {
+        // 키가 틀리면 모델 호출에서 실패한다(실측 2026-10-05, OpenRouter).
+        await r.send({ type: 'error', error: 'model failed: error receiving from stream: HTTP 401: User not found.', code: 'model_error' })
+        return await r.stop()
+      }
+      if (/오류/.test(text)) {
+        await r.send({ type: 'error', error: 'model provider returned 500' })
+        return await r.stop()
+      }
+      if (/반복/.test(text)) {
+        // max_iterations에 닿으면 계속할지 묻고 기다린다(loop_steps.go). reject면 멈춘다.
+        await r.send({ type: 'max_iterations_reached', max_iterations: 10 })
+        const decision = await new Promise<Resume>((res) => (r.waiting = res))
+        r.waiting = null
+        await r.say(decision.confirmation === 'approve' ? '계속할게요.' : 'Execution stopped after reaching the configured max_iterations limit (10).')
+        return await r.stop()
+      }
+      const scenario = SCENARIOS.find((sc) => sc.match.test(text))
+      if (scenario) await scenario.run(r)
+      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 명령, 차단, 금지, 없는 도구, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
+      await r.stop()
+    } finally {
+      if (runs.get(s.id) === r) runs.delete(s.id)
     }
-    if (/키 오류/.test(text)) {
-      // 키가 틀리면 모델 호출에서 실패한다(실측 2026-10-05, OpenRouter).
-      await r.send({ type: 'error', error: 'model failed: error receiving from stream: HTTP 401: User not found.', code: 'model_error' })
-      return r.stop()
-    }
-    if (/오류/.test(text)) {
-      await r.send({ type: 'error', error: 'model provider returned 500' })
-      return r.stop()
-    }
-    const scenario = SCENARIOS.find((sc) => sc.match.test(text))
-    if (scenario) await scenario.run(r)
-    else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 명령, 차단, 없는 도구, 목록, 훅, 오류, 키 없음, 키 오류`)
-    await r.stop()
   })
 })
 
 serve({ fetch: agentApp.fetch, hostname: '127.0.0.1', port: agentPort }, () =>
   console.info(`[fake agent] http://127.0.0.1:${agentPort}`),
-)
-serve({ fetch: airlockApp.fetch, hostname: '127.0.0.1', port: airlockPort }, () =>
-  console.info(`[fake airlock] http://127.0.0.1:${airlockPort} → webhook ${webhookUrl}`),
 )

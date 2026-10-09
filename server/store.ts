@@ -23,7 +23,8 @@ export interface AuditEntry {
   user: string
   sessionId: string
   approvalId: string
-  airlockId: string
+  // Docker Agent tool_call_confirmation의 tool_call.id
+  toolCallId: string
   tool: string
   decision: ApprovalStatus
 }
@@ -49,7 +50,7 @@ db.exec(`
     user        TEXT NOT NULL,
     session_id  TEXT NOT NULL,
     approval_id TEXT NOT NULL,
-    airlock_id  TEXT NOT NULL,
+    tool_call_id TEXT NOT NULL,
     tool        TEXT NOT NULL,
     decision    TEXT NOT NULL
   );
@@ -60,13 +61,17 @@ db.exec(`
   );
 `)
 
+// v0.2.x(Airlock) 때 만든 파일은 열 이름만 바꾼다.
+const auditColumns = db.prepare('PRAGMA table_info(approval_audit)').all().map((c) => c.name)
+if (auditColumns.includes('airlock_id')) db.exec('ALTER TABLE approval_audit RENAME COLUMN airlock_id TO tool_call_id')
+
 const insertCard = db.prepare(
   'INSERT INTO cards (session_id, turn, approval_id, status, body, created_at) VALUES (?, ?, ?, ?, ?, ?)',
 )
 const updateStatus = db.prepare('UPDATE cards SET status = ? WHERE approval_id = ?')
 const selectCards = db.prepare('SELECT turn, status, body FROM cards WHERE session_id = ? ORDER BY id')
 const insertAudit = db.prepare(
-  'INSERT INTO approval_audit (at, user, session_id, approval_id, airlock_id, tool, decision) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  'INSERT INTO approval_audit (at, user, session_id, approval_id, tool_call_id, tool, decision) VALUES (?, ?, ?, ?, ?, ?, ?)',
 )
 
 // 상태는 status 열이 기준이다. body에는 카드의 나머지 내용을 JSON으로 둔다.
@@ -89,14 +94,14 @@ export function cardsFor(sessionId: string): StoredCard[] {
 }
 
 // 백엔드가 다시 켜지면 기다리던 도구 호출이 없으므로 대기 중이던 카드는 취소로 바꾼다.
-// Airlock 쪽 대기 건은 main.ts의 cleanupPending이 거부한다.
+// Docker Agent 쪽 대기 건은 Agent 스트림이 끊길 때 Agent가 취소한다.
 export function cancelPendingCards(): number {
   return Number(db.prepare("UPDATE cards SET status = 'cancelled' WHERE status = 'pending'").run().changes)
 }
 
 export function logDecision(entry: Omit<AuditEntry, 'at'>): void {
   const row = { at: new Date().toISOString(), ...entry }
-  insertAudit.run(row.at, row.user, row.sessionId, row.approvalId, row.airlockId, row.tool, row.decision)
+  insertAudit.run(row.at, row.user, row.sessionId, row.approvalId, row.toolCallId, row.tool, row.decision)
   console.info('[audit]', JSON.stringify(row))
 }
 

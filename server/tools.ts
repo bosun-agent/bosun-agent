@@ -1,5 +1,5 @@
 // 도구 이름 → 화면 문구. 처리 과정 줄과 승인 카드를 코드 템플릿으로 만든다(LLM 재요약 금지, 계약 4장).
-// alias 이름은 Agent 담당 제안, Secure 담당 동의 기준이다. 확정되면 여기만 고친다(계약 7장).
+// proxy_* 이름은 Airlock alias 기준으로 만든 자리표시다. Portainer MCP를 직접 붙인 뒤 실제 도구 이름으로 바꾼다(계약 7장).
 // 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다(계약 5장 4항).
 
 import type { ProposedAction, RiskReason } from '../src/lib/agentProtocol.ts'
