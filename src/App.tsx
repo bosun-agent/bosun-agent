@@ -414,13 +414,13 @@ function App() {
           </>
         )}
 
-        {/* 좁은 화면에서는 아래쪽 입력창과 겹치지 않게 오른쪽 위에 둔다. */}
+        {/* 입력창 옆에 자리가 모자라면 겹치지 않게 오른쪽 위에 둔다. 사이드바를 연 md~lg 폭도 모자란다. */}
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
           aria-label="설정"
-          className={`absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-md text-neutral-700 hover:bg-neutral-100 md:top-auto ${
-            import.meta.env.DEV && usingMock ? 'md:bottom-14' : 'md:bottom-3'
+          className={`absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-md text-neutral-700 hover:bg-neutral-100 lg:top-auto ${
+            import.meta.env.DEV && usingMock ? 'lg:bottom-14' : 'lg:bottom-3'
           }`}
         >
           <GearIcon />
