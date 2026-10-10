@@ -121,12 +121,9 @@ function App() {
           case 'text_delta':
             // 앞에 받은 내용이 없으면 맨 앞 줄바꿈은 버린다(복원된 카드를 승인한 뒤 등).
             content += content ? event.delta : event.delta.replace(/^\n+/, '')
-            // 차단·만료 뒤에 오는 Agent 설명은 그 카드와 같이 보여준다(계약 6장).
+            // 만료 뒤에 오는 Agent 설명은 만료 카드와 같이 보여준다(계약 6장).
             updateMessage(id, (m) => ({
-              status:
-                m.status === 'rejected' || m.status === 'approval_expired'
-                  ? m.status
-                  : 'streaming',
+              status: m.status === 'approval_expired' ? m.status : 'streaming',
               content,
             }))
             break
@@ -165,8 +162,8 @@ function App() {
             }))
             break
           case 'rejected':
+            // 막힌 뒤에도 Agent가 다른 작업을 이어 갈 수 있어서 상태는 바꾸지 않는다.
             updateMessage(id, (m) => ({
-              status: 'rejected',
               rejectionReason: event.reason,
               // 진행 중이던 단계는 끝난 것으로 두고, 차단을 따로 한 줄 남긴다.
               steps: finishActive(

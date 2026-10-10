@@ -1,7 +1,5 @@
-import { Markdown } from './Markdown'
-
-// detail: 차단 뒤 Agent가 이어서 한 설명(계약 6장). 스트리밍 중에도 카드 안에서 이어붙는다.
-export function RejectedNotice({ reason, detail }: { reason: string; detail?: string }) {
+// 정책 차단 안내. 차단 뒤 Agent가 이어서 한 말은 그 아래 일반 말풍선에 나온다.
+export function RejectedNotice({ reason }: { reason: string }) {
   return (
     <div className="max-w-[85%] rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-[15px] text-red-900">
       <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-red-700">
@@ -9,11 +7,6 @@ export function RejectedNotice({ reason, detail }: { reason: string; detail?: st
         차단됨
       </div>
       <p>{reason}</p>
-      {detail && (
-        <div className="mt-1.5 text-neutral-800">
-          <Markdown text={detail} />
-        </div>
-      )}
     </div>
   )
 }

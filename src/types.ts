@@ -8,7 +8,6 @@ export type MessageStatus =
   | 'streaming'
   | 'pending_approval'
   | 'approval_expired'
-  | 'rejected'
   | 'error'
 
 export interface ApprovalRequest {
@@ -41,6 +40,7 @@ export interface ChatMessage {
   content: string
   status: MessageStatus
   approval?: ApprovalRequest
+  // 이 턴에서 정책으로 막힌 호출이 있었다. 턴은 계속될 수 있으므로 상태와 따로 둔다(차단 안내 + 이어진 답).
   rejectionReason?: string
   errorMessage?: string
   steps?: ProcessStep[]

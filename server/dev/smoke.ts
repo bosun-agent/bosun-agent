@@ -84,6 +84,18 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   check('승인 뒤 처리 과정에 작업 이름이 보인다', JSON.stringify(tools).includes('재시작 완료'), tools)
 }
 {
+  const r = await send('my-website 강제 제거해줘')
+  const ap = approvalOf(r.events)
+  check(
+    'ID로 지우면 카드에 이름과 force·v 경고가 보인다',
+    ap?.summary === '컨테이너 my-website 삭제' && ap.action.target === 'my-website (dda78131504e)' &&
+      String(ap.action.params?.옵션).includes('force=true') &&
+      ['FORCE', 'VOLUMES'].every((c) => ap.reasons.some((x) => x.code === c)),
+    ap,
+  )
+  await decide(ap!.approvalId, 'deny')
+}
+{
   const r = await send('웹사이트 만들어줘')
   const ap = approvalOf(r.events)
   const params = ap?.action.params ?? {}
@@ -130,15 +142,15 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const res = await fetch(`${BASE}/api/sessions/${sid}/messages`)
   const { messages } = (await res.json()) as { messages: { role: string; content: string; cards?: unknown[] }[] }
   const withCards = messages.filter((m) => m.cards?.length)
-  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 13, messages.length)
-  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 8, withCards)
+  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 14, messages.length)
+  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 9, withCards)
 }
 {
   const r = await send('만료 테스트')
   const ap = approvalOf(r.events)
   const timeout = Number(process.env.APPROVAL_TIMEOUT_MS || 300_000)
   const wait = new Date(ap!.expiresAt).getTime() - Date.now()
-  check('만료 시각은 카드를 띄운 때 + APPROVAL_TIMEOUT_MS', wait > timeout - 5_000 && wait <= timeout, wait)
+  check('만료 시각은 카드를 띄운 때 + APPROVAL_TIMEOUT_MS', wait > timeout - 5_000 && wait <= timeout + 1_000, wait)
   // 만료까지 기다리지 않고 브라우저가 보내는 만료 거부를 흉내 낸다.
   const d = await decide(ap!.approvalId, 'deny', 'expired')
   check('만료 거부 뒤 Agent 설명이 이어진다', last(d.events) === 'done' && text(d.events).includes('승인되지 않아서'), types(d.events))

@@ -87,6 +87,11 @@ export async function listSessions(): Promise<DASessionSummary[]> {
   return (await res.json()) as DASessionSummary[]
 }
 
+// 제목이 있으면 Docker Agent는 제목을 만드는 LLM 호출을 따로 하지 않는다(v1.148.0 session_manager.go needsTitle).
+export async function setTitle(id: string, title: string): Promise<void> {
+  await request(`/api/sessions/${encodeURIComponent(id)}/title`, { method: 'PATCH', body: JSON.stringify({ title }) })
+}
+
 export async function getSession(id: string): Promise<DASession> {
   const res = await request(`/api/sessions/${encodeURIComponent(id)}`)
   return (await res.json()) as DASession

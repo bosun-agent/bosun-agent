@@ -13,7 +13,7 @@ import type { DAEvent } from './agentClient.ts'
 import { config } from './config.ts'
 import { currentModel } from './settings.ts'
 import { addCard, logDecision, updateApprovalCard, type ApprovalStatus } from './store.ts'
-import { approvalCard } from './tools.ts'
+import { approvalCard, learnNames } from './tools.ts'
 import { Translator } from './translate.ts'
 
 export interface Sink {
@@ -50,7 +50,13 @@ interface Turn {
 }
 
 let turn: Turn | null = null
+// 대화 제목 길이. 화면(App.tsx)과 같다.
+const TITLE_MAX = 30
 const approvals = new Map<string, Approval>()
+// 조회 결과로 알아 둔 컨테이너·이미지 ID(앞 12자리) → 이름. 승인 카드에 이름을 보여줄 때 쓴다.
+const names = new Map<string, string>()
+// 실행 중인 도구 호출 ID → 이름·인자. 결과가 오면 names를 채운다. 브라우저로는 보내지 않는다.
+const calls = new Map<string, { name: string; args: Record<string, unknown> }>()
 
 export class HttpError extends Error {
   readonly status: number
@@ -116,6 +122,7 @@ function finish(t: Turn): void {
   t.finished = true
   // Agent 스트림을 끊으면 Docker Agent도 기다리던 승인을 취소한다. 카드도 취소로 둔다(계약 6장).
   if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
+  calls.clear()
   t.sink?.end()
   t.sink = null
   t.abort.abort()
@@ -143,6 +150,12 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
   try {
     const session = await agent.getSession(sessionId)
     t.index = (session.messages ?? []).filter((m) => m.message?.role === 'user' && !m.implicit).length
+    // 첫 메시지로 제목을 정한다. 화면과 같은 규칙이다. Docker Agent가 따로 만들면 LLM을 한 번 더 부르고,
+    // 영어 프롬프트라서 영어 제목이나 빈 제목이 나왔다(2026-10-11 실측).
+    if (t.index === 0 && !session.title) {
+      const title = text.trim().length > TITLE_MAX ? `${text.trim().slice(0, TITLE_MAX)}…` : text.trim()
+      await agent.setTitle(sessionId, title).catch((err) => console.warn('[agent] set title failed', err))
+    }
     upstream = await agent.runAgent(sessionId, text, t.abort.signal, currentModel())
   } catch (err) {
     turn = null
@@ -195,12 +208,28 @@ async function pump(t: Turn, upstream: AsyncGenerator<DAEvent>): Promise<void> {
   }
 }
 
-// 결정 전에 그 호출이 끝났으면(Agent 쪽 취소 등) 카드를 취소로 둔다.
 // Docker Agent는 승인을 받은 뒤에 tool_call을 보낸다. 거부·차단된 호출에는 tool_call 없이 tool_call_response만 온다.
 function track(t: Turn, ev: DAEvent): void {
+  if (ev.type === 'tool_call') {
+    const call = (ev as Extract<DAEvent, { type: 'tool_call' }>).tool_call
+    if (call.id) calls.set(call.id, { name: call.function.name ?? '', args: parseArgs(call.function.arguments) })
+    return
+  }
   if (ev.type !== 'tool_call_response') return
   const res = ev as Extract<DAEvent, { type: 'tool_call_response' }>
+  // 결정 전에 그 호출이 끝났으면(Agent 쪽 취소 등) 카드를 취소로 둔다.
   if (t.waiting?.status === 'pending' && t.waiting.toolCallId === res.tool_call_id) resolve(t.waiting, 'cancelled')
+  const call = calls.get(res.tool_call_id)
+  calls.delete(res.tool_call_id)
+  if (call && !res.result?.isError) learnNames(names, call.name, call.args, res.response)
+}
+
+function parseArgs(raw: string | undefined): Record<string, unknown> {
+  try {
+    return JSON.parse(raw || '{}')
+  } catch {
+    return {}
+  }
 }
 
 // ---- 승인 요청 ----
@@ -221,7 +250,7 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
   if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
 
   const expiresAt = Date.now() + config.approvalTimeoutMs
-  const card = approvalCard(tool, args)
+  const card = approvalCard(tool, args, names)
   const ap: Approval = {
     id: `ap_${randomUUID()}`,
     sessionId: t.sessionId,

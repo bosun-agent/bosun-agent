@@ -38,6 +38,11 @@ export function ChatMessageBubble({
         steps={steps}
         live={LIVE_STATUSES.includes(message.status)}
       />
+      {message.rejectionReason && (
+        <div className="mb-2 w-full">
+          <RejectedNotice reason={message.rejectionReason} />
+        </div>
+      )}
       <AssistantBody
         message={message}
         hasSteps={steps.length > 0}
@@ -78,15 +83,6 @@ function AssistantBody({
           </div>
         )}
       </div>
-    )
-  }
-
-  if (message.status === 'rejected') {
-    return (
-      <RejectedNotice
-        reason={message.rejectionReason ?? '알 수 없는 이유로 차단되었습니다.'}
-        detail={message.content}
-      />
     )
   }
 

@@ -158,6 +158,11 @@ function containerCreate(body: Record<string, unknown>): Pick<ToolAction, 'param
   return { params, reasons }
 }
 
+// 쿼리 값은 문자열("true")로 오기도 한다(2026-10-11 실측).
+function truthy(value: unknown): boolean {
+  return value === true || value === 1 || value === 'true' || value === '1'
+}
+
 // 대상이 있으면 "컨테이너 web 중지", 없으면 "컨테이너 중지"
 function titled(resource: string, target: string | undefined, verb: string): string {
   return target ? `${resource} ${target} ${verb}` : `${resource} ${verb}`
@@ -178,7 +183,18 @@ function dockerRequest(
   if (method === 'DELETE') {
     // 이미지 이름에는 `/`가 들어간다(DELETE /images/library/nginx).
     const target = rest.join('/') || undefined
-    return { label: '삭제', summary: titled(resource, target, '삭제'), target, reasons: [DESTRUCTIVE] }
+    const reasons = [DESTRUCTIVE]
+    if (truthy(query.force)) {
+      reasons.push(
+        kind === 'images'
+          ? { code: 'FORCE', message: '다른 태그나 컨테이너가 쓰고 있어도 지워요.' }
+          : { code: 'FORCE', message: '실행 중이어도 강제로 멈추고 지워요.' },
+      )
+    }
+    if (kind === 'containers' && truthy(query.v)) {
+      reasons.push({ code: 'VOLUMES', message: '컨테이너에 딸린 익명 볼륨도 같이 지워져요.' })
+    }
+    return { label: '삭제', summary: titled(resource, target, '삭제'), target, reasons }
   }
 
   if (rest.length === 1 && rest[0] === 'create') {
@@ -222,14 +238,99 @@ export interface ApprovalCard {
   reasons: RiskReason[]
 }
 
-export function approvalCard(tool: string, args: Record<string, unknown>): ApprovalCard {
+const MAX_BODY = 500
+
+// names: 앞서 받은 조회 결과로 알아 둔 ID(앞 12자리) → 이름. 모델이 경로에 ID를 쓰면 카드에 이름을 보여준다.
+export function approvalCard(
+  tool: string,
+  args: Record<string, unknown>,
+  names: ReadonlyMap<string, string> = new Map(),
+): ApprovalCard {
   const info = describeTool(tool, args)
-  const action: ProposedAction = { tool, ...(info?.target ? { target: info.target } : {}) }
+  let target = info?.target
+  let summary = info?.summary
+  const name = target ? names.get(target.toLowerCase()) : undefined
+  if (target && name) {
+    summary = summary?.replace(target, name)
+    target = `${name} (${target})`
+  }
+  const action: ProposedAction = { tool, ...(target ? { target } : {}) }
   const params: Record<string, string> = { ...info?.params }
-  if (tool === 'docker_proxy' && typeof args.path === 'string') {
-    params.요청 = `${(str(args.method) ?? 'GET').toUpperCase()} ${args.path}`
+  if (tool === 'docker_proxy') {
+    const method = (str(args.method) ?? 'GET').toUpperCase()
+    // force·v처럼 동작을 바꾸는 옵션이 쿼리로 온다. 컨테이너 생성 말고는 본문도 그대로 보여준다.
+    const query = Object.entries(objectArg(args.query_params))
+    if (query.length) params.옵션 = maskText(query.map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', '))
+    const body = objectArg(args.body)
+    if (Object.keys(body).length && !info?.params) {
+      const json = JSON.stringify(body)
+      params.본문 = maskText(json.length > MAX_BODY ? `${json.slice(0, MAX_BODY)}…` : json)
+    }
+    if (typeof args.path === 'string') params.요청 = `${method} ${args.path}`
   }
   if (Object.keys(params).length > 0) action.params = params
-  if (!info?.summary) return { summary: '승인이 필요한 작업입니다.', action, reasons: [] }
-  return { summary: info.summary, action, reasons: info.reasons ?? [] }
+  if (!summary) return { summary: '승인이 필요한 작업입니다.', action, reasons: [] }
+  return { summary, action, reasons: info?.reasons ?? [] }
+}
+
+// ---- ID → 이름 ----
+// 도구 결과에서 컨테이너·이미지 ID와 이름 짝을 찾는다. 모델이 select로 필드 이름을 바꾸므로 키 이름은 느슨하게 본다.
+// 목록(`[{id, name}]`)과 상세 조회(`/containers/{id}/json` → `{name}`) 두 모양을 본다.
+
+const HEX_ID = /^(?:sha256:)?([0-9a-f]{12,64})$/i
+const MAX_NAMES = 2000
+
+function idOf(obj: Record<string, unknown>): string | undefined {
+  for (const [k, v] of Object.entries(obj)) {
+    if (/^id$/i.test(k) && typeof v === 'string') {
+      const m = HEX_ID.exec(v)
+      if (m) return m[1].slice(0, 12).toLowerCase()
+    }
+  }
+  return undefined
+}
+
+function nameOf(obj: Record<string, unknown>): string | undefined {
+  for (const [k, v] of Object.entries(obj)) {
+    if (!/^(names?|repotags|tags?)$/i.test(k)) continue
+    const first = Array.isArray(v) ? v.find((x) => typeof x === 'string') : v
+    if (typeof first === 'string' && first) return first.replace(/^\//, '')
+  }
+  return undefined
+}
+
+export function learnNames(
+  names: Map<string, string>,
+  tool: string,
+  args: Record<string, unknown>,
+  output: string,
+): void {
+  if (tool !== 'docker_proxy' || output.length > 2_000_000) return
+  let data: unknown
+  try {
+    data = JSON.parse(output)
+  } catch {
+    return
+  }
+  const remember = (id: string, name: string) => {
+    if (names.size >= MAX_NAMES) names.delete(names.keys().next().value!)
+    names.set(id, name)
+  }
+  const items = Array.isArray(data) ? data : [data]
+  for (const item of items.slice(0, 1000)) {
+    if (!item || typeof item !== 'object') continue
+    const obj = item as Record<string, unknown>
+    const name = nameOf(obj)
+    if (!name) continue
+    const id = idOf(obj)
+    if (id) remember(id, name)
+  }
+  // 상세 조회는 결과에 ID를 빼고 이름만 고르는 경우가 많아서 경로의 ID를 쓴다.
+  if (!Array.isArray(data) && data && typeof data === 'object') {
+    const [kind, id, action] = pathParts(str(args.path) ?? '')
+    const name = nameOf(data as Record<string, unknown>)
+    if (name && (kind === 'containers' || kind === 'images') && action === 'json' && id && HEX_ID.test(id)) {
+      remember(id.slice(0, 12).toLowerCase(), name)
+    }
+  }
 }

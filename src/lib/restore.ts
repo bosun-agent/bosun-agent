@@ -28,7 +28,7 @@ export function toChatMessages(restored: RestoredMessage[], now = Date.now()): C
     const base: ChatMessage = { id, role: 'assistant', content: m.content, status: 'done', ...(steps.length ? { steps } : {}) }
 
     const rejected = cards.find((c) => c.kind === 'rejected')
-    if (rejected) return { ...base, status: 'rejected', rejectionReason: rejected.reason }
+    if (rejected) base.rejectionReason = rejected.reason
 
     // 아직 결정하지 않은 카드는 다시 띄운다. 시간이 지났으면 만료로 보여준다(서버가 이미 거부했다).
     const pending = cards.find((c) => c.kind === 'approval' && c.status === 'pending')

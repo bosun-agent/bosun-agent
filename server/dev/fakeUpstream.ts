@@ -124,6 +124,22 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
+    // 모델이 조회로 ID를 알아낸 뒤 ID로 지우는 경우. force·v 옵션이 쿼리로 온다(2026-10-11 실측).
+    match: /강제/,
+    run: async (r) => {
+      const id = 'dda78131504e8da3ad211252f7b32a752ed69d0ff2c512057904ee026d7761a9'
+      await r.tool('docker_proxy', { environment_id: 1, method: 'GET', path: '/containers/json', select: '[].{id:Id,name:Names[0]}' }, {
+        output: JSON.stringify([{ id, name: '/my-website' }]),
+      })
+      const res = await r.tool(
+        'docker_proxy',
+        { environment_id: 1, method: 'DELETE', path: `/containers/${id}`, query_params: { force: 'true', v: 'true' } },
+        { ask: true, output: '' },
+      )
+      await r.say(res.isError ? '승인되지 않아서 지우지 않았어요.' : '지웠어요.')
+    },
+  },
+  {
     // 생성할 때 Cmd로 셸 명령을 넣는 경우(2026-10-11 실제 모델이 이렇게 했다). 카드에 명령이 보여야 한다.
     match: /웹사이트/,
     run: async (r) => {
@@ -211,6 +227,12 @@ agentApp.get('/api/sessions/:id', (c) => {
   const s = sessions.get(c.req.param('id'))
   return s ? c.json(s) : c.json({ message: 'session not found' }, 404)
 })
+agentApp.patch('/api/sessions/:id/title', async (c) => {
+  const s = sessions.get(c.req.param('id'))
+  if (!s) return c.json({ message: 'session not found' }, 404)
+  s.title = (await c.req.json<{ title: string }>()).title
+  return c.json({ id: s.id, title: s.title })
+})
 agentApp.post('/api/sessions/:id/resume', async (c) => {
   const run = runs.get(c.req.param('id'))
   // 진짜 Docker Agent는 실행 중이 아니면 500을 준다(session_manager.go ResumeSession).
@@ -271,7 +293,7 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
       }
       const scenario = SCENARIOS.find((sc) => sc.match.test(text))
       if (scenario) await scenario.run(r)
-      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 웹사이트, 재시작, 명령, 차단, 금지, 없는 도구, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
+      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 강제, 만료, 웹사이트, 재시작, 명령, 차단, 금지, 없는 도구, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
       await r.stop()
     } finally {
       if (runs.get(s.id) === r) runs.delete(s.id)
