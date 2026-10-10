@@ -41,12 +41,16 @@ const NETWORK_ACTIONS: Record<string, string> = {
   disconnect: '컨테이너 연결 해제',
 }
 
+// Portainer가 path의 %XX를 풀어서 Docker에 넘기므로 카드도 푼 값으로 보여준다(2026-10-11 실측).
+// 64자리 ID는 docker CLI처럼 앞 12자리만 보여준다. 전체 값은 카드의 `요청`에 있다.
 function decode(part: string): string {
+  let value = part
   try {
-    return decodeURIComponent(part)
+    value = decodeURIComponent(part)
   } catch {
-    return part
+    // 잘못된 %XX는 그대로 둔다.
   }
+  return /^[0-9a-f]{64}$/i.test(value) ? value.slice(0, 12) : value
 }
 
 // `/v1.45/containers/web/stop?t=10` → ['containers', 'web', 'stop']
