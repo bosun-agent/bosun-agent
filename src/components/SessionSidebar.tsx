@@ -7,6 +7,7 @@ interface SessionSidebarProps {
   onClose: () => void
   onSelect: (id: string) => void
   onNew: () => void
+  onDelete: (id: string) => void
 }
 
 // 열렸을 때만 그린다. 넓은 화면에서는 채팅을 오른쪽으로 밀고, 좁은 화면에서는 위에 겹친다.
@@ -17,6 +18,7 @@ export function SessionSidebar({
   onClose,
   onSelect,
   onNew,
+  onDelete,
 }: SessionSidebarProps) {
   return (
     <>
@@ -38,28 +40,53 @@ export function SessionSidebar({
             + 새 대화
           </button>
           {sessions.map((session) => (
-            <button
+            <div
               key={session.id}
-              type="button"
-              onClick={() => onSelect(session.id)}
-              className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm ${
+              className={`group flex w-full items-center rounded-md text-sm ${
                 session.id === activeId
                   ? 'bg-neutral-300 font-medium'
                   : 'bg-neutral-200 text-neutral-600 hover:bg-neutral-300'
               }`}
             >
-              <span className="flex-1 truncate">{session.title}</span>
-              {session.id === busyId && (
-                <span
-                  className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-500"
-                  title="처리 중"
-                />
+              <button
+                type="button"
+                onClick={() => onSelect(session.id)}
+                className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3 text-left"
+              >
+                <span className="flex-1 truncate">{session.title}</span>
+                {session.id === busyId && (
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-500"
+                    title="처리 중"
+                  />
+                )}
+              </button>
+              {/* 처리 중인 대화는 서버가 지우지 않으므로 버튼도 숨긴다. 터치 화면에서는 항상 보인다. */}
+              {session.id !== busyId ? (
+                <button
+                  type="button"
+                  onClick={() => onDelete(session.id)}
+                  aria-label={`${session.title} 삭제`}
+                  className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-neutral-500 hover:bg-neutral-400/40 hover:text-red-700 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                >
+                  <TrashIcon />
+                </button>
+              ) : (
+                <span className="w-3" />
               )}
-            </button>
+            </div>
           ))}
         </nav>
       </aside>
     </>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+    </svg>
   )
 }
 

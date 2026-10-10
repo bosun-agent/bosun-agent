@@ -68,6 +68,11 @@ export class HttpError extends Error {
   }
 }
 
+// 이 대화를 처리하고 있는지(승인 대기 포함)
+export function isRunning(sessionId: string): boolean {
+  return turn?.sessionId === sessionId
+}
+
 export function isBusy(): boolean {
   return turn !== null
 }

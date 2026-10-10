@@ -91,4 +91,6 @@ export interface AgentClient {
   saveModel?(model: string): Promise<Settings>
   // 저장해도 Docker Agent를 다시 시작해야 적용된다(계약 7장 ①).
   saveApiKey?(apiKey: string): Promise<Settings>
+  // 서버 대화 삭제. 처리 중인 대화는 서버가 409로 거절한다.
+  deleteSession?(sessionId: string): Promise<void>
 }

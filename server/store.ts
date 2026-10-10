@@ -69,6 +69,7 @@ const insertCard = db.prepare(
   'INSERT INTO cards (session_id, turn, approval_id, status, body, created_at) VALUES (?, ?, ?, ?, ?, ?)',
 )
 const updateStatus = db.prepare('UPDATE cards SET status = ? WHERE approval_id = ?')
+const deleteCardsStmt = db.prepare('DELETE FROM cards WHERE session_id = ?')
 const selectCards = db.prepare('SELECT turn, status, body FROM cards WHERE session_id = ? ORDER BY id')
 const insertAudit = db.prepare(
   'INSERT INTO approval_audit (at, user, session_id, approval_id, tool_call_id, tool, decision) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -79,6 +80,11 @@ export function addCard(sessionId: string, turn: number, card: Card): void {
   const approvalId = card.kind === 'approval' ? card.approvalId : null
   const status = card.kind === 'approval' ? card.status : null
   insertCard.run(sessionId, turn, approvalId, status, JSON.stringify(card), new Date().toISOString())
+}
+
+// 대화를 지우면 카드도 지운다. 승인 감사 기록(approval_audit)은 남긴다.
+export function deleteCards(sessionId: string): void {
+  deleteCardsStmt.run(sessionId)
 }
 
 export function updateApprovalCard(approvalId: string, status: ApprovalStatus): void {

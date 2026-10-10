@@ -61,6 +61,8 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   check('승인 카드 문구', ap?.summary === '컨테이너 nginx-web 삭제' && ap.action.target === 'nginx-web', ap)
   const busy = await send('목록')
   check('승인 대기 중 새 메시지는 409', busy.status === 409, busy)
+  const del = await fetch(`${BASE}/api/sessions/${sid}`, { method: 'DELETE' })
+  check('승인 대기 중인 대화는 지울 수 없다(409)', del.status === 409, del.status)
   const d = await decide(ap!.approvalId, 'approve')
   check('승인 뒤 스트림이 이어지고 done', last(d.events) === 'done' && text(d.events).includes('삭제했어요'), types(d.events))
   const again = await decide(ap!.approvalId, 'approve')
@@ -202,6 +204,19 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
     'env 파일에서 키 줄만 바뀐다',
     JSON.stringify(lines) === JSON.stringify(['# agent env', 'PORTAINER_URL=https://127.0.0.1:9443', 'OPENROUTER_API_KEY=sk-test-12345678']),
     lines,
+  )
+}
+
+{
+  const s4 = await newSession()
+  await post(`/api/sessions/${s4}/messages`, { text: '지울 대화' })
+  const del = await fetch(`${BASE}/api/sessions/${s4}`, { method: 'DELETE' })
+  const list = (await fetch(`${BASE}/api/sessions`).then((r) => r.json())) as { sessions: { sessionId: string }[] }
+  const gone = await fetch(`${BASE}/api/sessions/${s4}/messages`)
+  check(
+    '대화를 지우면 목록과 복원에서 사라진다',
+    del.status === 204 && !list.sessions.some((s) => s.sessionId === s4) && gone.status === 404,
+    { del: del.status, gone: gone.status },
   )
 }
 

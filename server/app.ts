@@ -7,8 +7,8 @@ import * as agent from './agentClient.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
 import { getSettings, saveApiKey, saveModel, validApiKey } from './settings.ts'
-import { cardsFor } from './store.ts'
-import { HttpError, decide, detach, startTurn, type Sink } from './turns.ts'
+import { cardsFor, deleteCards } from './store.ts'
+import { HttpError, decide, detach, isRunning, startTurn, type Sink } from './turns.ts'
 
 export const app = new Hono()
 
@@ -101,6 +101,20 @@ app.get('/api/sessions/:id/messages', async (c) => {
       : []),
   ])
   return c.json({ messages })
+})
+
+// 대화 삭제. 처리 중(승인 대기 포함)인 대화는 지우지 않는다. 승인 감사 기록은 남긴다(계약 7.1).
+app.delete('/api/sessions/:id', async (c) => {
+  const sessionId = c.req.param('id')
+  if (isRunning(sessionId)) throw new HttpError(409, 'BUSY', '처리 중인 대화는 지울 수 없어요.')
+  await agent.deleteSession(sessionId).catch((err) => {
+    if (err instanceof agent.AgentHttpError && err.status === 404) {
+      throw new HttpError(404, 'NO_SESSION', '대화를 찾을 수 없어요.')
+    }
+    throw err
+  })
+  deleteCards(sessionId)
+  return c.body(null, 204)
 })
 
 app.post('/api/sessions/:id/messages', async (c) => {

@@ -310,6 +310,25 @@ function App() {
     setActiveId(session.id)
   }
 
+  async function handleDeleteSession(id: string) {
+    const session = sessions.find((s) => s.id === id)
+    if (!session || id === busyId) return
+    if (!window.confirm(`'${session.title}' 대화를 삭제할까요? 되돌릴 수 없어요.`)) return
+    if (session.serverId && agent.deleteSession) {
+      try {
+        await agent.deleteSession(session.serverId)
+      } catch {
+        window.alert('대화를 삭제하지 못했어요. 잠시 후 다시 시도해주세요.')
+        return
+      }
+    }
+    // 마지막 대화를 지우면 빈 새 대화를 하나 둔다. 보고 있던 대화를 지우면 맨 위 대화로 간다.
+    const rest = sessions.filter((s) => s.id !== id)
+    const next = rest.length > 0 ? rest : [newSession()]
+    setSessions(next)
+    if (id === activeId) setActiveId(next[0].id)
+  }
+
   function handleSelectSession(id: string) {
     setActiveId(id)
     if (isNarrowScreen()) setSidebarOpen(false)
@@ -360,6 +379,7 @@ function App() {
           onClose={() => setSidebarOpen(false)}
           onSelect={handleSelectSession}
           onNew={handleNewSession}
+          onDelete={handleDeleteSession}
         />
       )}
 

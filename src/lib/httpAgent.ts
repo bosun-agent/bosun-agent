@@ -80,6 +80,12 @@ export const httpAgent: AgentClient = {
     return (await res.json()) as Settings
   },
 
+  async deleteSession(sessionId) {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+    // 이미 없는 대화는 지운 것으로 본다.
+    if (!res.ok && res.status !== 404) throw new Error(`deleteSession ${res.status}`)
+  },
+
   async saveApiKey(apiKey) {
     const res = await fetch('/api/settings/api-key', {
       method: 'PUT',

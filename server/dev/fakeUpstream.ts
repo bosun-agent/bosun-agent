@@ -227,6 +227,10 @@ agentApp.get('/api/sessions/:id', (c) => {
   const s = sessions.get(c.req.param('id'))
   return s ? c.json(s) : c.json({ message: 'session not found' }, 404)
 })
+agentApp.delete('/api/sessions/:id', (c) => {
+  if (!sessions.delete(c.req.param('id'))) return c.json({ message: 'session not found' }, 404)
+  return c.json({ message: 'session deleted' })
+})
 agentApp.patch('/api/sessions/:id/title', async (c) => {
   const s = sessions.get(c.req.param('id'))
   if (!s) return c.json({ message: 'session not found' }, 404)
