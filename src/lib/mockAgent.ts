@@ -239,14 +239,20 @@ async function* sendDecision(
 // 목업 설정. 화면을 확인하는 용도라 새로고침하면 처음 값으로 돌아간다.
 const MOCK_MODELS = ['openrouter/deepseek/deepseek-v4.1-flash', 'openrouter/deepseek/deepseek-v4.1']
 let mockModel = MOCK_MODELS[0]
+let mockKeySet = false
+const mockSettings = () => ({ model: mockModel, models: MOCK_MODELS, apiKey: { editable: true, set: mockKeySet } })
 
 export const mockAgent: AgentClient = {
   createSession: async () => `s_${crypto.randomUUID().slice(0, 8)}`,
   sendMessage,
   sendDecision,
-  getSettings: async () => ({ model: mockModel, models: MOCK_MODELS }),
+  getSettings: async () => mockSettings(),
   saveModel: async (model) => {
     mockModel = model
-    return { model: mockModel, models: MOCK_MODELS }
+    return mockSettings()
+  },
+  saveApiKey: async () => {
+    mockKeySet = true
+    return mockSettings()
   },
 }

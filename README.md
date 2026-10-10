@@ -24,7 +24,19 @@ npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
 npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 ```
 
-가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제(승인 카드), 명령(exec 승인 두 번), 차단(훅 거부), 금지(permissions.deny), 없는 도구, 목록, 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·재시작(승인 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 목록, 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+
+실제 Docker Agent(Agent 담당 `agent.direct.yaml`)에 붙일 때 WEB 백엔드 env:
+
+```bash
+AGENT_URL=http://127.0.0.1:8080
+AGENT_NAME=agent.direct                 # agent.yaml 파일 이름
+AGENT_TOKEN=...                         # serve api --auth-token 값
+AGENT_MODELS=openrouter/deepseek/deepseek-v4.1-flash
+AGENT_ENV_FILE=/절대경로/agent.env      # Agent --env-from-file 파일. 설정 화면에서 API 키를 여기에 쓴다
+```
+
+설정 화면에서 API 키를 바꾸면 Docker Agent를 다시 띄워야 적용된다.
 
 ### WEB 백엔드 구조 (`server/`)
 
@@ -34,7 +46,7 @@ npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 | `app.ts` | 브라우저용 `/api/*` |
 | `turns.ts` | 한 턴의 Agent 스트림과 승인 요청 관리(계약 6장): `tool_call_confirmation` → 카드, `/resume`으로 결정 전달, 만료, 스트림 이어붙이기 |
 | `translate.ts` | Docker Agent 이벤트 → 화면 이벤트, 정책 차단 판별 |
-| `tools.ts` | 도구 이름 → 화면 문구, 승인 카드 템플릿 |
+| `tools.ts` | 도구 호출(`docker_proxy` method·path, `EndpointList`) → 화면 문구, 승인 카드 템플릿 |
 | `agentClient.ts` | Docker Agent API 클라이언트 |
 | `mask.ts` | 알려진 비밀값 형식 가리기 |
 | `store.ts` | 승인·차단 카드와 승인 감사 기록(SQLite, `server/data/web.db`. 커밋하지 않는다) |

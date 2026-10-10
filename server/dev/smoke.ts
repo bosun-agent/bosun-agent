@@ -1,6 +1,8 @@
 // 가짜 Agent를 띄운 상태에서 WEB 백엔드 흐름을 확인하는 스모크 테스트.
 // 실행: npm run server:fake, npm run server를 띄운 뒤 npm run server:smoke
 
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import type { AgentEvent } from '../../src/lib/agentProtocol.ts'
 import { readSSE } from '../../src/lib/sse.ts'
 
@@ -74,15 +76,16 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   check('사용자 거부는 차단 카드나 실패 줄을 만들지 않는다', !types(d.events).includes('rejected') && !types(d.events).includes('tool_status'), types(d.events))
 }
 {
+  const r = await send('web 재시작해줘')
+  const ap = approvalOf(r.events)
+  check('재시작 카드 문구', ap?.summary === '컨테이너 web 재시작' && JSON.stringify(ap.action.params).includes('POST /containers/web/restart'), ap)
+  const d = await decide(ap!.approvalId, 'approve')
+  const tools = d.events.filter((e) => e.type === 'tool_status')
+  check('승인 뒤 처리 과정에 작업 이름이 보인다', JSON.stringify(tools).includes('재시작 완료'), tools)
+}
+{
   const r = await send('명령 실행해줘')
-  const first = approvalOf(r.events)
-  check('exec 생성 카드에 명령이 보인다', JSON.stringify(first?.action.params).includes('ls -al'), first)
-  const d1 = await decide(first!.approvalId, 'approve')
-  const second = approvalOf(d1.events)
-  check('exec 실행 카드가 이어서 온다', last(d1.events) === 'approval_required', types(d1.events))
-  check('exec 실행 카드에도 명령이 보인다', JSON.stringify(second?.action.params).includes('ls -al'), second)
-  const d2 = await decide(second!.approvalId, 'approve')
-  check('exec 두 번 승인 뒤 done', last(d2.events) === 'done', types(d2.events))
+  check('exec는 승인 카드 없이 rejected', types(r.events).includes('rejected') && !types(r.events).includes('approval_required'), types(r.events))
 }
 {
   const r = await send('차단되는 작업')
@@ -113,8 +116,8 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const res = await fetch(`${BASE}/api/sessions/${sid}/messages`)
   const { messages } = (await res.json()) as { messages: { role: string; content: string; cards?: unknown[] }[] }
   const withCards = messages.filter((m) => m.cards?.length)
-  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 11, messages.length)
-  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 6, withCards)
+  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 12, messages.length)
+  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 7, withCards)
 }
 {
   const r = await send('만료 테스트')
@@ -154,6 +157,26 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const upstream = (await fetch(`${process.env.AGENT_URL}/api/sessions/${s2}`).then((r) => r.json())) as { model?: string }
   check('고른 모델이 Agent 실행 요청에 실린다', upstream.model === chosen, upstream.model)
   await put(settings.models[0])
+}
+
+{
+  // 키 저장은 Agent env 파일의 키 줄만 바꾸고 Portainer 줄은 남긴다(계약 7장 ①).
+  const file = process.env.AGENT_ENV_FILE!
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, '# agent env\nPORTAINER_URL=https://127.0.0.1:9443\nOPENROUTER_API_KEY=old-key-0000\n')
+  const put = (apiKey: string) =>
+    fetch(`${BASE}/api/settings/api-key`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey }) })
+  const bad = await put('bad key\nX=1')
+  check('줄바꿈이 든 키는 400', bad.status === 400, bad.status)
+  const ok = await put('sk-test-12345678')
+  const body = await ok.text()
+  check('키를 저장하면 set: true, 키 값은 돌려주지 않는다', ok.status === 200 && body.includes('"set":true') && !body.includes('sk-test'), body)
+  const lines = readFileSync(file, 'utf8').trim().split('\n')
+  check(
+    'env 파일에서 키 줄만 바뀐다',
+    JSON.stringify(lines) === JSON.stringify(['# agent env', 'PORTAINER_URL=https://127.0.0.1:9443', 'OPENROUTER_API_KEY=sk-test-12345678']),
+    lines,
+  )
 }
 
 console.info(failures ? `${failures} failure(s)` : 'all passed')

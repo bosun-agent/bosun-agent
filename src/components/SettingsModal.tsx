@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { Settings } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 
-// 1차 범위(모델 선택, API 키)와 2차에 들어올 항목 자리. 모델 말고는 아직 회색 블록이다.
+// 1차 범위(모델 선택, API 키)와 2차에 들어올 항목 자리. 정책·정보는 아직 회색 블록이다.
 const SECTIONS = [
   { id: 'model', label: '모델' },
   { id: 'api-key', label: 'API 키' },
@@ -69,6 +69,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
           {sectionId === 'model' ? (
             <ModelSection />
+          ) : sectionId === 'api-key' ? (
+            <ApiKeySection />
           ) : (
             <>
               <div aria-hidden className="h-40 shrink-0 rounded-md bg-neutral-300/70" />
@@ -141,5 +143,75 @@ function ModelSection() {
       ))}
       {failed && <p className="px-1 text-sm text-red-600">저장하지 못했어요. 다시 골라주세요.</p>}
     </div>
+  )
+}
+
+// 키는 Agent env 파일에 저장된다. 화면은 키 값을 다시 받지 않고 저장 여부만 보여준다.
+function ApiKeySection() {
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+
+  useEffect(() => {
+    if (!agent.getSettings) {
+      setFailed(true)
+      return
+    }
+    agent.getSettings().then(setSettings, () => setFailed(true))
+  }, [])
+
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    const apiKey = value.trim()
+    if (!agent.saveApiKey || saving || !apiKey) return
+    setSaving(true)
+    setSaved(false)
+    setSaveFailed(false)
+    try {
+      setSettings(await agent.saveApiKey(apiKey))
+      setValue('')
+      setSaved(true)
+    } catch {
+      setSaveFailed(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (failed) return <p className="px-1 text-sm text-red-600">설정을 불러오지 못했어요.</p>
+  if (!settings) return <p className="px-1 text-sm text-neutral-500">불러오는 중…</p>
+  if (!settings.apiKey.editable) {
+    return <p className="px-1 text-sm text-neutral-500">이 서버에서는 API 키를 바꿀 수 없어요. 관리자에게 문의해주세요.</p>
+  }
+
+  return (
+    <form onSubmit={save} className="space-y-2">
+      <p className="px-1 text-sm">
+        {settings.apiKey.set ? '저장된 키가 있어요.' : '저장된 키가 없어요.'}
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={settings.apiKey.set ? '새 키로 바꾸기' : 'API 키'}
+          autoComplete="off"
+          aria-label="API 키"
+          className="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-[13px]"
+        />
+        <button
+          type="submit"
+          disabled={saving || !value.trim()}
+          className="shrink-0 rounded-md bg-neutral-800 px-3 py-2 text-sm text-white disabled:opacity-40"
+        >
+          저장
+        </button>
+      </div>
+      {saved && <p className="px-1 text-sm text-neutral-700">저장했어요. AI Agent를 다시 시작해야 새 키가 적용돼요.</p>}
+      {saveFailed && <p className="px-1 text-sm text-red-600">저장하지 못했어요. 키를 확인하고 다시 시도해주세요.</p>}
+    </form>
   )
 }

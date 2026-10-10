@@ -119,55 +119,53 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     match: /삭제|지워|만료/,
     run: async (r) => {
       await r.say('nginx-web 컨테이너를 삭제할게요.')
-      const res = await r.tool('proxy_delete', { environment_id: 1, method: 'DELETE', path: '/containers/nginx-web' }, { ask: true })
+      const res = await r.tool('docker_proxy', { environment_id: 1, method: 'DELETE', path: '/containers/nginx-web' }, { ask: true })
       await r.say(res.isError ? '\n승인되지 않아서 삭제하지 않았어요.' : '\nnginx-web을 삭제했어요.')
     },
   },
   {
-    // exec는 생성·실행 두 번 승인을 받는다(계약 7장).
-    match: /명령|exec/,
+    // 상태 변경(POST)은 승인을 받는다. GET은 permissions.allow라 묻지 않는다.
+    match: /재시작|중지/,
     run: async (r) => {
-      await r.say('web 컨테이너 안에서 ls -al을 실행할게요.')
-      const created = await r.tool(
-        'proxy_exec',
-        { environment_id: 1, method: 'POST', path: '/containers/web/exec', body: { Cmd: ['ls', '-al'], AttachStdout: true } },
-        { ask: true, output: '{"Id":"3f9a1c0e"}' },
-      )
-      if (created.isError) return r.say('\n승인되지 않아서 실행하지 않았어요.')
-      const started = await r.tool('proxy_exec', { environment_id: 1, method: 'POST', path: '/exec/3f9a1c0e/start', body: {} }, { ask: true, output: 'total 8\ndrwxr-xr-x 2 root root 4096 .' })
-      await r.say(started.isError ? '\n실행은 승인되지 않았어요.' : '\n실행했어요. 파일이 하나 있어요.')
+      await r.say('web 컨테이너를 재시작할게요.')
+      const res = await r.tool('docker_proxy', { environment_id: 1, method: 'POST', path: '/containers/web/restart' }, { ask: true, output: '' })
+      await r.say(res.isError ? '\n승인되지 않아서 재시작하지 않았어요.' : '\nweb을 재시작했어요.')
     },
   },
   {
     // tool_guard 훅 거부(Secure 검사). hook_blocked 이벤트와 오류 결과가 온다.
     match: /차단|privileged/,
     run: async (r) => {
-      await r.tool('proxy_lifecycle', { environment_id: 1, method: 'POST', path: '/containers/create' }, {
+      await r.tool('docker_proxy', { environment_id: 1, method: 'POST', path: '/containers/create', body: { HostConfig: { Privileged: true } } }, {
         hookBlock: 'privileged containers are not allowed',
       })
       await r.say('그 작업은 보안 정책상 채팅으로 실행할 수 없어요. 필요하면 Portainer 대시보드에서 직접 해주세요.')
     },
   },
   {
-    // agent.yaml permissions.deny
-    match: /금지/,
+    // agent.yaml permissions.deny(exec, archive, export, prune, 볼륨 삭제)
+    match: /금지|명령|exec/,
     run: async (r) => {
-      await r.tool('proxy_admin', {}, { deny: "Tool 'proxy_admin' is denied by permissions configuration." })
-      await r.say('그 도구는 정책상 쓸 수 없어요.')
+      await r.tool(
+        'docker_proxy',
+        { environment_id: 1, method: 'POST', path: '/containers/web/exec', body: { Cmd: ['ls', '-al'] } },
+        { deny: "Tool 'docker_proxy' is denied by permissions configuration." },
+      )
+      await r.say('컨테이너 안 명령 실행은 정책상 할 수 없어요.')
     },
   },
   {
     // 모델이 없는 도구를 부른 경우. 정책 차단이 아니라 모델 실수라서 실패로만 보인다.
     match: /없는 도구/,
     run: async (r) => {
-      await r.tool('proxy_unknown', {}, { deny: "Tool 'proxy_unknown' is not available. You can only use the tools provided to you." })
+      await r.tool('ContainerList', {}, { deny: "Tool 'ContainerList' is not available. You can only use the tools provided to you." })
       await r.say('그 도구는 없어요.')
     },
   },
   {
     match: /목록|상태|조회/,
     run: async (r) => {
-      await r.tool('proxy_read', { environment_id: 1, method: 'GET', path: '/containers/json' }, { output: '[{"Names":["/web"],"State":"running"}]' })
+      await r.tool('docker_proxy', { environment_id: 1, method: 'GET', path: '/containers/json' }, { output: '[{"Names":["/web"],"State":"running"}]' })
       await r.say('실행 중인 컨테이너는 web 하나예요.')
     },
   },
@@ -250,7 +248,7 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
       }
       const scenario = SCENARIOS.find((sc) => sc.match.test(text))
       if (scenario) await scenario.run(r)
-      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 명령, 차단, 금지, 없는 도구, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
+      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 재시작, 명령, 차단, 금지, 없는 도구, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
       await r.stop()
     } finally {
       if (runs.get(s.id) === r) runs.delete(s.id)

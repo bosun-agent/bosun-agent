@@ -6,7 +6,7 @@ import type { ApprovalDecision, RestoredCard, RestoredMessage, SessionSummary } 
 import * as agent from './agentClient.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
-import { getSettings, saveModel } from './settings.ts'
+import { getSettings, saveApiKey, saveModel, validApiKey } from './settings.ts'
 import { cardsFor } from './store.ts'
 import { HttpError, decide, detach, startTurn, type Sink } from './turns.ts'
 
@@ -125,7 +125,7 @@ app.post('/api/sessions/:id/approvals/:approvalId', async (c) => {
   return streamTo(c, attach)
 })
 
-// 설정 화면(계약 3장). 지금은 모델 선택만 있다.
+// 설정 화면(계약 3장). 모델 선택과 API 키.
 app.get('/api/settings', (c) => c.json(getSettings()))
 
 app.put('/api/settings', async (c) => {
@@ -133,5 +133,16 @@ app.put('/api/settings', async (c) => {
   if (typeof body.model !== 'string' || !saveModel(body.model)) {
     throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 모델이에요.')
   }
+  return c.json(getSettings())
+})
+
+// API 키는 Docker Agent env 파일에 쓴다. Agent를 다시 시작해야 적용된다(계약 7장 ①).
+app.put('/api/settings/api-key', async (c) => {
+  if (!config.agentEnvFile) throw new HttpError(409, 'NOT_EDITABLE', 'API 키를 바꿀 수 없게 설정돼 있어요.')
+  const body = await c.req.json<{ apiKey?: unknown }>().catch(() => ({}) as { apiKey?: unknown })
+  const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : undefined
+  if (!validApiKey(apiKey)) throw new HttpError(400, 'BAD_REQUEST', 'API 키 형식이 올바르지 않아요.')
+  saveApiKey(apiKey)
+  console.info(`[settings] ${config.agentKeyName} updated; restart Docker Agent to apply`)
   return c.json(getSettings())
 })

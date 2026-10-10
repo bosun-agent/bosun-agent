@@ -79,4 +79,14 @@ export const httpAgent: AgentClient = {
     if (!res.ok) throw new Error(`saveModel ${res.status}`)
     return (await res.json()) as Settings
   },
+
+  async saveApiKey(apiKey) {
+    const res = await fetch('/api/settings/api-key', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey }),
+    })
+    if (!res.ok) throw new Error(`saveApiKey ${res.status}`)
+    return (await res.json()) as Settings
+  },
 }

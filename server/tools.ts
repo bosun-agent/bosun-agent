@@ -1,69 +1,127 @@
-// 도구 이름 → 화면 문구. 처리 과정 줄과 승인 카드를 코드 템플릿으로 만든다(LLM 재요약 금지, 계약 4장).
-// proxy_* 이름은 Airlock alias 기준으로 만든 자리표시다. Portainer MCP를 직접 붙인 뒤 실제 도구 이름으로 바꾼다(계약 7장).
+// 도구 호출 → 화면 문구. 처리 과정 줄과 승인 카드를 코드 템플릿으로 만든다(LLM 재요약 금지, 계약 4장).
+// 도구는 Portainer MCP(mcp-portainer)의 docker_proxy와 EndpointList다(Agent 담당 agent.direct.yaml, 계약 7장).
+// docker_proxy는 Docker Engine API 요청 하나라서 method와 path로 작업을 고른다.
 // 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다(계약 5장 4항).
 
 import type { ProposedAction, RiskReason } from '../src/lib/agentProtocol.ts'
-import { maskText } from './mask.ts'
 
-interface ToolInfo {
+interface ToolAction {
   // 처리 과정 문구에 쓰는 작업 이름
   label: string
-  // 승인 카드 문구에 쓰는 동사구
-  verb?: string
+  // 승인 카드 제목. 없으면 공통 문구로 띄운다
+  summary?: string
+  target?: string
   reasons?: RiskReason[]
 }
 
-const TOOLS: Record<string, ToolInfo> = {
-  proxy_read: { label: '조회' },
-  proxy_lifecycle: { label: '상태 변경', verb: '상태 변경' },
-  proxy_delete: {
-    label: '삭제',
-    verb: '삭제',
-    reasons: [{ code: 'DESTRUCTIVE', message: '삭제하면 되돌릴 수 없어요.' }],
-  },
-  proxy_exec: {
-    label: '명령 실행',
-    verb: '명령 실행',
-    reasons: [{ code: 'EXEC', message: '컨테이너 안에서 명령이 그대로 실행돼요. 명령을 확인해주세요.' }],
-  },
-}
+const DESTRUCTIVE: RiskReason = { code: 'DESTRUCTIVE', message: '삭제하면 되돌릴 수 없어요.' }
 
 const RESOURCES: Record<string, string> = {
   containers: '컨테이너',
   images: '이미지',
   networks: '네트워크',
   volumes: '볼륨',
-  exec: 'exec',
 }
 
-export function toolSummary(tool: string, status: 'running' | 'succeeded' | 'failed'): string {
-  const label = TOOLS[tool]?.label
-  if (!label) return { running: '도구 호출하는 중', succeeded: '실행 완료', failed: '실행 실패' }[status]
-  return { running: `${label}하는 중`, succeeded: `${label} 완료`, failed: `${label} 실패` }[status]
+// POST /containers/{id}/<동작>
+const CONTAINER_ACTIONS: Record<string, string> = {
+  start: '시작',
+  stop: '중지',
+  restart: '재시작',
+  kill: '강제 종료',
+  pause: '일시 중지',
+  unpause: '재개',
+  update: '설정 변경',
+  rename: '이름 변경',
 }
 
-// docker_proxy 인자의 path(`/containers/{id}/...`)에서 리소스 종류와 식별값을 읽는다.
-function parsePath(path: unknown): { resource?: string; target?: string } {
-  if (typeof path !== 'string') return {}
-  const [kind, id] = path.split('/').filter(Boolean)
-  const resource = RESOURCES[kind]
-  if (!resource || !id) return {}
-  return { resource, target: decodeURIComponent(id) }
+// POST /networks/{id}/<동작>
+const NETWORK_ACTIONS: Record<string, string> = {
+  connect: '컨테이너 연결',
+  disconnect: '컨테이너 연결 해제',
 }
 
-// exec 생성 요청의 body.Cmd. body는 객체나 JSON 문자열로 올 수 있다.
-export function execCommand(args: Record<string, unknown>): string | undefined {
-  let body = args.body
-  if (typeof body === 'string') {
+function decode(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
+}
+
+// `/v1.45/containers/web/stop?t=10` → ['containers', 'web', 'stop']
+function pathParts(path: string): string[] {
+  const parts = path.split('?')[0].split('/').filter(Boolean).map(decode)
+  if (/^v\d+(\.\d+)?$/.test(parts[0] ?? '')) parts.shift()
+  return parts
+}
+
+// query_params는 객체나 JSON 문자열로 올 수 있다.
+function queryParams(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
     try {
-      body = JSON.parse(body)
+      value = JSON.parse(value)
     } catch {
-      return undefined
+      return {}
     }
   }
-  const cmd = (body as { Cmd?: unknown } | undefined)?.Cmd
-  if (Array.isArray(cmd)) return cmd.map(String).join(' ')
-  return typeof cmd === 'string' ? cmd : undefined
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function str(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+// 대상이 있으면 "컨테이너 web 중지", 없으면 "컨테이너 중지"
+function titled(resource: string, target: string | undefined, verb: string): string {
+  return target ? `${resource} ${target} ${verb}` : `${resource} ${verb}`
+}
+
+function dockerRequest(method: string, path: string, query: Record<string, unknown>): ToolAction {
+  const [kind, ...rest] = pathParts(path)
+  const resource = RESOURCES[kind]
+  // GET은 permissions.allow라 보통 묻지 않는다. method를 빼고 부르면 승인 카드가 뜬다.
+  if (method === 'GET' || method === 'HEAD') return { label: '조회', summary: resource ? `${resource} 조회` : '조회' }
+  if (!resource) return { label: '변경' }
+
+  if (method === 'DELETE') {
+    // 이미지 이름에는 `/`가 들어간다(DELETE /images/library/nginx).
+    const target = rest.join('/') || undefined
+    return { label: '삭제', summary: titled(resource, target, '삭제'), target, reasons: [DESTRUCTIVE] }
+  }
+
+  if (rest.length === 1 && rest[0] === 'create') {
+    if (kind === 'images') {
+      const image = str(query.fromImage)
+      const tag = str(query.tag)
+      const target = image && tag ? `${image}:${tag}` : image
+      return { label: '이미지 다운로드', summary: titled('이미지', target, '다운로드'), target }
+    }
+    const target = str(query.name)
+    return { label: '생성', summary: titled(resource, target, '생성'), target }
+  }
+
+  // 나머지는 `/<종류>/<식별값>/<동작>`. 이미지는 식별값에 `/`가 들어가므로 마지막 조각만 동작으로 본다.
+  const action = rest.length > 1 ? rest.at(-1)! : undefined
+  const target = (kind === 'images' ? rest.slice(0, action ? -1 : undefined).join('/') : rest[0]) || undefined
+  const verb =
+    (action && kind === 'containers' && CONTAINER_ACTIONS[action]) ||
+    (action && kind === 'networks' && NETWORK_ACTIONS[action]) ||
+    '변경'
+  return { label: verb, summary: titled(resource, target, verb), target }
+}
+
+export function describeTool(tool: string, args: Record<string, unknown>): ToolAction | undefined {
+  if (tool === 'EndpointList') return { label: '환경 목록 조회', summary: '환경 목록 조회' }
+  if (tool !== 'docker_proxy') return undefined
+  // mcp-portainer는 method를 빼면 GET으로 보낸다.
+  const method = (str(args.method) ?? 'GET').toUpperCase()
+  return dockerRequest(method, str(args.path) ?? '', queryParams(args.query_params))
+}
+
+export function toolSummary(label: string | undefined, status: 'running' | 'succeeded' | 'failed'): string {
+  if (!label) return { running: '도구 호출하는 중', succeeded: '실행 완료', failed: '실행 실패' }[status]
+  return { running: `${label}하는 중`, succeeded: `${label} 완료`, failed: `${label} 실패` }[status]
 }
 
 export interface ApprovalCard {
@@ -72,31 +130,12 @@ export interface ApprovalCard {
   reasons: RiskReason[]
 }
 
-// execCommands: exec 생성 결과로 받은 exec ID → 명령. `/exec/{id}/start` 카드에 명령을 보여주려고 쓴다(계약 7장).
-export function approvalCard(
-  tool: string,
-  args: Record<string, unknown>,
-  execCommands: ReadonlyMap<string, string>,
-): ApprovalCard {
-  const info = TOOLS[tool]
-  const { resource, target } = parsePath(args.path)
-  const params: Record<string, unknown> = {}
-
-  if (typeof args.method === 'string' && typeof args.path === 'string') {
-    params.요청 = `${args.method} ${args.path}`
+export function approvalCard(tool: string, args: Record<string, unknown>): ApprovalCard {
+  const info = describeTool(tool, args)
+  const action: ProposedAction = { tool, ...(info?.target ? { target: info.target } : {}) }
+  if (tool === 'docker_proxy' && typeof args.path === 'string') {
+    action.params = { 요청: `${(str(args.method) ?? 'GET').toUpperCase()} ${args.path}` }
   }
-  const command =
-    tool === 'proxy_exec'
-      ? (execCommand(args) ?? (resource === 'exec' && target ? execCommands.get(target) : undefined))
-      : undefined
-  if (command) params.명령 = maskText(command)
-
-  const action: ProposedAction = { tool, ...(target ? { target } : {}) }
-  if (Object.keys(params).length > 0) action.params = params
-
-  if (!info?.verb) {
-    return { summary: '승인이 필요한 작업입니다.', action, reasons: [] }
-  }
-  const subject = resource && resource !== 'exec' && target ? `${resource} ${target} ` : ''
-  return { summary: `${subject}${info.verb}`, action, reasons: info.reasons ?? [] }
+  if (!info?.summary) return { summary: '승인이 필요한 작업입니다.', action, reasons: [] }
+  return { summary: info.summary, action, reasons: info.reasons ?? [] }
 }

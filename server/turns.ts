@@ -13,7 +13,7 @@ import type { DAEvent } from './agentClient.ts'
 import { config } from './config.ts'
 import { currentModel } from './settings.ts'
 import { addCard, logDecision, updateApprovalCard, type ApprovalStatus } from './store.ts'
-import { approvalCard, execCommand } from './tools.ts'
+import { approvalCard } from './tools.ts'
 import { Translator } from './translate.ts'
 
 export interface Sink {
@@ -35,17 +35,11 @@ interface Approval {
   event: ApprovalEvent
 }
 
-interface RunningCall {
-  name: string
-  args: Record<string, unknown>
-}
-
 interface Turn {
   sessionId: string
   // 이 세션에서 몇 번째 사용자 메시지인지(0부터). 카드를 대화 복원 위치에 붙일 때 쓴다.
   index: number
   abort: AbortController
-  running: Map<string, RunningCall>
   sink: Sink | null
   buffer: AgentEvent[]
   // 결정을 기다리는 카드. 브라우저 스트림이 열려 있으면 바로 보내고, 아니면 다음에 붙을 때 보낸다.
@@ -57,8 +51,6 @@ interface Turn {
 
 let turn: Turn | null = null
 const approvals = new Map<string, Approval>()
-// exec 생성 결과로 받은 exec ID → 명령(계약 7장 exec 승인 카드 두 번 문제)
-const execCommands = new Map<string, string>()
 
 export class HttpError extends Error {
   readonly status: number
@@ -138,7 +130,6 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
     sessionId,
     index: 0,
     abort: new AbortController(),
-    running: new Map(),
     sink: null,
     buffer: [],
     waiting: null,
@@ -204,41 +195,12 @@ async function pump(t: Turn, upstream: AsyncGenerator<DAEvent>): Promise<void> {
   }
 }
 
-// 실행 중인 도구 호출을 기억한다. 인자는 exec 명령 짝짓기에만 쓰고 브라우저로 보내지 않는다.
+// 결정 전에 그 호출이 끝났으면(Agent 쪽 취소 등) 카드를 취소로 둔다.
 // Docker Agent는 승인을 받은 뒤에 tool_call을 보낸다. 거부·차단된 호출에는 tool_call 없이 tool_call_response만 온다.
 function track(t: Turn, ev: DAEvent): void {
-  if (ev.type === 'tool_call') {
-    const call = (ev as Extract<DAEvent, { type: 'tool_call' }>).tool_call
-    let args: Record<string, unknown> = {}
-    try {
-      args = JSON.parse(call.function.arguments || '{}')
-    } catch {
-      // 인자를 못 읽어도 호출 추적은 한다.
-    }
-    if (call.id) t.running.set(call.id, { name: call.function.name ?? '', args })
-    return
-  }
-  if (ev.type === 'tool_call_response') {
-    const res = ev as Extract<DAEvent, { type: 'tool_call_response' }>
-    // 결정 전에 그 호출이 끝났으면(Agent 쪽 취소 등) 카드를 취소로 둔다.
-    if (t.waiting?.status === 'pending' && t.waiting.toolCallId === res.tool_call_id) resolve(t.waiting, 'cancelled')
-    const call = t.running.get(res.tool_call_id)
-    if (!call) return
-    t.running.delete(res.tool_call_id)
-    rememberExec(call, res.response, res.result?.isError ?? false)
-  }
-}
-
-function rememberExec(call: RunningCall, response: string, isError: boolean): void {
-  if (call.name !== 'proxy_exec' || isError) return
-  const command = execCommand(call.args)
-  if (!command) return
-  try {
-    const id = (JSON.parse(response) as { Id?: unknown }).Id
-    if (typeof id === 'string') execCommands.set(id, command)
-  } catch {
-    // exec 생성 응답이 아니면 무시한다.
-  }
+  if (ev.type !== 'tool_call_response') return
+  const res = ev as Extract<DAEvent, { type: 'tool_call_response' }>
+  if (t.waiting?.status === 'pending' && t.waiting.toolCallId === res.tool_call_id) resolve(t.waiting, 'cancelled')
 }
 
 // ---- 승인 요청 ----
@@ -259,7 +221,7 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
   if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
 
   const expiresAt = Date.now() + config.approvalTimeoutMs
-  const card = approvalCard(tool, args, execCommands)
+  const card = approvalCard(tool, args)
   const ap: Approval = {
     id: `ap_${randomUUID()}`,
     sessionId: t.sessionId,

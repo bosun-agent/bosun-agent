@@ -4,7 +4,7 @@
 import type { AgentEvent } from '../src/lib/agentProtocol.ts'
 import type { DAEvent } from './agentClient.ts'
 import { maskText } from './mask.ts'
-import { toolSummary } from './tools.ts'
+import { describeTool, toolSummary } from './tools.ts'
 
 // 도구 호출이 정책으로 막혔을 때 Docker Agent가 도구 결과로 돌려주는 문구(v1.145.0 `pkg/runtime/toolexec`).
 // 도구 결과에는 컨테이너 이름·로그 같은 외부 문자열이 섞이므로 맨 앞부터 맞춰 본다(계약 6장).
@@ -31,6 +31,9 @@ export class Translator {
   private initStarted = false
   private initFinished = false
   private failed = false
+  // 도구 호출 ID → 작업 이름. 결과 이벤트에는 인자가 없어서 호출 때 정해 둔다.
+  // 거부·차단된 호출은 tool_call 없이 결과만 오므로 공통 문구가 된다.
+  private labels = new Map<string, string | undefined>()
 
   translate(ev: DAEvent): Translated {
     switch (ev.type) {
@@ -51,26 +54,37 @@ export class Translator {
       }
 
       case 'tool_call': {
-        const name = (ev as Extract<DAEvent, { type: 'tool_call' }>).tool_call.function.name ?? ''
-        return { events: [{ type: 'tool_status', tool: name, status: 'running', summary: toolSummary(name, 'running') }] }
+        const call = (ev as Extract<DAEvent, { type: 'tool_call' }>).tool_call
+        const name = call.function.name ?? ''
+        let args: Record<string, unknown> = {}
+        try {
+          args = JSON.parse(call.function.arguments || '{}')
+        } catch {
+          // 인자를 못 읽으면 공통 문구를 쓴다.
+        }
+        const label = describeTool(name, args)?.label
+        if (call.id) this.labels.set(call.id, label)
+        return { events: [{ type: 'tool_status', tool: name, status: 'running', summary: toolSummary(label, 'running') }] }
       }
 
       case 'tool_call_response': {
         const res = ev as Extract<DAEvent, { type: 'tool_call_response' }>
         const name = res.tool_definition?.name ?? ''
         const isError = res.result?.isError ?? false
+        const label = this.labels.get(res.tool_call_id)
+        this.labels.delete(res.tool_call_id)
         if (isError && USER_REJECTED.test(res.response)) return { events: [] }
         if (isPolicyDenied(res.response, isError)) {
           // 규칙 ID가 오지 않으므로 공통 코드를 쓴다. 이어지는 Agent 설명이 text_delta로 온다(계약 6장).
           return {
             events: [
-              { type: 'tool_status', tool: name, status: 'failed', summary: toolSummary(name, 'failed') },
+              { type: 'tool_status', tool: name, status: 'failed', summary: toolSummary(label, 'failed') },
               { type: 'rejected', code: 'POLICY_DENIED', reason: POLICY_DENIED_REASON },
             ],
           }
         }
         const status = isError ? 'failed' : 'succeeded'
-        return { events: [{ type: 'tool_status', tool: name, status, summary: toolSummary(name, status) }] }
+        return { events: [{ type: 'tool_status', tool: name, status, summary: toolSummary(label, status) }] }
       }
 
       case 'elicitation_request':

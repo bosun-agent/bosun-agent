@@ -27,6 +27,12 @@ export const config = {
     .map((m) => m.trim())
     .filter(Boolean),
 
+  // Docker Agent `--env-from-file`로 넘기는 env 파일. 설정 화면에서 API 키를 바꾸면 이 파일에 쓴다(계약 7장 ①).
+  // 비어 있으면 화면에서 키를 바꿀 수 없다. 저장한 키는 Agent를 다시 시작해야 적용된다.
+  agentEnvFile: process.env.AGENT_ENV_FILE ?? '',
+  // 그 파일에서 바꿀 키 이름. agent.yaml 모델의 provider에 맞춘다.
+  agentKeyName: process.env.AGENT_KEY_NAME ?? 'OPENROUTER_API_KEY',
+
   // 승인·차단 카드와 승인 감사 기록을 두는 SQLite 파일. 대화 내용은 Docker Agent session.db에 있다.
   dbPath: process.env.WEB_DB_PATH ?? 'server/data/web.db',
 

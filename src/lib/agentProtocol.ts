@@ -66,9 +66,11 @@ export interface SessionSummary {
 // 실제 클라이언트도 이 모양을 구현하면 App.tsx는 바꿀 필요가 없다.
 // 목록·복원은 서버가 있어야 하므로 목업에는 없다.
 // 설정 화면 값(계약 3장). model이 null이면 agent.yaml에 적힌 모델을 쓴다.
+// apiKey는 키 값 없이 상태만 준다. editable이 false면 WEB 백엔드에 Agent env 파일 경로가 없다.
 export interface Settings {
   model: string | null
   models: string[]
+  apiKey: { editable: boolean; set: boolean }
 }
 
 export interface AgentClient {
@@ -85,4 +87,6 @@ export interface AgentClient {
   loadMessages?(sessionId: string): Promise<RestoredMessage[]>
   getSettings?(): Promise<Settings>
   saveModel?(model: string): Promise<Settings>
+  // 저장해도 Docker Agent를 다시 시작해야 적용된다(계약 7장 ①).
+  saveApiKey?(apiKey: string): Promise<Settings>
 }
