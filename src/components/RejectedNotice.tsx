@@ -1,3 +1,5 @@
+import { Markdown } from './Markdown'
+
 // detail: 차단 뒤 Agent가 이어서 한 설명(계약 6장). 스트리밍 중에도 카드 안에서 이어붙는다.
 export function RejectedNotice({ reason, detail }: { reason: string; detail?: string }) {
   return (
@@ -8,7 +10,9 @@ export function RejectedNotice({ reason, detail }: { reason: string; detail?: st
       </div>
       <p>{reason}</p>
       {detail && (
-        <p className="mt-1.5 whitespace-pre-wrap text-neutral-800">{detail}</p>
+        <div className="mt-1.5 text-neutral-800">
+          <Markdown text={detail} />
+        </div>
       )}
     </div>
   )

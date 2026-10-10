@@ -30,6 +30,8 @@ export interface ProcessStep {
   doneLabel?: string
   // 도구 이름
   detail?: string
+  // 도구 단계의 호출 ID(tool_status.callId)
+  callId?: string
   state: StepState
 }
 

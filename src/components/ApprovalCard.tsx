@@ -12,6 +12,9 @@ interface ApprovalCardProps {
 // 남은 시간이 이보다 적으면 강조한다.
 const URGENT_MS = 60_000
 
+// 호스트까지 영향이 가는 사유는 빨간색으로 보여준다.
+const DANGER_CODES = new Set(['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE'])
+
 export function ApprovalCard({
   approval,
   expired,
@@ -71,10 +74,16 @@ export function ApprovalCard({
         {action.tool}
         {action.target && ` → ${action.target}`}
       </p>
+      {action.params && <ParamList params={action.params} />}
       {reasons.length > 0 && (
-        <ul className="mt-2 space-y-1 text-sm text-neutral-600">
+        <ul className="mt-2 space-y-1 text-sm">
           {reasons.map((reason) => (
-            <li key={reason.code}>· {reason.message}</li>
+            <li
+              key={reason.code}
+              className={DANGER_CODES.has(reason.code) ? 'font-medium text-red-700' : 'text-neutral-600'}
+            >
+              · {reason.message}
+            </li>
           ))}
         </ul>
       )}
@@ -95,6 +104,22 @@ export function ApprovalCard({
         </button>
       </div>
     </div>
+  )
+}
+
+// 서버가 고른 요청 값(이미지, 명령, 마운트 등). 명령은 길 수 있어서 높이를 제한하고 스크롤한다.
+function ParamList({ params }: { params: Record<string, unknown> }) {
+  return (
+    <dl className="mt-2 space-y-1 rounded-lg bg-white/70 px-3 py-2 text-xs">
+      {Object.entries(params).map(([name, value]) => (
+        <div key={name} className="flex gap-2">
+          <dt className="w-14 shrink-0 text-neutral-500">{name}</dt>
+          <dd className="max-h-32 min-w-0 flex-1 overflow-y-auto font-mono break-all whitespace-pre-wrap text-neutral-800">
+            {String(value)}
+          </dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 

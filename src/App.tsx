@@ -6,7 +6,7 @@ import { SessionSidebar, SidebarToggle } from './components/SessionSidebar'
 import { SettingsModal } from './components/SettingsModal'
 import type { AgentEvent, ApprovalDecision, ProgressStep } from './lib/agentProtocol'
 import { agent, usingMock } from './lib/agent'
-import { finishActive, hasActive, startStep } from './lib/processSteps'
+import { finishActive, finishToolStep, hasActive, startStep, startToolStep } from './lib/processSteps'
 import { toChatMessages } from './lib/restore'
 import type { ChatMessage, ChatSession, ProcessStep } from './types'
 
@@ -132,14 +132,13 @@ function App() {
             break
           case 'tool_status':
             updateSteps(id, (steps) => {
+              const step = { label: event.summary, doneLabel: '도구 호출함', detail: event.tool }
               if (event.status === 'running') {
-                return startStep(steps, {
-                  label: event.summary,
-                  doneLabel: '도구 호출함',
-                  detail: event.tool,
-                })
+                return event.callId ? startToolStep(steps, step, event.callId) : startStep(steps, step)
               }
               const state = event.status === 'succeeded' ? 'done' : 'failed'
+              const paired = event.callId && finishToolStep(steps, event.callId, state, event.summary)
+              if (paired) return paired
               // 진행 중인 단계가 없었으면 결과를 새 줄로 남긴다.
               return hasActive(steps)
                 ? finishActive(steps, state, event.summary)

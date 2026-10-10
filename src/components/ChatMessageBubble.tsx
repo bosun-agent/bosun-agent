@@ -1,5 +1,6 @@
 import type { ChatMessage, MessageStatus } from '../types'
 import { ApprovalCard } from './ApprovalCard'
+import { Markdown } from './Markdown'
 import { ProcessSteps } from './ProcessSteps'
 import { RejectedNotice } from './RejectedNotice'
 
@@ -72,8 +73,8 @@ function AssistantBody({
         />
         {/* 만료 뒤 Agent가 이어서 한 말 */}
         {expired && message.content && (
-          <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-neutral-900">
-            {message.content}
+          <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-900">
+            <Markdown text={message.content} />
           </div>
         )}
       </div>
@@ -94,9 +95,9 @@ function AssistantBody({
       <div className="max-w-[75%] rounded-2xl border border-neutral-300 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-600">
         {/* 끊기기 전까지 받은 내용은 남기고, 그 아래에 오류를 붙인다 */}
         {message.content && (
-          <p className="mb-1.5 whitespace-pre-wrap text-neutral-900">
-            {message.content}
-          </p>
+          <div className="mb-1.5 text-neutral-900">
+            <Markdown text={message.content} />
+          </div>
         )}
         <p className={message.content ? 'text-sm text-red-600' : ''}>
           {message.errorMessage ?? '알 수 없는 오류가 발생했어요.'}
@@ -117,8 +118,8 @@ function AssistantBody({
   if (!message.content) return null
 
   return (
-    <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-neutral-900">
-      {message.content}
+    <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-900">
+      <Markdown text={message.content} />
       {message.status === 'streaming' && <StreamCursor />}
     </div>
   )

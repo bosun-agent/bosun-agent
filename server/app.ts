@@ -97,7 +97,7 @@ app.get('/api/sessions/:id/messages', async (c) => {
   const messages: RestoredMessage[] = turns.flatMap((t): RestoredMessage[] => [
     { role: 'user', content: t.user },
     ...(t.reply.length || t.cards.length
-      ? [{ role: 'assistant' as const, content: t.reply.join('\n'), ...(t.cards.length ? { cards: t.cards } : {}) }]
+      ? [{ role: 'assistant' as const, content: t.reply.join('\n\n'), ...(t.cards.length ? { cards: t.cards } : {}) }]
       : []),
   ])
   return c.json({ messages })

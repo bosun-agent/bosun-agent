@@ -124,6 +124,29 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
+    // 생성할 때 Cmd로 셸 명령을 넣는 경우(2026-10-11 실제 모델이 이렇게 했다). 카드에 명령이 보여야 한다.
+    match: /웹사이트/,
+    run: async (r) => {
+      await r.say('nginx로 웹사이트 컨테이너를 만들게요.')
+      const res = await r.tool(
+        'docker_proxy',
+        {
+          environment_id: 1,
+          method: 'POST',
+          path: '/containers/create',
+          query_params: { name: 'my-website' },
+          body: {
+            Image: 'nginx:alpine',
+            Cmd: ['/bin/sh', '-c', "echo hi > /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'"],
+            HostConfig: { PortBindings: { '80/tcp': [{ HostPort: '8090' }] } },
+          },
+        },
+        { ask: true, output: '{"Id":"dda78131"}' },
+      )
+      await r.say(res.isError ? '승인되지 않아서 만들지 않았어요.' : 'my-website를 만들었어요.')
+    },
+  },
+  {
     // 상태 변경(POST)은 승인을 받는다. GET은 permissions.allow라 묻지 않는다.
     match: /재시작|중지/,
     run: async (r) => {
@@ -248,7 +271,7 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
       }
       const scenario = SCENARIOS.find((sc) => sc.match.test(text))
       if (scenario) await scenario.run(r)
-      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 재시작, 명령, 차단, 금지, 없는 도구, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
+      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 만료, 웹사이트, 재시작, 명령, 차단, 금지, 없는 도구, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
       await r.stop()
     } finally {
       if (runs.get(s.id) === r) runs.delete(s.id)

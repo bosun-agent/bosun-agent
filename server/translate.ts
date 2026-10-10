@@ -34,6 +34,9 @@ export class Translator {
   // 도구 호출 ID → 작업 이름. 결과 이벤트에는 인자가 없어서 호출 때 정해 둔다.
   // 거부·차단된 호출은 tool_call 없이 결과만 오므로 공통 문구가 된다.
   private labels = new Map<string, string | undefined>()
+  // 도구 호출 앞뒤 문장이 붙어 나오지 않게, 도구 호출 뒤 첫 문장 앞에 빈 줄을 넣는다.
+  private text = ''
+  private toolSinceText = false
 
   translate(ev: DAEvent): Translated {
     switch (ev.type) {
@@ -50,7 +53,15 @@ export class Translator {
 
       case 'agent_choice': {
         const { content } = ev as Extract<DAEvent, { type: 'agent_choice' }>
-        return content ? { events: [{ type: 'text_delta', delta: maskText(content) }] } : { events: [] }
+        if (!content) return { events: [] }
+        let delta = maskText(content)
+        if (this.toolSinceText && this.text) {
+          const trailing = /\n*$/.exec(this.text)![0].length
+          delta = '\n'.repeat(Math.max(0, 2 - trailing)) + delta
+        }
+        this.toolSinceText = false
+        this.text = (this.text + delta).slice(-8)
+        return { events: [{ type: 'text_delta', delta }] }
       }
 
       case 'tool_call': {
@@ -64,7 +75,11 @@ export class Translator {
         }
         const label = describeTool(name, args)?.label
         if (call.id) this.labels.set(call.id, label)
-        return { events: [{ type: 'tool_status', tool: name, status: 'running', summary: toolSummary(label, 'running') }] }
+        this.toolSinceText = true
+        const callId = call.id ? { callId: call.id } : {}
+        return {
+          events: [{ type: 'tool_status', tool: name, status: 'running', summary: toolSummary(label, 'running'), ...callId }],
+        }
       }
 
       case 'tool_call_response': {
@@ -73,18 +88,21 @@ export class Translator {
         const isError = res.result?.isError ?? false
         const label = this.labels.get(res.tool_call_id)
         this.labels.delete(res.tool_call_id)
+        this.toolSinceText = true
         if (isError && USER_REJECTED.test(res.response)) return { events: [] }
         if (isPolicyDenied(res.response, isError)) {
           // 규칙 ID가 오지 않으므로 공통 코드를 쓴다. 이어지는 Agent 설명이 text_delta로 온다(계약 6장).
           return {
             events: [
-              { type: 'tool_status', tool: name, status: 'failed', summary: toolSummary(label, 'failed') },
+              { type: 'tool_status', tool: name, status: 'failed', summary: toolSummary(label, 'failed'), callId: res.tool_call_id },
               { type: 'rejected', code: 'POLICY_DENIED', reason: POLICY_DENIED_REASON },
             ],
           }
         }
         const status = isError ? 'failed' : 'succeeded'
-        return { events: [{ type: 'tool_status', tool: name, status, summary: toolSummary(label, status) }] }
+        return {
+          events: [{ type: 'tool_status', tool: name, status, summary: toolSummary(label, status), callId: res.tool_call_id }],
+        }
       }
 
       case 'elicitation_request':

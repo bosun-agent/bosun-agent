@@ -25,6 +25,28 @@ export function finishActive(
   })
 }
 
+// 도구 단계는 호출 ID로 짝짓는다. 모델이 도구를 한꺼번에 여러 개 부르면 진행 중인 도구 단계가 여럿일 수 있다.
+// 새 도구 단계를 붙일 때는 도구가 아닌 진행 단계(요청 이해 등)만 끝낸다.
+export function startToolStep(steps: ProcessStep[], step: NewStep, callId: string): ProcessStep[] {
+  return [
+    ...steps.map((s) =>
+      s.state === 'active' && !s.callId ? { ...s, state: 'done' as const, label: s.doneLabel ?? s.label } : s,
+    ),
+    { ...step, id: crypto.randomUUID(), callId, state: 'active' },
+  ]
+}
+
+// 같은 호출 ID의 단계를 끝낸다. 그런 단계가 없으면(거부·차단된 호출) null.
+export function finishToolStep(
+  steps: ProcessStep[],
+  callId: string,
+  state: Exclude<StepState, 'active'>,
+  label: string,
+): ProcessStep[] | null {
+  if (!steps.some((s) => s.callId === callId)) return null
+  return steps.map((s) => (s.callId === callId ? { ...s, state, label } : s))
+}
+
 export function hasActive(steps: ProcessStep[]) {
   return steps.some((s) => s.state === 'active')
 }

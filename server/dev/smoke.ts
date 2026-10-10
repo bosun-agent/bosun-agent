@@ -84,6 +84,20 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   check('승인 뒤 처리 과정에 작업 이름이 보인다', JSON.stringify(tools).includes('재시작 완료'), tools)
 }
 {
+  const r = await send('웹사이트 만들어줘')
+  const ap = approvalOf(r.events)
+  const params = ap?.action.params ?? {}
+  check(
+    '생성 카드에 이미지·명령·포트와 명령 경고가 보인다',
+    params.이미지 === 'nginx:alpine' && String(params.명령).includes('index.html') && params.포트 === '8090 → 80/tcp' &&
+      ap!.reasons.some((x) => x.code === 'COMMAND'),
+    ap,
+  )
+  const d = await decide(ap!.approvalId, 'deny')
+  // 도구 호출 앞뒤 문장이 붙지 않게 빈 줄이 들어간다.
+  check('도구 호출 뒤 문장은 빈 줄로 나뉜다', text(d.events).startsWith('\n\n승인되지 않아서'), text(d.events))
+}
+{
   const r = await send('명령 실행해줘')
   check('exec는 승인 카드 없이 rejected', types(r.events).includes('rejected') && !types(r.events).includes('approval_required'), types(r.events))
 }
@@ -116,8 +130,8 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const res = await fetch(`${BASE}/api/sessions/${sid}/messages`)
   const { messages } = (await res.json()) as { messages: { role: string; content: string; cards?: unknown[] }[] }
   const withCards = messages.filter((m) => m.cards?.length)
-  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 12, messages.length)
-  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 7, withCards)
+  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 13, messages.length)
+  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 8, withCards)
 }
 {
   const r = await send('만료 테스트')

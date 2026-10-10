@@ -22,6 +22,8 @@ export type AgentEvent =
       tool: string
       status: 'running' | 'succeeded' | 'failed'
       summary: string
+      // 도구 호출 ID. 모델이 도구를 한꺼번에 여러 개 부르면 시작·결과를 이걸로 짝짓는다(계약 4.1)
+      callId?: string
     }
   | {
       type: 'approval_required'
