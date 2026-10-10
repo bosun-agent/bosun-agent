@@ -11,7 +11,8 @@
     "server:smoke": "node --env-file=server/dev/dev.env server/dev/smoke.ts",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "set-password": "node server/setPassword.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",

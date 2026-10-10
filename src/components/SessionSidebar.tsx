@@ -8,6 +8,8 @@ interface SessionSidebarProps {
   onSelect: (id: string) => void
   onNew: () => void
   onDelete: (id: string) => void
+  // 로그인했을 때만 있다(목업에는 없음)
+  onLogout?: () => void
 }
 
 // 열렸을 때만 그린다. 넓은 화면에서는 채팅을 오른쪽으로 밀고, 좁은 화면에서는 위에 겹친다.
@@ -19,6 +21,7 @@ export function SessionSidebar({
   onSelect,
   onNew,
   onDelete,
+  onLogout,
 }: SessionSidebarProps) {
   return (
     <>
@@ -77,6 +80,17 @@ export function SessionSidebar({
             </div>
           ))}
         </nav>
+        {onLogout && (
+          <div className="border-t border-neutral-200 px-2 py-2">
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-full rounded-md px-3 py-1.5 text-left text-sm text-neutral-600 hover:bg-neutral-200"
+            >
+              로그아웃
+            </button>
+          </div>
+        )}
       </aside>
     </>
   )

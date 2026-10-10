@@ -14,6 +14,42 @@ function check(name: string, ok: boolean, detail?: unknown) {
   console.info(`${ok ? 'ok  ' : 'FAIL'} ${name}`, ok ? '' : JSON.stringify(detail))
 }
 
+// ---- 로그인(server/auth.ts) ----
+// 아래 요청은 모두 로그인 쿠키와 X-Bosun 헤더를 붙여 보낸다. 브라우저 화면(httpAgent)과 같다.
+const rawFetch = globalThis.fetch
+let cookie = ''
+globalThis.fetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
+  if (!String(input).startsWith(BASE)) return rawFetch(input, init)
+  const headers = new Headers(init.headers)
+  headers.set('X-Bosun', '1')
+  if (cookie) headers.set('Cookie', cookie)
+  return rawFetch(input, { ...init, headers })
+}
+const login = (username: string, password: string) =>
+  fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+{
+  const anon = await fetch(`${BASE}/api/sessions`)
+  check('로그인하지 않으면 401', anon.status === 401, anon.status)
+  const bad = await login('admin', 'wrong-password')
+  check('비밀번호가 틀리면 401', bad.status === 401, bad.status)
+  const noHeader = await rawFetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'bosun-dev-password' }),
+  })
+  check('X-Bosun 헤더 없는 POST는 403', noHeader.status === 403, noHeader.status)
+  const ok = await login('admin', 'bosun-dev-password')
+  const set = ok.headers.get('set-cookie') ?? ''
+  cookie = set.split(';')[0]
+  check('로그인하면 HttpOnly·SameSite=Strict 쿠키', ok.status === 200 && /HttpOnly/i.test(set) && /SameSite=Strict/i.test(set), set)
+  const me = await fetch(`${BASE}/api/auth/me`)
+  check('로그인 뒤 /api/auth/me', me.status === 200 && ((await me.json()) as { username: string }).username === 'admin', me.status)
+}
+
 async function post(path: string, body: unknown): Promise<{ status: number; events: AgentEvent[]; json?: unknown }> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
@@ -218,6 +254,21 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
     del.status === 204 && !list.sessions.some((s) => s.sessionId === s4) && gone.status === 404,
     { del: del.status, gone: gone.status },
   )
+}
+{
+  // 승인 감사 기록에 로그인한 사용자가 남는다.
+  const db = process.env.WEB_DB_PATH
+  if (db && db !== ':memory:') {
+    const { DatabaseSync } = await import('node:sqlite')
+    const users = new DatabaseSync(db).prepare("SELECT DISTINCT user FROM approval_audit WHERE user != 'system'").all()
+    check('승인 감사 기록에 로그인한 사용자', users.every((u) => u.user === 'admin'), users)
+  }
+  const out = await fetch(`${BASE}/api/auth/logout`, { method: 'POST' })
+  check('로그아웃하면 쿠키를 지운다', out.status === 204 && /bosun_session=;/.test(out.headers.get('set-cookie') ?? ''), out.headers.get('set-cookie'))
+  cookie = ''
+  for (let i = 0; i < 5; i++) await login('admin', 'wrong-password')
+  const locked = await login('admin', 'bosun-dev-password')
+  check('5번 틀리면 맞는 비밀번호도 잠깐 막힌다(429)', locked.status === 429, locked.status)
 }
 
 console.info(failures ? `${failures} failure(s)` : 'all passed')

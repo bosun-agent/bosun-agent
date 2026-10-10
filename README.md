@@ -24,7 +24,7 @@ npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
 npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
 ```
 
-가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·재시작(승인 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 목록, 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·강제·웹사이트·재시작(승인 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 목록, 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
 
 실제 Docker Agent(Agent 담당 `agent.direct.yaml`)에 붙일 때 WEB 백엔드 env:
 
@@ -34,6 +34,10 @@ AGENT_NAME=agent.direct                 # agent.yaml 파일 이름
 AGENT_TOKEN=...                         # serve api --auth-token 값
 AGENT_MODELS=openrouter/deepseek/deepseek-v4.1-flash
 AGENT_ENV_FILE=/절대경로/agent.env      # Agent --env-from-file 파일. 설정 화면에서 API 키를 여기에 쓴다
+# 아래 셋은 npm run set-password -- <이 env 파일>이 넣는다
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD_HASH=scrypt$...
+JWT_SECRET=...
 ```
 
 설정 화면에서 API 키를 바꾸면 Docker Agent를 다시 띄워야 적용된다.
@@ -74,12 +78,13 @@ AGENT_ENV_FILE=/절대경로/agent.env      # Agent --env-from-file 파일. 설�
 - **레이아웃**(2026-10-07 팀 와이어프레임 기준): 빈 대화는 가운데에 로고·입력창·Go to Portainer(Home), 대화가 시작되면 가운데 칼럼에 메시지와 아래 입력창. 헤더 없이 왼쪽 위 ☰ 버튼과 설정 버튼만 둔다. 로고와 첨부 메뉴 항목은 아직 자리표시
 - **대화 목록**(`SessionSidebar`): ☰로 열고 닫는 사이드바, 새 대화, 처리 중 표시. 대화가 여러 개여도 처리는 한 번에 한 대화만 한다(인터페이스 계약 3장)
 - **처리 과정**(`ProcessSteps`): 도구 목록 불러오기 → 요청 이해 → 승인 대기 → 도구 실행을 실시간으로 보여주고, 끝나면 "처리 과정 보기"로 접는다. 도구 인자와 원본 결과는 보여주지 않는다
-- **메시지 상태**(`MessageStatus`): `thinking`, `streaming`, `done`, `pending_approval`(승인 카드), `approval_expired`, `rejected`(하드 차단, 버튼 없음), `error`
+- **메시지 상태**(`MessageStatus`): `thinking`, `streaming`, `done`, `pending_approval`(승인 카드), `approval_expired`, `error`. 정책 차단은 상태가 아니라 `rejectionReason`으로 따로 둔다(차단 뒤에도 Agent가 이어서 답할 수 있음)
 - 화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`)
 - 라이트 모드 고정(다크 모드는 2026-09-29 피드백에 따라 제거)
 - WEB 백엔드(`server/`): Docker Agent 자체 승인(`tool_call_confirmation` → `/resume`) 기준. 가짜 Agent로 승인·거부·만료·차단까지 확인함. Airlock은 일단 쓰지 않는다(2026-10-08)
 - 대화 복원(`npm run dev:http`): 사이드바에 서버 대화 목록이 나오고, 고르면 내용과 승인·차단 카드가 돌아온다. 새로고침해도 대기 중인 승인 카드를 다시 승인할 수 있다
-- 아직 없음: 로그인(JWT), Portainer MCP가 붙은 실제 Agent로 승인 카드 확인
+- 로그인(`http` 모드): 관리자 한 명. 개발용 계정은 `admin` / `bosun-dev-password`(`server/dev/dev.env`). 실제 env는 `npm run set-password -- <env 파일>`로 비밀번호를 정한다. Git Bash(mintty)에서는 입력이 가려지지 않으므로 PowerShell이나 VS Code 터미널에서 실행한다
+- 실제 Agent 연동: 로컬 Portainer로 확인함(2026-10-11)
 
 ## 디자인 결정 기록
 

@@ -4,13 +4,14 @@ import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { ApprovalDecision, RestoredCard, RestoredMessage, SessionSummary } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
+import { checkLogin, endSession, requireAuth, startSession, type AuthEnv } from './auth.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
 import { getSettings, saveApiKey, saveModel, validApiKey } from './settings.ts'
 import { cardsFor, deleteCards } from './store.ts'
 import { HttpError, decide, detach, isRunning, startTurn, type Sink } from './turns.ts'
 
-export const app = new Hono()
+export const app = new Hono<AuthEnv>()
 
 app.onError((err, c) => {
   if (err instanceof HttpError) return c.json({ error: err.code, message: err.message }, err.status as 400)
@@ -60,6 +61,27 @@ function streamTo(c: Context, attach: (sink: Sink) => void) {
 }
 
 // ---- 브라우저용 /api ----
+
+// 로그인 말고는 모두 로그인한 관리자만 부른다(server/auth.ts).
+app.use('/api/*', requireAuth)
+
+app.post('/api/auth/login', async (c) => {
+  const body = await c.req.json<{ username?: unknown; password?: unknown }>().catch(() => ({}) as { username?: unknown; password?: unknown })
+  const result = checkLogin(body.username, body.password)
+  if (!result.ok) {
+    if (result.locked) throw new HttpError(429, 'LOCKED', '로그인 시도가 많아요. 잠시 후 다시 시도해주세요.')
+    throw new HttpError(401, 'BAD_CREDENTIALS', '아이디나 비밀번호가 맞지 않아요.')
+  }
+  await startSession(c, body.username as string)
+  return c.json({ username: body.username })
+})
+
+app.post('/api/auth/logout', (c) => {
+  endSession(c)
+  return c.body(null, 204)
+})
+
+app.get('/api/auth/me', (c) => c.json({ username: c.get('user') }))
 
 app.post('/api/sessions', async (c) => {
   const sessionId = await agent.createSession()
@@ -135,7 +157,7 @@ app.post('/api/sessions/:id/approvals/:approvalId', async (c) => {
   }
   // reason은 만료 거부("expired")만 받는다. 그 밖의 값은 버린다.
   const reason = body.decision === 'deny' && body.reason === 'expired' ? 'expired' : undefined
-  const attach = await decide(c.req.param('id'), c.req.param('approvalId'), body.decision as ApprovalDecision, reason)
+  const attach = await decide(c.req.param('id'), c.req.param('approvalId'), body.decision as ApprovalDecision, c.get('user'), reason)
   return streamTo(c, attach)
 })
 

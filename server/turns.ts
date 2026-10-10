@@ -307,6 +307,7 @@ export async function decide(
   sessionId: string,
   approvalId: string,
   decision: ApprovalDecision,
+  user: string,
   reason?: string,
 ): Promise<(sink: Sink) => void> {
   const ap = approvals.get(approvalId)
@@ -342,6 +343,6 @@ export async function decide(
   // 보내는 사이 턴이 끝나 취소됐으면 그 상태를 둔다.
   if (ap.status === 'pending') resolve(ap, status)
   // 로그인을 붙이기 전이라 사용자는 단일 관리자로 기록한다(D4 A-1).
-  logDecision({ user: 'admin', sessionId, approvalId, toolCallId: ap.toolCallId, tool: ap.tool, decision: status })
+  logDecision({ user, sessionId, approvalId, toolCallId: ap.toolCallId, tool: ap.tool, decision: status })
   return (sink) => attach(t, sink)
 }

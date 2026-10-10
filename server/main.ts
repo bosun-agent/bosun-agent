@@ -5,9 +5,13 @@ import { app } from './app.ts'
 import { config } from './config.ts'
 import { cancelPendingCards } from './store.ts'
 
-if (config.host !== '127.0.0.1' && config.host !== 'localhost') {
-  // 로그인을 붙이기 전에는 승인 엔드포인트를 바깥에 열면 안 된다(계약 3장).
-  console.warn(`[config] listening on ${config.host} without login`)
+// 로그인 설정이 없으면 뜨지 않는다. 승인 엔드포인트가 아무나 부를 수 있게 열리면 안 된다(계약 5장).
+if (!config.adminPasswordHash.startsWith('scrypt$') || config.jwtSecret.length < 32) {
+  console.error('[config] ADMIN_PASSWORD_HASH and JWT_SECRET (32+ chars) are required. Run: npm run set-password -- <env file>')
+  process.exit(1)
+}
+if (!config.cookieSecure && config.host !== '127.0.0.1' && config.host !== 'localhost') {
+  console.warn(`[config] listening on ${config.host} with COOKIE_SECURE=0; use HTTPS and secure cookies outside localhost`)
 }
 
 serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {

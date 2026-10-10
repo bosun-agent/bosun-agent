@@ -27,7 +27,7 @@ function newSession(): ChatSession {
   return { id: crypto.randomUUID(), title: '새 대화', messages: [] }
 }
 
-function App() {
+function App({ onLogout }: { onLogout?: () => void }) {
   const [sessions, setSessions] = useState<ChatSession[]>(() => [newSession()])
   const [activeId, setActiveId] = useState(() => sessions[0].id)
   // 처리 중인 대화. 백엔드가 Agent 스트림을 하나만 열기 때문에 한 번에 한 대화만 처리한다(인터페이스 계약 3장).
@@ -380,6 +380,7 @@ function App() {
           onSelect={handleSelectSession}
           onNew={handleNewSession}
           onDelete={handleDeleteSession}
+          onLogout={onLogout}
         />
       )}
 

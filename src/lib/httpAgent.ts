@@ -2,6 +2,7 @@
 // 개발 중에는 Vite가 /api를 백엔드로 넘긴다(vite.config.ts).
 
 import type { AgentClient, AgentEvent, RestoredMessage, SessionSummary, Settings } from './agentProtocol'
+import { apiFetch } from './api'
 import { readSSE } from './sse'
 
 // 백엔드가 SSE를 열기 전에 거절하면(409, 404, 502 등) JSON으로 사유를 준다.
@@ -15,7 +16,7 @@ async function failure(res: Response): Promise<AgentEvent> {
 }
 
 async function* stream(url: string, body: unknown): AsyncGenerator<AgentEvent> {
-  const res = await fetch(url, {
+  const res = await apiFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -36,7 +37,7 @@ async function* stream(url: string, body: unknown): AsyncGenerator<AgentEvent> {
 
 export const httpAgent: AgentClient = {
   async createSession() {
-    const res = await fetch('/api/sessions', { method: 'POST' })
+    const res = await apiFetch('/api/sessions', { method: 'POST' })
     if (!res.ok) throw new Error(`createSession ${res.status}`)
     return ((await res.json()) as { sessionId: string }).sessionId
   },
@@ -53,25 +54,25 @@ export const httpAgent: AgentClient = {
   },
 
   async listSessions() {
-    const res = await fetch('/api/sessions')
+    const res = await apiFetch('/api/sessions')
     if (!res.ok) throw new Error(`listSessions ${res.status}`)
     return ((await res.json()) as { sessions: SessionSummary[] }).sessions
   },
 
   async loadMessages(sessionId) {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`)
+    const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`)
     if (!res.ok) throw new Error(`loadMessages ${res.status}`)
     return ((await res.json()) as { messages: RestoredMessage[] }).messages
   },
 
   async getSettings() {
-    const res = await fetch('/api/settings')
+    const res = await apiFetch('/api/settings')
     if (!res.ok) throw new Error(`getSettings ${res.status}`)
     return (await res.json()) as Settings
   },
 
   async saveModel(model) {
-    const res = await fetch('/api/settings', {
+    const res = await apiFetch('/api/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model }),
@@ -81,13 +82,13 @@ export const httpAgent: AgentClient = {
   },
 
   async deleteSession(sessionId) {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+    const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
     // 이미 없는 대화는 지운 것으로 본다.
     if (!res.ok && res.status !== 404) throw new Error(`deleteSession ${res.status}`)
   },
 
   async saveApiKey(apiKey) {
-    const res = await fetch('/api/settings/api-key', {
+    const res = await apiFetch('/api/settings/api-key', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey }),

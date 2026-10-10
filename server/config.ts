@@ -33,6 +33,14 @@ export const config = {
   // 그 파일에서 바꿀 키 이름. agent.yaml 모델의 provider에 맞춘다.
   agentKeyName: process.env.AGENT_KEY_NAME ?? 'OPENROUTER_API_KEY',
 
+  // 로그인(관리자 한 명, server/auth.ts). 비밀번호 해시와 서명 키는 `npm run set-password -- <env 파일>`로 만든다.
+  adminUsername: process.env.ADMIN_USERNAME ?? 'admin',
+  adminPasswordHash: process.env.ADMIN_PASSWORD_HASH ?? '',
+  jwtSecret: process.env.JWT_SECRET ?? '',
+  sessionHours: num('SESSION_HOURS', 12),
+  // HTTPS가 아닌 곳(로컬 개발)에서만 0으로 둔다. 기본은 Secure 쿠키다.
+  cookieSecure: process.env.COOKIE_SECURE !== '0',
+
   // 승인·차단 카드와 승인 감사 기록을 두는 SQLite 파일. 대화 내용은 Docker Agent session.db에 있다.
   dbPath: process.env.WEB_DB_PATH ?? 'server/data/web.db',
 
