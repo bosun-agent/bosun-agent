@@ -69,6 +69,12 @@ function AssistantBody({
     const expired = message.status === 'approval_expired'
     return (
       <div className="flex w-full flex-col items-start gap-2">
+        {/* 카드를 띄우기 전에 Agent가 한 말(무엇을 왜 하려는지) */}
+        {!expired && message.content && (
+          <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-900">
+            <Markdown text={message.content} />
+          </div>
+        )}
         <ApprovalCard
           approval={message.approval}
           expired={expired}

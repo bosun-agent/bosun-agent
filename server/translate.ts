@@ -92,12 +92,8 @@ export class Translator {
         if (isError && USER_REJECTED.test(res.response)) return { events: [] }
         if (isPolicyDenied(res.response, isError)) {
           // 규칙 ID가 오지 않으므로 공통 코드를 쓴다. 이어지는 Agent 설명이 text_delta로 온다(계약 6장).
-          return {
-            events: [
-              { type: 'tool_status', tool: name, status: 'failed', summary: toolSummary(label, 'failed'), callId: res.tool_call_id },
-              { type: 'rejected', code: 'POLICY_DENIED', reason: POLICY_DENIED_REASON },
-            ],
-          }
+          // 막힌 호출은 실행되지 않아 tool_call이 없다. 처리 과정에는 "정책에 따라 차단됨" 한 줄만 남기도록 tool_status는 보내지 않는다.
+          return { events: [{ type: 'rejected', code: 'POLICY_DENIED', reason: POLICY_DENIED_REASON }] }
         }
         const status = isError ? 'failed' : 'succeeded'
         return {
