@@ -5,7 +5,7 @@ import { MessageList } from './components/MessageList'
 import { SessionSidebar, SidebarToggle } from './components/SessionSidebar'
 import { SettingsModal } from './components/SettingsModal'
 import type { AgentEvent, ApprovalDecision, ProgressStep } from './lib/agentProtocol'
-import { agent, usingMock } from './lib/agent'
+import { agent, showScenarios } from './lib/agent'
 import { finishActive, finishToolStep, hasActive, startStep, startToolStep } from './lib/processSteps'
 import { toChatMessages } from './lib/restore'
 import type { ChatMessage, ChatSession, ProcessStep } from './types'
@@ -437,13 +437,13 @@ function App({ onLogout }: { onLogout?: () => void }) {
           onClick={() => setSettingsOpen(true)}
           aria-label="설정"
           className={`absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-md text-neutral-700 hover:bg-neutral-100 lg:top-auto ${
-            import.meta.env.DEV && usingMock ? 'lg:bottom-14' : 'lg:bottom-3'
+            showScenarios ? 'lg:bottom-14' : 'lg:bottom-3'
           }`}
         >
           <GearIcon />
         </button>
 
-        {import.meta.env.DEV && usingMock && (
+        {showScenarios && (
           <DevScenarioBar disabled={busyId !== null} onRun={handleSend} />
         )}
       </main>
