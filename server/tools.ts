@@ -158,9 +158,12 @@ function containerCreate(body: Record<string, unknown>): Pick<ToolAction, 'param
   return { params, reasons }
 }
 
-// 쿼리 값은 문자열("true")로 오기도 한다(2026-10-11 실측).
+// 쿼리 값은 문자열("true")로 오기도 한다(2026-10-11 실측). Docker는 "", 0, no, false, none만
+// 거짓으로 읽고 나머지("y", "2" 등)는 모두 참으로 읽는다(httputils.BoolValue). 같은 기준으로 판단한다.
 function truthy(value: unknown): boolean {
-  return value === true || value === 1 || value === 'true' || value === '1'
+  if (value === undefined || value === null) return false
+  const s = (typeof value === 'string' ? value : JSON.stringify(value)).trim().toLowerCase()
+  return !['', '0', 'no', 'false', 'none'].includes(s)
 }
 
 // 대상이 있으면 "컨테이너 web 중지", 없으면 "컨테이너 중지"
