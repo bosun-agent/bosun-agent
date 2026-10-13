@@ -328,12 +328,16 @@ export function learnNames(
     const id = idOf(obj)
     if (id) remember(id, name)
   }
-  // 상세 조회는 결과에 ID를 빼고 이름만 고르는 경우가 많아서 경로의 ID를 쓴다.
   if (!Array.isArray(data) && data && typeof data === 'object') {
     const [kind, id, action] = pathParts(str(args.path) ?? '')
+    // 상세 조회는 결과에 ID를 빼고 이름만 고르는 경우가 많아서 경로의 ID를 쓴다.
     const name = nameOf(data as Record<string, unknown>)
     if (name && (kind === 'containers' || kind === 'images') && action === 'json' && id && HEX_ID.test(id)) {
       remember(id.slice(0, 12).toLowerCase(), name)
     }
+    // 생성 결과에는 ID만 온다. 이름은 요청 쿼리에 있다(바로 이어지는 시작 카드에 이름을 보여주려고).
+    const created = idOf(data as Record<string, unknown>)
+    const requested = str(objectArg(args.query_params).name)?.replace(/^\//, '')
+    if (kind === 'containers' && id === 'create' && created && requested) remember(created, requested)
   }
 }

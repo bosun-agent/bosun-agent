@@ -148,6 +148,13 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   check('도구 호출 뒤 문장은 빈 줄로 나뉜다', text(d.events).startsWith('\n\n승인되지 않아서'), text(d.events))
 }
 {
+  const r = await send('컨테이너 만들고 시작해줘')
+  const made = await decide(approvalOf(r.events)!.approvalId, 'approve')
+  const start = approvalOf(made.events)
+  check('생성 직후 시작 카드는 ID 대신 요청한 이름을 보여준다', start?.summary === '컨테이너 bosun-test-web 시작', start)
+  await decide(start!.approvalId, 'deny')
+}
+{
   const r = await send('명령 실행해줘')
   check('exec는 승인 카드 없이 rejected', types(r.events).includes('rejected') && !types(r.events).includes('approval_required'), types(r.events))
 }
@@ -180,8 +187,8 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const res = await fetch(`${BASE}/api/sessions/${sid}/messages`)
   const { messages } = (await res.json()) as { messages: { role: string; content: string; cards?: unknown[] }[] }
   const withCards = messages.filter((m) => m.cards?.length)
-  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 14, messages.length)
-  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 9, withCards)
+  check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 15, messages.length)
+  check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 10, withCards)
 }
 {
   const r = await send('만료 테스트')

@@ -163,6 +163,21 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
+    // 만들고 바로 시작하는 경우. 생성 결과에는 ID만 와서, 모델은 시작을 ID로 부른다(2026-10-13 실측).
+    match: /만들고 시작/,
+    run: async (r) => {
+      const id = '506f862aab4b2d8a81f2ed7a3ca5920dda541f77eb4eebf36366026d8f11919f'
+      const made = await r.tool(
+        'docker_proxy',
+        { environment_id: 1, method: 'POST', path: '/containers/create', query_params: { name: 'bosun-test-web' }, body: { Image: 'nginx:alpine' } },
+        { ask: true, output: JSON.stringify({ id, warnings: [] }) },
+      )
+      if (made.isError) return r.say('승인되지 않아서 만들지 않았어요.')
+      const res = await r.tool('docker_proxy', { environment_id: 1, method: 'POST', path: `/containers/${id}/start` }, { ask: true, output: '' })
+      await r.say(res.isError ? '승인되지 않아서 시작하지 않았어요.' : '시작했어요.')
+    },
+  },
+  {
     // 상태 변경(POST)은 승인을 받는다. GET은 permissions.allow라 묻지 않는다.
     match: /재시작|중지/,
     run: async (r) => {
