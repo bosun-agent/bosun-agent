@@ -1,6 +1,8 @@
 // WEB 백엔드 설정. 주소와 비밀값은 환경변수로 받는다.
 // 연동 전에 받을 값은 인터페이스 계약 7장에 있다.
 
+import { dirname, join } from 'node:path'
+
 function num(name: string, fallback: number): number {
   const raw = process.env[name]
   if (raw === undefined || raw === '') return fallback
@@ -50,4 +52,16 @@ export const config = {
   expiryGraceMs: num('EXPIRY_GRACE_MS', 3_000),
   // 리버스 프록시 idle 타임아웃에 끊기지 않도록 보내는 SSE 주석 간격(계약 7.1).
   pingMs: num('PING_MS', 15_000),
+  // 동시에 처리하는 대화 수 상한. 대화마다 Agent 스트림 하나와 모델 호출이 돈다(계약 3장).
+  maxTurns: num('MAX_TURNS', 3),
+  // 메시지 한 개 최대 길이. 첨부한 파일 내용도 메시지에 들어간다.
+  maxMessageChars: num('MAX_MESSAGE_CHARS', 100_000),
+
+  // Agent 백업 훅이 삭제 전에 저장하는 SQLite(읽기만 한다, server/backups.ts). 기본값은 훅과 같다.
+  backupDb:
+    process.env.BACKUP_DB ??
+    (process.env.AGENT_ENV_FILE ? join(dirname(process.env.AGENT_ENV_FILE), 'backups.sqlite3') : ''),
+
+  // 빌드한 화면 폴더(npm run build → dist). 정하면 WEB 백엔드가 화면도 내보낸다. 개발 중에는 비워 두고 Vite를 쓴다.
+  staticDir: process.env.STATIC_DIR ?? '',
 }

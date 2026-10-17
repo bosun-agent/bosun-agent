@@ -14,6 +14,8 @@ const URGENT_MS = 60_000
 
 // 호스트까지 영향이 가는 사유는 빨간색으로 보여준다.
 const DANGER_CODES = new Set(['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE'])
+// 위험 사유가 아니라 "승인하면 어떻게 되는지" 설명이다(server/tools.ts EFFECT). 점 대신 → 로 보여준다.
+const EFFECT_CODE = 'EFFECT'
 
 export function ApprovalCard({
   approval,
@@ -80,9 +82,10 @@ export function ApprovalCard({
           {reasons.map((reason) => (
             <li
               key={reason.code}
-              className={DANGER_CODES.has(reason.code) ? 'font-medium text-red-700' : 'text-neutral-600'}
+              className={DANGER_CODES.has(reason.code) ? 'font-medium text-red-700' : reason.code === EFFECT_CODE ? 'text-neutral-800' : 'text-neutral-600'}
             >
-              · {reason.message}
+              {reason.code === EFFECT_CODE ? '→ ' : '· '}
+              {reason.message}
             </li>
           ))}
         </ul>
@@ -107,19 +110,81 @@ export function ApprovalCard({
   )
 }
 
-// 서버가 고른 요청 값(이미지, 명령, 마운트 등). 명령은 길 수 있어서 높이를 제한하고 스크롤한다.
-function ParamList({ params }: { params: Record<string, unknown> }) {
+// 요청 원문(Docker Engine API). 처음 보는 사람에게는 어려워서 "기술 정보"로 접어 둔다.
+const TECH_KEYS = new Set(['요청', '옵션', '본문'])
+
+// Docker Engine API 쿼리 옵션 → 뜻. 표에 없는 옵션은 원문만 보여준다.
+const OPTION_HELP: Record<string, string> = {
+  force: '강제로 실행(실행 중이거나 쓰는 중이어도)',
+  v: '딸린 익명 볼륨도 같이 삭제',
+  t: '멈추기 전에 기다릴 시간(초)',
+  signal: '프로그램에 보낼 종료 신호',
+  name: '이름',
+  fromImage: '받을 이미지',
+  tag: '태그(버전)',
+  noprune: '태그 없는 상위 이미지는 남김',
+  link: '링크만 삭제',
+  tail: '로그 끝에서 몇 줄',
+  follow: '로그를 계속 받기',
+  all: '멈춘 것도 포함',
+}
+
+function OptionList({ value }: { value: string }) {
+  const pairs = value.split(', ').map((p) => {
+    const i = p.indexOf('=')
+    return i < 0 ? { key: p, val: '' } : { key: p.slice(0, i), val: p.slice(i + 1) }
+  })
   return (
-    <dl className="mt-2 space-y-1 rounded-lg bg-white/70 px-3 py-2 text-xs">
-      {Object.entries(params).map(([name, value]) => (
-        <div key={name} className="flex gap-2">
-          <dt className="w-14 shrink-0 text-neutral-500">{name}</dt>
-          <dd className="max-h-32 min-w-0 flex-1 overflow-y-auto font-mono break-all whitespace-pre-wrap text-neutral-800">
-            {String(value)}
-          </dd>
-        </div>
+    <ul className="space-y-0.5">
+      {pairs.map(({ key, val }) => (
+        <li key={key}>
+          <span className="font-mono">
+            {key}={val}
+          </span>
+          {OPTION_HELP[key] && <span className="ml-1.5 font-sans text-neutral-500">{OPTION_HELP[key]}</span>}
+        </li>
       ))}
-    </dl>
+    </ul>
+  )
+}
+
+function ParamRow({ name, value }: { name: string; value: unknown }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-14 shrink-0 text-neutral-500">{name}</dt>
+      <dd className="max-h-32 min-w-0 flex-1 overflow-y-auto font-mono break-all whitespace-pre-wrap text-neutral-800">
+        {name === '옵션' ? <OptionList value={String(value)} /> : String(value)}
+      </dd>
+    </div>
+  )
+}
+
+// 서버가 고른 요청 값(이미지, 명령, 마운트 등). 명령은 길 수 있어서 높이를 제한하고 스크롤한다.
+// 옵션은 동작을 바꾸므로(force 등) 접지 않고 위에 보여준다. 요청 원문과 본문만 접는다.
+function ParamList({ params }: { params: Record<string, unknown> }) {
+  const entries = Object.entries(params)
+  const main = entries.filter(([k]) => !TECH_KEYS.has(k) || k === '옵션')
+  const tech = entries.filter(([k]) => TECH_KEYS.has(k) && k !== '옵션')
+  return (
+    <div className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs">
+      {main.length > 0 && (
+        <dl className="space-y-1">
+          {main.map(([name, value]) => (
+            <ParamRow key={name} name={name} value={value} />
+          ))}
+        </dl>
+      )}
+      {tech.length > 0 && (
+        <details className={main.length > 0 ? 'mt-1.5' : ''}>
+          <summary className="cursor-pointer text-neutral-500">기술 정보 (Docker에 보낼 요청)</summary>
+          <dl className="mt-1 space-y-1">
+            {tech.map(([name, value]) => (
+              <ParamRow key={name} name={name} value={value} />
+            ))}
+          </dl>
+        </details>
+      )}
+    </div>
   )
 }
 

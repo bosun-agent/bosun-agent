@@ -59,6 +59,12 @@ db.exec(`
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  -- 사이드바 맨 위에 고정한 대화. Docker Agent의 starred는 목록 응답에 없어서 WEB이 따로 둔다.
+  CREATE TABLE IF NOT EXISTS pins (
+    session_id TEXT PRIMARY KEY,
+    pinned_at  TEXT NOT NULL
+  );
 `)
 
 // v0.2.x(Airlock) 때 만든 파일은 열 이름만 바꾼다.
@@ -82,9 +88,68 @@ export function addCard(sessionId: string, turn: number, card: Card): void {
   insertCard.run(sessionId, turn, approvalId, status, JSON.stringify(card), new Date().toISOString())
 }
 
-// 대화를 지우면 카드도 지운다. 승인 감사 기록(approval_audit)은 남긴다.
+// 대화를 지우면 카드와 고정도 지운다. 승인 감사 기록(approval_audit)은 남긴다.
 export function deleteCards(sessionId: string): void {
   deleteCardsStmt.run(sessionId)
+  setPinned(sessionId, false)
+}
+
+// 대화를 복제하면 복사한 턴(beforeTurn 앞)의 카드도 새 대화로 옮겨 적는다. 대기 중이던 카드는 취소로 둔다.
+export function copyCards(from: string, to: string, beforeTurn: number): void {
+  for (const { turn, card } of cardsFor(from)) {
+    if (turn >= beforeTurn) continue
+    if (card.kind === 'approval') {
+      // approval_id는 UNIQUE라 복사본에는 새 ID를 붙인다. 복사본 카드는 다시 결정할 수 없다.
+      const copy: Card = { ...card, approvalId: `${card.approvalId}_copy_${to.slice(0, 8)}`, status: card.status === 'pending' ? 'cancelled' : card.status }
+      addCard(to, turn, copy)
+    } else {
+      addCard(to, turn, card)
+    }
+  }
+}
+
+// ---- 고정한 대화 ----
+
+export function pinnedSessions(): Set<string> {
+  return new Set(db.prepare('SELECT session_id FROM pins').all().map((r) => r.session_id as string))
+}
+
+export function setPinned(sessionId: string, pinned: boolean): void {
+  if (pinned) {
+    db.prepare('INSERT OR IGNORE INTO pins (session_id, pinned_at) VALUES (?, ?)').run(sessionId, new Date().toISOString())
+  } else {
+    db.prepare('DELETE FROM pins WHERE session_id = ?').run(sessionId)
+  }
+}
+
+// ---- 승인 기록(설정 화면) ----
+
+export function recentDecisions(limit: number, sessionId?: string): AuditEntry[] {
+  const rows = sessionId
+    ? db.prepare('SELECT * FROM approval_audit WHERE session_id = ? ORDER BY id DESC LIMIT ?').all(sessionId, limit)
+    : db.prepare('SELECT * FROM approval_audit ORDER BY id DESC LIMIT ?').all(limit)
+  return rows.map((r) => ({
+    at: r.at as string,
+    user: r.user as string,
+    sessionId: r.session_id as string,
+    approvalId: r.approval_id as string,
+    toolCallId: r.tool_call_id as string,
+    tool: r.tool as string,
+    decision: r.decision as ApprovalStatus,
+  }))
+}
+
+// 감사 기록의 approvalId로 카드 내용(요약·대상)을 찾는다. 대화를 지웠으면 없다.
+export function cardSummaries(approvalIds: string[]): Map<string, { summary: string; target?: string }> {
+  const out = new Map<string, { summary: string; target?: string }>()
+  const stmt = db.prepare('SELECT body FROM cards WHERE approval_id = ?')
+  for (const id of approvalIds) {
+    const row = stmt.get(id)
+    if (!row) continue
+    const card = JSON.parse(row.body as string) as Card
+    if (card.kind === 'approval') out.set(id, { summary: card.summary, ...(card.action.target ? { target: card.action.target } : {}) })
+  }
+  return out
 }
 
 export function updateApprovalCard(approvalId: string, status: ApprovalStatus): void {

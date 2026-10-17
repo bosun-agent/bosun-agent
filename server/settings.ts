@@ -1,4 +1,5 @@
-// 설정 화면 값. 모델 목록은 운영자가 AGENT_MODELS로 정하고, 화면은 그 안에서만 고른다.
+// 설정 화면 값. 모델 목록은 운영자가 AGENT_MODELS로 정한 것과 관리자가 화면에서 더한 것을 합친 것이다.
+// 화면은 그 안에서만 고른다. 더한 모델은 지울 수 있고 AGENT_MODELS 모델은 지울 수 없다.
 // API 키는 Docker Agent env 파일(AGENT_ENV_FILE)에 쓴다. 키 값은 화면으로 돌려주지 않는다.
 
 import { chmodSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -6,24 +7,57 @@ import type { Settings } from '../src/lib/agentProtocol.ts'
 import { config } from './config.ts'
 import { getSetting, setSetting } from './store.ts'
 
+function customModels(): string[] {
+  try {
+    const list = JSON.parse(getSetting('custom_models') ?? '[]') as unknown
+    return Array.isArray(list) ? list.filter((m): m is string => typeof m === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function allModels(): string[] {
+  return [...new Set([...config.agentModels, ...customModels()])]
+}
+
 // 저장된 값이 목록에서 빠졌으면 첫 번째 모델로 돌아간다. 목록이 비어 있으면 agent.yaml 모델을 쓴다(undefined).
 export function currentModel(): string | undefined {
   const saved = getSetting('model')
-  return saved && config.agentModels.includes(saved) ? saved : config.agentModels[0]
+  const models = allModels()
+  return saved && models.includes(saved) ? saved : models[0]
 }
 
 export function getSettings(): Settings {
   return {
     model: currentModel() ?? null,
-    models: config.agentModels,
+    models: allModels(),
+    customModels: customModels().filter((m) => !config.agentModels.includes(m)),
     apiKey: { editable: config.agentEnvFile !== '', set: apiKeySet() },
   }
 }
 
 // 목록에 없는 모델이면 false.
 export function saveModel(model: string): boolean {
-  if (!config.agentModels.includes(model)) return false
+  if (!allModels().includes(model)) return false
   setSetting('model', model)
+  return true
+}
+
+// Docker Agent 실행 요청의 model 값: agent.yaml models 이름(`flash`) 또는 `provider/model`(`openrouter/deepseek/...`).
+// 모델 이름에 쓰이는 글자만 받는다. 실제로 있는 모델인지는 Agent가 실행할 때 확인한다.
+export function validModelRef(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 120 && /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._:@+-]+)*$/.test(value)
+}
+
+export function addModel(model: string): void {
+  if (allModels().includes(model)) return
+  setSetting('custom_models', JSON.stringify([...customModels(), model]))
+}
+
+// AGENT_MODELS에 있는 모델은 지우지 않는다(false).
+export function removeModel(model: string): boolean {
+  if (config.agentModels.includes(model) || !customModels().includes(model)) return false
+  setSetting('custom_models', JSON.stringify(customModels().filter((m) => m !== model)))
   return true
 }
 

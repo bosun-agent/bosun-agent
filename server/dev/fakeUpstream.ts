@@ -217,6 +217,16 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
+    // 오래 걸리는 답. 중지와 다시 붙기를 확인할 때 쓴다(약 3초).
+    match: /천천히/,
+    run: async (r) => {
+      for (let i = 1; i <= 15; i++) {
+        await r.say(`${i}번째 줄이에요.\n`)
+        await sleep(100)
+      }
+    },
+  },
+  {
     match: /목록|상태|조회/,
     run: async (r) => {
       await r.tool('docker_proxy', { environment_id: 1, method: 'GET', path: '/containers/json' }, { output: '[{"Names":["/web"],"State":"running"}]' })
@@ -236,8 +246,69 @@ agentApp.post('/api/sessions', async (c) => {
   return c.json(s)
 })
 agentApp.get('/api/sessions', (c) =>
-  c.json([...sessions.values()].map((s) => ({ id: s.id, title: s.title, created_at: s.created_at, num_messages: s.messages.length }))),
+  c.json(
+    [...sessions.values()].map((s) => ({
+      id: s.id,
+      title: s.title,
+      created_at: s.created_at,
+      num_messages: s.messages.length,
+      input_tokens: s.messages.length * 100,
+      output_tokens: s.messages.length * 20,
+    })),
+  ),
 )
+agentApp.get('/api/sessions/:id/snapshot', (c) => {
+  const s = sessions.get(c.req.param('id'))
+  if (!s) return c.json({ code: 'unknown_session', message: 'session not found' }, 404)
+  return c.json({ id: s.id, input_tokens: s.messages.length * 100, output_tokens: s.messages.length * 20, cost: s.messages.length * 0.0001 })
+})
+// user_message_index번째 사용자 메시지 직전까지 복사한다(session/branch.go). 제목은 "(fork N)"을 붙인다.
+agentApp.post('/api/sessions/:id/fork', async (c) => {
+  const s = sessions.get(c.req.param('id'))
+  if (!s) return c.json({ message: 'session not found' }, 404)
+  const { user_message_index: ordinal } = await c.req.json<{ user_message_index: number }>()
+  let seen = 0
+  const end = s.messages.findIndex((m) => m.message.role === 'user' && seen++ === ordinal)
+  if (end < 0) return c.json({ message: `fork position out of range: ${ordinal}` }, 400)
+  const fork: Session = { id: randomUUID(), title: `${s.title} (fork 1)`, created_at: new Date().toISOString(), messages: s.messages.slice(0, end) }
+  sessions.set(fork.id, fork)
+  return c.json(fork)
+})
+agentApp.get('/health', (c) => c.json({ status: 'ok', version: 'v1.148.0-fake' }))
+agentApp.get('/ready', (c) => c.json({ ready: true, active_sessions: sessions.size, store_connected: true }))
+// agent.yaml JSON 모양(pkg/config/latest). 이름 필드는 JSON 태그가 없어서 Name이다.
+agentApp.get('/api/agents/:id', (c) =>
+  c.json({
+    agents: [
+      {
+        Name: 'root',
+        model: 'flash',
+        description: '가짜 Agent',
+        safety: 'strict',
+        instruction: '너는 Portainer를 통해 Docker 환경을 관리하는 에이전트다.',
+        toolsets: [
+          {
+            type: 'mcp',
+            command: 'C:/tools/uvx.exe',
+            args: ['--from', 'mcp-portainer==2.45.1', 'mcp-portainer'],
+            env: { PORTAINER_URL: '${env.PORTAINER_URL}', PORTAINER_API_KEY: '${env.PORTAINER_API_KEY}' },
+            tools: ['docker_proxy', 'EndpointList'],
+            lifecycle: { call_timeout: '150s' },
+          },
+        ],
+        hooks: {
+          tool_input_transform: [
+            { matcher: 'docker_proxy', hooks: [{ type: 'command', command: 'C:/py/python.exe -X utf8 C:/hooks/policy_guard.py' }] },
+          ],
+          user_prompt_submit: [{ type: 'command', command: 'python3 /hooks/injection_guard.py' }],
+        },
+      },
+    ],
+    models: { flash: { provider: 'openrouter', model: 'deepseek/deepseek-v4.1-flash', max_tokens: 8192 } },
+    permissions: { allow: ['docker_proxy:method=GET', 'EndpointList'], deny: ['docker_proxy:path=*/exec*'] },
+  }),
+)
+agentApp.get('/api/agents/:id/:agent/tools/count', (c) => c.json({ available_tools: 2 }))
 agentApp.get('/api/sessions/:id', (c) => {
   const s = sessions.get(c.req.param('id'))
   return s ? c.json(s) : c.json({ message: 'session not found' }, 404)

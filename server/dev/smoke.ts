@@ -262,6 +262,246 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
     { del: del.status, gone: gone.status },
   )
 }
+// ---- 대화별 동시 처리, 다시 붙기, 중지(계약 3장) ----
+
+// 응답을 n개 이벤트만 읽고 끊는다(새로고침한 브라우저처럼).
+async function readSome(path: string, body: unknown, n: number): Promise<AgentEvent[]> {
+  const ctrl = new AbortController()
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: ctrl.signal,
+  })
+  const events: AgentEvent[] = []
+  try {
+    for await (const ev of readSSE(res.body!)) {
+      events.push(ev as AgentEvent)
+      if (events.length >= n) break
+    }
+  } finally {
+    ctrl.abort()
+  }
+  return events
+}
+
+async function stream(sessionId: string): Promise<{ status: number; events: AgentEvent[] }> {
+  const res = await fetch(`${BASE}/api/sessions/${sessionId}/stream`)
+  if (!res.headers.get('content-type')?.startsWith('text/event-stream')) return { status: res.status, events: [] }
+  const events: AgentEvent[] = []
+  for await (const ev of readSSE(res.body!)) events.push(ev as AgentEvent)
+  return { status: res.status, events }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+{
+  const [a, b, c2, d] = [await newSession(), await newSession(), await newSession(), await newSession()]
+  const ra = await post(`/api/sessions/${a}/messages`, { text: '삭제해줘' })
+  const rb = await post(`/api/sessions/${b}/messages`, { text: 'web 재시작해줘' })
+  check('다른 대화는 승인 대기 중에도 보낼 수 있다', last(ra.events) === 'approval_required' && last(rb.events) === 'approval_required', [
+    types(ra.events),
+    types(rb.events),
+  ])
+  const same = await post(`/api/sessions/${a}/messages`, { text: '목록' })
+  check('같은 대화는 처리 중이면 409 BUSY', same.status === 409 && (same.json as { error: string }).error === 'BUSY', same)
+  const rc = await post(`/api/sessions/${c2}/messages`, { text: '지워줘' })
+  const rd = await post(`/api/sessions/${d}/messages`, { text: '안녕' })
+  check('동시 처리는 MAX_TURNS(3)까지, 넘으면 409 TOO_MANY', last(rc.events) === 'approval_required' && (rd.json as { error?: string })?.error === 'TOO_MANY', rd)
+
+  const list = (await fetch(`${BASE}/api/sessions`).then((r) => r.json())) as { sessions: { sessionId: string; running?: boolean }[] }
+  check('대화 목록에 처리 중 표시', [a, b, c2].every((id) => list.sessions.find((s) => s.sessionId === id)?.running) && !list.sessions.find((s) => s.sessionId === d)?.running, list)
+
+  const restored = (await fetch(`${BASE}/api/sessions/${a}/messages`).then((r) => r.json())) as { messages: { role: string; cards?: unknown[] }[]; running?: boolean }
+  check('처리 중인 대화 복원은 running이고 그 턴의 답·카드를 뺀다', restored.running === true && restored.messages.length === 1 && restored.messages[0].role === 'user', restored)
+
+  const again = await stream(a)
+  check(
+    '다시 붙으면 이 턴의 이벤트를 처음부터 받고 승인 카드에서 끝난다',
+    text(again.events).includes('삭제할게요') && last(again.events) === 'approval_required' && approvalOf(again.events)?.approvalId === approvalOf(ra.events)?.approvalId,
+    types(again.events),
+  )
+  const da = await post(`/api/sessions/${a}/approvals/${approvalOf(ra.events)!.approvalId}`, { decision: 'deny' })
+  check('다시 붙은 뒤에도 결정할 수 있다', last(da.events) === 'done', types(da.events))
+
+  // 승인 대기 중에 멈추면 카드는 취소된다.
+  const stop = await fetch(`${BASE}/api/sessions/${b}/stop`, { method: 'POST' })
+  const rb2 = (await fetch(`${BASE}/api/sessions/${b}/messages`).then((r) => r.json())) as { messages: { cards?: { status?: string }[] }[]; running?: boolean }
+  check('승인 대기 중에 멈추면 카드가 cancelled', stop.status === 204 && !rb2.running && rb2.messages.at(-1)?.cards?.[0]?.status === 'cancelled', rb2)
+  const stop2 = await fetch(`${BASE}/api/sessions/${b}/stop`, { method: 'POST' })
+  check('처리 중이 아니면 멈추기는 404', stop2.status === 404, stop2.status)
+  await post(`/api/sessions/${c2}/approvals/${approvalOf(rc.events)!.approvalId}`, { decision: 'deny' })
+  const noRun = await stream(d)
+  check('처리 중이 아니면 다시 붙기는 404 NOT_RUNNING', noRun.status === 404, noRun.status)
+}
+{
+  // 브라우저가 중간에 나가도 턴은 계속 돌고, 다시 붙으면 처음부터 끝까지 받는다.
+  const s = await newSession()
+  const first = await readSome(`/api/sessions/${s}/messages`, { text: '천천히 답해줘' }, 3)
+  await sleep(300)
+  const again = await stream(s)
+  check(
+    '중간에 끊고 다시 붙으면 답 전체를 받고 done',
+    first.length === 3 && text(again.events).includes('1번째 줄') && text(again.events).includes('15번째 줄') && last(again.events) === 'done',
+    { first: types(first), again: types(again.events) },
+  )
+}
+{
+  const s = await newSession()
+  const ctrl = new AbortController()
+  const res = await fetch(`${BASE}/api/sessions/${s}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '천천히 답해줘' }),
+    signal: ctrl.signal,
+  })
+  const events: AgentEvent[] = []
+  let stopped = false
+  for await (const ev of readSSE(res.body!)) {
+    events.push(ev as AgentEvent)
+    if (!stopped && (ev as AgentEvent).type === 'text_delta') {
+      stopped = true
+      await fetch(`${BASE}/api/sessions/${s}/stop`, { method: 'POST' })
+    }
+  }
+  const end = events.at(-1)
+  check('처리 중에 멈추면 스트림이 error(STOPPED)로 끝난다', end?.type === 'error' && end.code === 'STOPPED' && !text(events).includes('15번째'), types(events))
+}
+{
+  // 한 턴에서 결정한 카드는 다시 붙을 때 approval_resolved로 온다.
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '컨테이너 만들고 시작해줘' })
+  const made = await post(`/api/sessions/${s}/approvals/${approvalOf(r.events)!.approvalId}`, { decision: 'approve' })
+  const again = await stream(s)
+  const resolved = again.events.find((e) => e.type === 'approval_resolved')
+  check(
+    '다시 붙으면 결정한 카드 뒤에 approval_resolved, 마지막은 다음 카드',
+    resolved?.type === 'approval_resolved' && resolved.status === 'approved' && last(again.events) === 'approval_required' &&
+      approvalOf(again.events.slice(again.events.indexOf(resolved)))?.approvalId === approvalOf(made.events)?.approvalId,
+    types(again.events),
+  )
+  await post(`/api/sessions/${s}/approvals/${approvalOf(made.events)!.approvalId}`, { decision: 'deny' })
+}
+
+// ---- 대화 관리: 제목, 고정, 복제, 내보내기, 사용량 ----
+{
+  const s = await newSession()
+  await post(`/api/sessions/${s}/messages`, { text: '삭제해줘' }).then((r) => post(`/api/sessions/${s}/approvals/${approvalOf(r.events)!.approvalId}`, { decision: 'deny' }))
+  await post(`/api/sessions/${s}/messages`, { text: '두 번째 질문' })
+  const patch = (body: unknown) =>
+    fetch(`${BASE}/api/sessions/${s}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const bad = await patch({ title: '   ' })
+  const ok = await patch({ title: '정리한 제목', pinned: true })
+  const list = (await fetch(`${BASE}/api/sessions`).then((r) => r.json())) as {
+    sessions: { sessionId: string; title: string; pinned?: boolean; inputTokens?: number }[]
+  }
+  const row = list.sessions.find((x) => x.sessionId === s)
+  check('제목 바꾸기와 고정', bad.status === 400 && ok.status === 204 && row?.title === '정리한 제목' && row.pinned === true, row)
+  check('대화 목록에 토큰 사용량', (row?.inputTokens ?? 0) > 0, row)
+
+  const fork = await post(`/api/sessions/${s}/fork`, { turn: 1 })
+  const forkId = (fork.json as { sessionId: string }).sessionId
+  const restored = (await fetch(`${BASE}/api/sessions/${forkId}/messages`).then((r) => r.json())) as {
+    messages: { role: string; content: string; cards?: { kind: string; status?: string }[] }[]
+  }
+  check(
+    '복제하면 그 메시지 직전까지 복사되고 카드도 따라온다',
+    fork.status === 201 && restored.messages.filter((m) => m.role === 'user').length === 1 && restored.messages[1]?.cards?.[0]?.status === 'denied',
+    restored,
+  )
+  const badFork = await post(`/api/sessions/${s}/fork`, { turn: 9 })
+  check('없는 메시지로 복제하면 400', badFork.status === 400, badFork.status)
+
+  const exp = await fetch(`${BASE}/api/sessions/${s}/export`)
+  const md = await exp.text()
+  check(
+    '마크다운으로 내보내기',
+    exp.headers.get('content-type')?.startsWith('text/markdown') === true && md.includes('# 정리한 제목') && md.includes('## 사용자') && md.includes('거부함'),
+    md.slice(0, 200),
+  )
+  const usage = (await fetch(`${BASE}/api/sessions/${s}/usage`).then((r) => r.json())) as { inputTokens: number; cost?: number }
+  check('대화 사용량에 토큰과 비용', usage.inputTokens > 0 && typeof usage.cost === 'number', usage)
+  await patch({ pinned: false })
+}
+
+// ---- 정보·정책 화면, 승인 기록 ----
+{
+  const res = await fetch(`${BASE}/api/system`)
+  const raw = await res.text()
+  const info = JSON.parse(raw) as {
+    agent: { reachable: boolean; version?: string }
+    config?: { permissions: { allow: string[] }; agents: { hooks: { scripts: string[] }[]; toolsets: { env: string[] }[] }[] }
+  }
+  check('정보 화면: Agent 연결과 버전', info.agent.reachable && info.agent.version === 'v1.148.0-fake', info.agent)
+  check('정책 화면: permissions와 훅 스크립트 이름', info.config?.permissions.allow.includes('docker_proxy:method=GET') === true && info.config.agents[0].hooks[0].scripts[0] === 'policy_guard.py', info.config)
+  check('설정 요약에 경로·env 값이 없다', !raw.includes('C:/') && !raw.includes('${env') && info.config?.agents[0].toolsets[0].env.includes('PORTAINER_URL') === true, raw.slice(0, 300))
+  const tools = (await fetch(`${BASE}/api/system/tools`).then((r) => r.json())) as { count: number }
+  check('정보 화면: 도구 수', tools.count === 2, tools)
+  const audit = (await fetch(`${BASE}/api/audit?limit=5`).then((r) => r.json())) as { records: { decision: string; summary?: string }[] }
+  check('승인 기록: 최근 순으로 카드 요약과 함께', audit.records.length === 5 && audit.records.some((r) => r.summary), audit.records)
+}
+
+// ---- 백업 목록(Agent 백업 훅의 SQLite를 읽기만) ----
+{
+  const empty = (await fetch(`${BASE}/api/backups`).then((r) => r.json())) as { available: boolean; records: unknown[] }
+  check('백업 파일이 없으면 빈 목록', empty.available && empty.records.length === 0, empty)
+  // 훅과 같은 표를 만든다(tool_input_transform_direct_backup_guard.py save).
+  const { DatabaseSync } = await import('node:sqlite')
+  const file = `${dirname(process.env.AGENT_ENV_FILE!)}/backups.sqlite3`
+  const db = new DatabaseSync(file)
+  db.exec(
+    'CREATE TABLE IF NOT EXISTS backups (ts REAL, time TEXT, session_id TEXT, environment_id TEXT, method TEXT, path TEXT, query_json TEXT, kind TEXT, target TEXT, inspect_json TEXT)',
+  )
+  const inspect = {
+    Name: '/web',
+    Config: { Image: 'nginx:alpine', Env: ['DB_PASSWORD=super-secret-value', 'TZ=Asia/Seoul'], Cmd: ['nginx', '-g', 'daemon off;'] },
+    HostConfig: { PortBindings: { '80/tcp': [{ HostPort: '8080' }] }, RestartPolicy: { Name: 'unless-stopped' } },
+    State: { Status: 'exited' },
+  }
+  db.prepare('INSERT INTO backups VALUES (?,?,?,?,?,?,?,?,?,?)').run(Date.now() / 1000, '', sid, '1', 'DELETE', '/containers/web', '{}', 'container', 'web', JSON.stringify(inspect))
+  db.close()
+  const res = await fetch(`${BASE}/api/backups`)
+  const raw = await res.text()
+  const list = JSON.parse(raw) as { records: { kind: string; summary: Record<string, string> }[] }
+  const s = list.records[0]?.summary ?? {}
+  check('백업 목록에 이미지·포트·재시작 정책', s.이미지 === 'nginx:alpine' && s.포트 === '8080 → 80/tcp' && s['재시작 정책'] === 'unless-stopped', list)
+  check('백업 목록에 환경변수 값이 없다', !raw.includes('super-secret-value') && s.환경변수?.includes('DB_PASSWORD') === true, raw.slice(0, 300))
+}
+
+// ---- 모델 관리 ----
+{
+  const add = (model: string) => post('/api/settings/models', { model })
+  const bad = await add('bad model!')
+  const ok = await add('openrouter/test/model-1')
+  const settings = ok.json as { models: string[]; customModels: string[] }
+  check('모델 더하기', bad.status === 400 && settings.models.includes('openrouter/test/model-1') && settings.customModels.includes('openrouter/test/model-1'), settings)
+  const envModel = settings.models.find((m) => !settings.customModels.includes(m))!
+  const delEnv = await fetch(`${BASE}/api/settings/models?model=${encodeURIComponent(envModel)}`, { method: 'DELETE' })
+  const del = await fetch(`${BASE}/api/settings/models?model=${encodeURIComponent('openrouter/test/model-1')}`, { method: 'DELETE' })
+  const after = (await del.json()) as { models: string[] }
+  check('더한 모델만 지울 수 있다', delEnv.status === 400 && del.status === 200 && !after.models.includes('openrouter/test/model-1'), after)
+}
+
+// ---- 비밀번호 변경 ----
+{
+  const change = (current: string, next: string) =>
+    fetch(`${BASE}/api/auth/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current, next }) })
+  const wrong = await change('not-the-password', 'new-password-123')
+  const weak = await change('bosun-dev-password', 'short')
+  const oldCookie = cookie
+  const ok = await change('bosun-dev-password', 'new-password-123')
+  const newCookie = (ok.headers.get('set-cookie') ?? '').split(';')[0]
+  check('비밀번호 변경: 틀리면 403, 짧으면 400, 맞으면 204 + 새 쿠키', wrong.status === 403 && weak.status === 400 && ok.status === 204 && newCookie.startsWith('bosun_session='), [wrong.status, weak.status, ok.status])
+  cookie = oldCookie
+  const stale = await fetch(`${BASE}/api/auth/me`)
+  cookie = newCookie
+  const fresh = await fetch(`${BASE}/api/auth/me`)
+  check('비밀번호를 바꾸면 전에 받은 쿠키는 401', stale.status === 401 && fresh.status === 200, [stale.status, fresh.status])
+  const back = await change('new-password-123', 'bosun-dev-password')
+  cookie = (back.headers.get('set-cookie') ?? '').split(';')[0]
+  check('바꾼 비밀번호로 다시 바꿀 수 있다', back.status === 204, back.status)
+}
+
 {
   // 승인 감사 기록에 로그인한 사용자가 남는다.
   const db = process.env.WEB_DB_PATH

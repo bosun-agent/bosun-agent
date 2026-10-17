@@ -236,19 +236,53 @@ async function* sendDecision(
   yield { type: 'done' }
 }
 
+// 멈추기. 다음 이벤트를 내보내기 전에 확인하고 error(STOPPED)로 끝낸다. 기다리던 승인도 버린다.
+const stopRequests = new Set<string>()
+
+async function* stoppable(sessionId: string, events: AsyncGenerator<AgentEvent>): AsyncGenerator<AgentEvent> {
+  stopRequests.delete(sessionId)
+  for await (const event of events) {
+    if (stopRequests.delete(sessionId)) {
+      yield { type: 'error', code: 'STOPPED', message: '작업을 멈췄어요.' }
+      return
+    }
+    yield event
+  }
+}
+
 // 목업 설정. 화면을 확인하는 용도라 새로고침하면 처음 값으로 돌아간다.
 const MOCK_MODELS = ['openrouter/deepseek/deepseek-v4.1-flash', 'openrouter/deepseek/deepseek-v4.1']
 let mockModel = MOCK_MODELS[0]
 let mockKeySet = false
-const mockSettings = () => ({ model: mockModel, models: MOCK_MODELS, apiKey: { editable: true, set: mockKeySet } })
+const customModels: string[] = []
+const mockSettings = () => ({
+  model: mockModel,
+  models: [...MOCK_MODELS, ...customModels],
+  customModels: [...customModels],
+  apiKey: { editable: true, set: mockKeySet },
+})
 
 export const mockAgent: AgentClient = {
   createSession: async () => `s_${crypto.randomUUID().slice(0, 8)}`,
-  sendMessage,
-  sendDecision,
+  sendMessage: (sessionId, text) => stoppable(sessionId, sendMessage(sessionId, text)),
+  sendDecision: (sessionId, approvalId, decision) => stoppable(sessionId, sendDecision(sessionId, approvalId, decision)),
+  stop: async (sessionId) => {
+    stopRequests.add(sessionId)
+    for (const [id, p] of pendingApprovals) if (p.sessionId === sessionId) pendingApprovals.delete(id)
+  },
   getSettings: async () => mockSettings(),
   saveModel: async (model) => {
     mockModel = model
+    return mockSettings()
+  },
+  addModel: async (model) => {
+    if (!mockSettings().models.includes(model)) customModels.push(model)
+    return mockSettings()
+  },
+  removeModel: async (model) => {
+    const i = customModels.indexOf(model)
+    if (i >= 0) customModels.splice(i, 1)
+    if (mockModel === model) mockModel = MOCK_MODELS[0]
     return mockSettings()
   },
   saveApiKey: async () => {

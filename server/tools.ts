@@ -44,6 +44,27 @@ const NETWORK_ACTIONS: Record<string, string> = {
   disconnect: '컨테이너 연결 해제',
 }
 
+// 승인하면 어떻게 되는지(Docker 동작 기준). 승인 카드에 사유와 같이 보여준다(code EFFECT, 화면은 → 로 표시).
+const effect = (message: string): RiskReason => ({ code: 'EFFECT', message })
+
+const CONTAINER_EFFECTS: Record<string, string> = {
+  start: '멈춰 있던 컨테이너가 실행돼요.',
+  stop: '컨테이너 안 프로그램이 종료돼요. 서비스가 멈추고, 나중에 다시 시작할 수 있어요.',
+  restart: '컨테이너를 멈췄다가 다시 실행해요. 잠깐 서비스가 끊겨요.',
+  kill: '컨테이너를 정리할 틈 없이 바로 끝내요. 저장 안 된 작업이 사라질 수 있어요.',
+  pause: '컨테이너 안 프로그램을 잠시 얼려요. 재개하면 이어서 돌아요.',
+  unpause: '얼려 둔 컨테이너를 다시 돌려요.',
+  update: '실행 중인 컨테이너의 자원 제한이나 재시작 정책이 바뀌어요.',
+  rename: '컨테이너 이름이 바뀌어요. 이름으로 찾던 곳이 있으면 같이 고쳐야 해요.',
+}
+
+const DELETE_EFFECTS: Record<string, string> = {
+  containers: '컨테이너와 그 안에서 바뀐 파일이 지워져요. 이름 있는 볼륨은 남아요.',
+  images: '이미지가 지워져요. 다시 쓰려면 다시 받아야 해요.',
+  networks: '네트워크가 지워져요. 연결된 컨테이너가 있으면 지워지지 않아요.',
+  volumes: '볼륨과 그 안의 데이터가 지워져요.',
+}
+
 // Portainer가 path의 %XX를 풀어서 Docker에 넘기므로 카드도 푼 값으로 보여준다(2026-10-11 실측).
 // 64자리 ID는 docker CLI처럼 앞 12자리만 보여준다. 전체 값은 카드의 `요청`에 있다.
 function decode(part: string): string {
@@ -186,7 +207,7 @@ function dockerRequest(
   if (method === 'DELETE') {
     // 이미지 이름에는 `/`가 들어간다(DELETE /images/library/nginx).
     const target = rest.join('/') || undefined
-    const reasons = [DESTRUCTIVE]
+    const reasons = [effect(DELETE_EFFECTS[kind]), DESTRUCTIVE]
     if (truthy(query.force)) {
       reasons.push(
         kind === 'images'
@@ -205,11 +226,25 @@ function dockerRequest(
       const image = str(query.fromImage)
       const tag = str(query.tag)
       const target = image && tag ? `${image}:${tag}` : image
-      return { label: '이미지 다운로드', summary: titled('이미지', target, '다운로드'), target }
+      return {
+        label: '이미지 다운로드',
+        summary: titled('이미지', target, '다운로드'),
+        target,
+        reasons: [effect('레지스트리에서 이미지를 받아 이 서버에 저장해요. 디스크 공간을 써요.')],
+      }
     }
     const target = str(query.name)
-    const details = kind === 'containers' ? containerCreate(body) : {}
-    return { label: '생성', summary: titled(resource, target, '생성'), target, ...details }
+    if (kind === 'containers') {
+      const details = containerCreate(body)
+      return {
+        label: '생성',
+        summary: titled(resource, target, '생성'),
+        target,
+        params: details.params,
+        reasons: [effect('새 컨테이너를 만들기만 해요. 실행은 시작을 따로 승인해야 해요.'), ...(details.reasons ?? [])],
+      }
+    }
+    return { label: '생성', summary: titled(resource, target, '생성'), target }
   }
 
   // 나머지는 `/<종류>/<식별값>/<동작>`. 이미지는 식별값에 `/`가 들어가므로 마지막 조각만 동작으로 본다.
@@ -219,7 +254,8 @@ function dockerRequest(
     (action && kind === 'containers' && CONTAINER_ACTIONS[action]) ||
     (action && kind === 'networks' && NETWORK_ACTIONS[action]) ||
     '변경'
-  return { label: verb, summary: titled(resource, target, verb), target }
+  const about = action && kind === 'containers' ? CONTAINER_EFFECTS[action] : undefined
+  return { label: verb, summary: titled(resource, target, verb), target, ...(about ? { reasons: [effect(about)] } : {}) }
 }
 
 export function describeTool(tool: string, args: Record<string, unknown>): ToolAction | undefined {

@@ -36,6 +36,17 @@ export interface DASessionSummary {
   id: string
   title: string
   created_at: string
+  num_messages?: number
+  input_tokens?: number
+  output_tokens?: number
+}
+
+// GET /api/sessions/:id/snapshot 중 WEB이 읽는 값(v1.148.0 pkg/api/types.go SessionSnapshotResponse)
+export interface DASnapshot {
+  input_tokens?: number
+  output_tokens?: number
+  // 누적 비용(달러). 하위 세션과 요약 비용까지 들어 있다.
+  cost?: number
 }
 
 export interface DAChatMessage {
@@ -99,6 +110,47 @@ export async function setTitle(id: string, title: string): Promise<void> {
 export async function getSession(id: string): Promise<DASession> {
   const res = await request(`/api/sessions/${encodeURIComponent(id)}`)
   return (await res.json()) as DASession
+}
+
+export async function getSnapshot(id: string): Promise<DASnapshot> {
+  const res = await request(`/api/sessions/${encodeURIComponent(id)}/snapshot`)
+  return (await res.json()) as DASnapshot
+}
+
+// ordinal번째 사용자 메시지(implicit 포함, 0부터) 직전까지를 복사한 새 대화를 만든다(v1.148.0 session/branch.go ForkSession).
+export async function forkSession(id: string, ordinal: number): Promise<string> {
+  const res = await request(`/api/sessions/${encodeURIComponent(id)}/fork`, {
+    method: 'POST',
+    body: JSON.stringify({ user_message_index: ordinal }),
+  })
+  return ((await res.json()) as { id: string }).id
+}
+
+// ---- 상태 점검(설정의 정보 화면) ----
+
+export async function health(): Promise<{ status: string; version?: string }> {
+  const res = await request('/health')
+  return (await res.json()) as { status: string; version?: string }
+}
+
+export async function ready(): Promise<{ ready: boolean; active_sessions?: number; latest_error?: string }> {
+  // 준비가 안 됐으면 503과 같은 모양으로 온다.
+  const res = await fetch(`${config.agentUrl}/ready`, { headers: headers(false) })
+  return (await res.json()) as { ready: boolean; active_sessions?: number; latest_error?: string }
+}
+
+// agent.yaml 내용(JSON). 이름은 파일 이름이다(agent.direct.yaml → agent.direct). 화면에는 고른 필드만 보낸다(server/system.ts).
+export async function getAgentConfig(): Promise<unknown> {
+  const res = await request(`/api/agents/${encodeURIComponent(config.agentName)}`)
+  return await res.json()
+}
+
+// 모델이 쓸 수 있는 도구 수. MCP 서버를 띄워 보고 센다.
+export async function toolCount(agentName: string): Promise<number> {
+  const res = await request(
+    `/api/agents/${encodeURIComponent(config.agentName)}/${encodeURIComponent(agentName)}/tools/count`,
+  )
+  return ((await res.json()) as { available_tools: number }).available_tools
 }
 
 // Agent 스트림은 fetch 대신 node:http로 연다. Node fetch(undici)는 본문이 300초 동안 오지 않으면 끊는데

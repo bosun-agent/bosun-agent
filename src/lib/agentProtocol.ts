@@ -1,4 +1,4 @@
-// WEB ↔ AI Agent 인터페이스 타입. docs/interface-web-agent.md(v0.2.12)의 3·4장과 1:1로 맞춘다.
+// WEB ↔ AI Agent 인터페이스 타입. docs/interface-web-agent.md(v0.4.0)의 3·4장과 1:1로 맞춘다.
 // 목업(mockAgent.ts)과 실제 클라이언트가 모두 이 타입의 이벤트 스트림을 내보낸다.
 
 export interface ProposedAction {
@@ -34,6 +34,8 @@ export type AgentEvent =
       expiresAt: string
     }
   | { type: 'rejected'; code: string; reason: string }
+  // 다시 붙기(GET .../stream)에서만 온다. 앞에 보낸 approval_required가 이미 결정됐다(계약 4장).
+  | { type: 'approval_resolved'; approvalId: string; status: Exclude<ApprovalStatus, 'pending'> }
   | { type: 'error'; code: string; message: string }
   | { type: 'done' }
 
@@ -63,6 +65,11 @@ export interface SessionSummary {
   sessionId: string
   title: string
   updatedAt: string
+  // WEB 백엔드가 이 대화를 처리하고 있다(승인 대기 포함). 화면은 다시 붙어서 받는다(GET .../stream).
+  running?: boolean
+  pinned?: boolean
+  inputTokens?: number
+  outputTokens?: number
 }
 
 // 실제 클라이언트도 이 모양을 구현하면 App.tsx는 바꿀 필요가 없다.
@@ -72,7 +79,62 @@ export interface SessionSummary {
 export interface Settings {
   model: string | null
   models: string[]
+  // models 중 관리자가 화면에서 더한 것. 이것만 지울 수 있다.
+  customModels: string[]
   apiKey: { editable: boolean; set: boolean }
+}
+
+// 설정의 정보·정책 화면(계약 3장 GET /api/system). agent.yaml에서 고른 값만 온다.
+export interface AgentConfigSummary {
+  agents: {
+    name: string
+    description?: string
+    model?: string
+    safety?: string
+    maxIterations?: number
+    instruction?: string
+    toolsets: { type: string; command?: string; args: string[]; tools: string[]; env: string[]; callTimeout?: string }[]
+    hooks: { event: string; scripts: string[]; matchers: string[] }[]
+  }[]
+  models: { name: string; provider?: string; model?: string; maxTokens?: number }[]
+  permissions: { allow: string[]; ask: string[]; deny: string[] }
+}
+
+export interface SystemInfo {
+  web: { version: string; maxTurns: number; running: number; approvalTimeoutSec: number }
+  agent: { name: string; reachable: boolean; version?: string; ready?: boolean; error?: string }
+  config?: AgentConfigSummary
+}
+
+// 승인 기록 한 줄(GET /api/audit). 대화를 지웠으면 summary가 없다.
+export interface AuditRecord {
+  at: string
+  user: string
+  sessionId: string
+  approvalId: string
+  tool: string
+  decision: ApprovalStatus
+  summary?: string
+  target?: string
+}
+
+// 삭제 전 백업 한 건(GET /api/backups). Agent 백업 훅이 저장한 inspect에서 고른 값만 온다.
+export interface BackupRecord {
+  id: number
+  at: string
+  sessionId: string
+  environmentId: string
+  // container | image | network
+  kind: string
+  target: string
+  summary: Record<string, string>
+}
+
+// 대화 사용량(GET /api/sessions/{id}/usage). cost는 달러다.
+export interface SessionUsage {
+  inputTokens: number
+  outputTokens: number
+  cost?: number
 }
 
 export interface AgentClient {
@@ -86,11 +148,31 @@ export interface AgentClient {
     reason?: 'expired',
   ): AsyncIterable<AgentEvent>
   listSessions?(): Promise<SessionSummary[]>
-  loadMessages?(sessionId: string): Promise<RestoredMessage[]>
+  // running이면 그 턴의 답은 빠져 있다. attach로 다시 붙어서 받는다.
+  loadMessages?(sessionId: string): Promise<{ messages: RestoredMessage[]; running: boolean }>
+  // 처리 중인 턴에 다시 붙는다. 이 턴의 이벤트를 처음부터 받는다.
+  attach?(sessionId: string): AsyncIterable<AgentEvent>
+  // 처리를 멈춘다. 붙어 있는 스트림은 error(STOPPED)로 끝난다.
+  stop?(sessionId: string): Promise<void>
   getSettings?(): Promise<Settings>
   saveModel?(model: string): Promise<Settings>
+  addModel?(model: string): Promise<Settings>
+  removeModel?(model: string): Promise<Settings>
   // 저장해도 Docker Agent를 다시 시작해야 적용된다(계약 7장 ①).
   saveApiKey?(apiKey: string): Promise<Settings>
   // 서버 대화 삭제. 처리 중인 대화는 서버가 409로 거절한다.
   deleteSession?(sessionId: string): Promise<void>
+  renameSession?(sessionId: string, title: string): Promise<void>
+  pinSession?(sessionId: string, pinned: boolean): Promise<void>
+  // turn번째 사용자 메시지 직전까지 복사한 새 대화
+  forkSession?(sessionId: string, turn: number): Promise<{ sessionId: string; title: string }>
+  exportUrl?(sessionId: string): string
+  getUsage?(sessionId: string): Promise<SessionUsage>
+  getSystem?(): Promise<SystemInfo>
+  getToolCount?(): Promise<number>
+  getAudit?(limit?: number): Promise<AuditRecord[]>
+  // available: false면 WEB 백엔드에 백업 파일 위치가 없다(BACKUP_DB, AGENT_ENV_FILE).
+  getBackups?(): Promise<{ available: boolean; records: BackupRecord[] }>
+  // 실패하면 화면에 보여줄 문장을 준다.
+  changePassword?(current: string, next: string): Promise<{ ok: true } | { ok: false; message: string }>
 }

@@ -43,6 +43,8 @@ export interface ChatMessage {
   // 이 턴에서 정책으로 막힌 호출이 있었다. 턴은 계속될 수 있으므로 상태와 따로 둔다(차단 안내 + 이어진 답).
   rejectionReason?: string
   errorMessage?: string
+  // 답 아래에 작게 붙는 안내(사용자가 멈춤 등)
+  notice?: string
   steps?: ProcessStep[]
 }
 
@@ -54,4 +56,8 @@ export interface ChatSession {
   loaded?: boolean
   title: string
   messages: ChatMessage[]
+  pinned?: boolean
+  // 서버 대화 목록에서 받은 토큰 사용량
+  inputTokens?: number
+  outputTokens?: number
 }
