@@ -21,10 +21,13 @@ WEB 백엔드까지 같이 돌리려면 터미널 3개를 띄운다. 실제 Agen
 npm run server:fake  # 가짜 Docker Agent(8080)
 npm run server       # WEB 백엔드(3001). 코드를 고치면 다시 뜬다
 npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
-npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트
+npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트(79항목)
+npm run test:ui      # (선택) 브라우저 화면 테스트(29항목). 설치된 Chrome을 쓴다(CHROME_PATH)
 ```
 
-가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·강제·웹사이트·재시작(승인 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 목록, 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+`test:ui`는 대화 이름·고정을 확인하므로 깨끗한 상태(가짜 Agent와 백엔드를 새로 띄우고 `WEB_DB_PATH`도 새 파일)에서 돌린다. 캡처를 남기려면 `SHOTS=<폴더>`를 준다.
+
+가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·강제·웹사이트·재시작(승인 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 목록, 천천히(3초 걸리는 답, 멈추기·다시 붙기 확인용), 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
 
 실제 Docker Agent(Agent 담당 `agent.direct.yaml`)에 붙일 때 WEB 백엔드 env:
 
@@ -38,22 +41,40 @@ AGENT_ENV_FILE=/절대경로/agent.env      # Agent --env-from-file 파일. 설�
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD_HASH=scrypt$...
 JWT_SECRET=...
+# (선택) MAX_TURNS=3 동시에 처리할 대화 수, BACKUP_DB=Agent 백업 훅 DB(기본: AGENT_ENV_FILE 옆 backups.sqlite3)
 ```
 
-설정 화면에서 API 키를 바꾸면 Docker Agent를 다시 띄워야 적용된다.
+설정 화면에서 API 키를 바꾸면 Docker Agent를 다시 띄워야 적용된다. 화면에서 비밀번호를 바꾼 뒤 잊어버렸으면 `npm run set-password`로 env를 다시 정하면 그 값이 이긴다.
+
+### 배포
+
+```bash
+npm run build:web                        # 실제 백엔드에 붙는 화면 빌드 → dist/
+STATIC_DIR=dist node --env-file=<env> server/main.ts   # 백엔드가 화면도 내보낸다(한 포트)
+docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는 /data(볼륨)
+```
+
+`npm run build`는 목업 화면, `npm run build:demo`는 공개 데모(목업 + 시나리오 버튼)다. 외부에서 접속하게 하려면 HTTPS 리버스 프록시 뒤에 두고 `HOST=0.0.0.0`으로 띄운다. 쿠키는 기본이 `Secure`다.
 
 ### WEB 백엔드 구조 (`server/`)
 
 | 파일 | 하는 일 |
 |---|---|
 | `main.ts` | 진입점. 시작할 때 대기 중이던 카드를 취소로 바꾼다 |
-| `app.ts` | 브라우저용 `/api/*` |
-| `turns.ts` | 한 턴의 Agent 스트림과 승인 요청 관리(계약 6장): `tool_call_confirmation` → 카드, `/resume`으로 결정 전달, 만료, 스트림 이어붙이기 |
+| `app.ts` | 브라우저용 `/api/*`, 보안 헤더, 화면 파일(`STATIC_DIR`) |
+| `turns.ts` | 대화마다 한 턴의 Agent 스트림과 승인 요청 관리(계약 6장): `tool_call_confirmation` → 카드, `/resume`으로 결정 전달, 만료, 스트림 이어붙이기, 멈추기, 다시 붙기(이 턴의 이벤트 기록) |
+| `system.ts` | 정보·정책 화면 값: Docker Agent 상태와 agent.yaml에서 고른 필드 |
+| `backups.ts` | 백업 화면: Agent 백업 훅의 SQLite를 읽기만 한다. inspect에서 고른 값만 보낸다 |
 | `translate.ts` | Docker Agent 이벤트 → 화면 이벤트, 정책 차단 판별 |
 | `tools.ts` | 도구 호출(`docker_proxy` method·path, `EndpointList`) → 화면 문구, 승인 카드 템플릿 |
 | `agentClient.ts` | Docker Agent API 클라이언트 |
 | `mask.ts` | 알려진 비밀값 형식 가리기 |
-| `store.ts` | 승인·차단 카드와 승인 감사 기록(SQLite, `server/data/web.db`. 커밋하지 않는다) |
+| `store.ts` | 승인·차단 카드, 승인 감사 기록, 고정한 대화, 설정 값(SQLite, `server/data/web.db`. 커밋하지 않는다) |
+| `auth.ts` | 관리자 로그인과 비밀번호 변경, JWT를 HttpOnly 쿠키로 발급, `X-Bosun` 헤더 검사 |
+| `settings.ts` | 설정 화면 값: 모델 목록(`AGENT_MODELS` + 화면에서 더한 것), API 키를 Agent env 파일에 쓰기 |
+| `config.ts` | 환경변수 읽기 |
+| `setPassword.ts` | `npm run set-password`: env 파일에 관리자 비밀번호 해시 넣기 |
+| `dev/` | 개발용 값(`dev.env`), 가짜 Docker Agent(`fakeUpstream.ts`), 백엔드 스모크 테스트(`smoke.ts`), 화면 테스트(`uiSmoke.ts`), 연동 확인용 `agent.yaml` |
 
 ## 목업으로 화면 상태 테스트하기
 
@@ -75,8 +96,12 @@ JWT_SECRET=...
 
 ## 현재 범위
 
-- **레이아웃**(2026-10-07 팀 와이어프레임 기준): 빈 대화는 가운데에 로고·입력창·Go to Portainer(Home), 대화가 시작되면 가운데 칼럼에 메시지와 아래 입력창. 헤더 없이 왼쪽 위 ☰ 버튼과 설정 버튼만 둔다. 로고와 첨부 메뉴 항목은 아직 자리표시
-- **대화 목록**(`SessionSidebar`): ☰로 열고 닫는 사이드바, 새 대화, 처리 중 표시. 대화가 여러 개여도 처리는 한 번에 한 대화만 한다(인터페이스 계약 3장)
+- **레이아웃**(2026-10-07 팀 와이어프레임 기준): 빈 대화는 가운데에 로고·입력창·예시 버튼·Go to Portainer(Home), 대화가 시작되면 가운데 칼럼에 메시지와 아래 입력창. 헤더 없이 왼쪽 위 ☰ 버튼과 설정 버튼만 둔다. 로고는 아직 자리표시
+- **대화 목록**(`SessionSidebar`): ☰로 열고 닫는 사이드바, 새 대화, 찾기, 고정, 이름 바꾸기(더블클릭), 마크다운 내보내기, 처리 중 표시, 토큰 사용량(마우스를 올리면). 대화마다 따로 처리하므로 한 대화가 승인을 기다려도 다른 대화를 쓸 수 있다(동시 `MAX_TURNS`개, 인터페이스 계약 3장)
+- **입력창**(`ChatInput`): 처리 중이면 ■ 멈추기. + 메뉴로 텍스트 파일 붙이기(3개, 파일당 50KB)와 도움말(`HelpPanel`: 바로 되는 것 / 승인 받는 것 / 안 되는 것 + 예시)
+- **메시지**: 보낸 메시지 수정(그 앞까지 복제한 새 대화에서 다시 보냄), 답 복사, 오류 뒤 다시 시도, 긴 첨부는 접기. 새로고침하거나 창을 닫아도 처리는 계속되고, 다시 열면 그 턴을 처음부터 이어 받는다
+- **승인 카드**(`ApprovalCard`): 무엇을 하는지 + "→ 승인하면 어떻게 되는지" + 위험 사유. 옵션(force 등)에는 뜻을 붙이고 요청 원문은 "기술 정보"로 접는다. 다른 탭을 보고 있으면 탭 제목과 브라우저 알림(설정에서 켬)
+- **설정**(`SettingsModal`): 모델(고르기·더하기·빼기), API 키, 정책(agent.yaml 읽어서 설명, 보기만), 승인 기록, 백업(삭제 전 백업 목록, 다시 만들기 요청 쓰기), 정보(연결·버전·도구 수·지시문·이 대화 사용량), 계정(비밀번호), 알림
 - **처리 과정**(`ProcessSteps`): 도구 목록 불러오기 → 요청 이해 → 승인 대기 → 도구 실행을 실시간으로 보여주고, 끝나면 "처리 과정 보기"로 접는다. 도구 인자와 원본 결과는 보여주지 않는다
 - **메시지 상태**(`MessageStatus`): `thinking`, `streaming`, `done`, `pending_approval`(승인 카드), `approval_expired`, `error`. 정책 차단은 상태가 아니라 `rejectionReason`으로 따로 둔다(차단 뒤에도 Agent가 이어서 답할 수 있음)
 - 화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`)
@@ -109,6 +134,8 @@ JWT_SECRET=...
 | [docs/architecture-web.md](docs/architecture-web.md) | `WEB_아키텍처_설계서.md` | WEB 범위·경계, 화면 상태, 기술 선택, WEB 백엔드 역할, 구현 현황 |
 | [docs/interface-web-agent.md](docs/interface-web-agent.md) | `WEB_인터페이스_계약.md` | 브라우저 ↔ WEB 백엔드 형식, WEB 백엔드 ↔ Agent 승인 흐름, 정할 것 |
 | [docs/web-summary.md](docs/web-summary.md) | `WEB_정리.md` | 팀 공유용 요약: WEB이 하는 일, 승인 흐름, 주고받는 데이터, 부탁드리는 것 |
+| [docs/team-needs.md](docs/team-needs.md) | `WEB_팀에_필요한_것.md` | WEB 혼자 할 수 없는 것: 왜 못 하는지, 누구에게 무엇이 필요한지, 받으면 WEB이 할 일 |
+| [docs/portfolio-README.md](docs/portfolio-README.md) | (공유 안 함) | 포트폴리오 공개용 README 초안. 공개할 때 루트 README.md로 옮긴다. 화면 캡처는 `docs/images/` |
 
 - 원본은 이 저장소에서 고치고, 팀에 공유할 때 공유용 이름으로 복사한다. 설계서 본문은 공유용 이름으로 서로를 가리킨다.
 - 요약: 브라우저는 WEB 백엔드하고만 통신한다(HTTP POST + SSE). 승인은 Docker Agent 정책이 실행을 멈추고 묻고, WEB 백엔드가 그 요청을 카드로 띄운 뒤 결정을 Agent `/resume`으로 전달한다.
