@@ -1,7 +1,7 @@
 // 가짜 Agent를 띄운 상태에서 WEB 백엔드 흐름을 확인하는 스모크 테스트.
 // 실행: npm run server:fake, npm run server를 띄운 뒤 npm run server:smoke
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { AgentEvent } from '../../src/lib/agentProtocol.ts'
 import { readSSE } from '../../src/lib/sse.ts'
@@ -443,11 +443,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 // ---- 백업 목록(Agent 백업 훅의 SQLite를 읽기만) ----
 {
+  // 지난 실행이 넣은 행이 남아 있으면 빈 목록 검사가 틀리므로 먼저 지운다.
+  const file = `${dirname(process.env.AGENT_ENV_FILE!)}/backups.sqlite3`
+  rmSync(file, { force: true })
   const empty = (await fetch(`${BASE}/api/backups`).then((r) => r.json())) as { available: boolean; records: unknown[] }
   check('백업 파일이 없으면 빈 목록', empty.available && empty.records.length === 0, empty)
   // 훅과 같은 표를 만든다(tool_input_transform_direct_backup_guard.py save).
   const { DatabaseSync } = await import('node:sqlite')
-  const file = `${dirname(process.env.AGENT_ENV_FILE!)}/backups.sqlite3`
   const db = new DatabaseSync(file)
   db.exec(
     'CREATE TABLE IF NOT EXISTS backups (ts REAL, time TEXT, session_id TEXT, environment_id TEXT, method TEXT, path TEXT, query_json TEXT, kind TEXT, target TEXT, inspect_json TEXT)',
