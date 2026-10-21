@@ -38,20 +38,18 @@ function approvalEvent(
   { willFail = false, store = true, ttlMs = 5 * 60_000 } = {},
 ): AgentEvent {
   const approvalId = `ap_${crypto.randomUUID().slice(0, 8)}`
-  const tool = 'docker_container_remove'
+  const tool = 'docker_proxy'
   // store=false면 발급만 하고 서버에 없는 상태 → 승인 시 만료 오류(409)를 재현
   if (store) pendingApprovals.set(approvalId, { sessionId, tool, willFail })
+  // 실제 백엔드(server/tools.ts)가 컨테이너 삭제 요청으로 만드는 카드와 같은 모양
   return {
     type: 'approval_required',
     approvalId,
-    summary: '요청하신 작업은 되돌리기 어려운 변경이라 승인이 필요해요.',
-    action: { tool, target: 'nginx-web' },
+    summary: '컨테이너 nginx-web 삭제',
+    action: { tool, target: 'nginx-web', params: { 요청: 'DELETE /containers/nginx-web' } },
     reasons: [
-      { code: 'DESTRUCTIVE', message: '실행하면 되돌릴 수 없어요.' },
-      {
-        code: 'CONFIRM_TARGET',
-        message: '대상 리소스와 옵션을 다시 한번 확인해주세요.',
-      },
+      { code: 'EFFECT', message: '컨테이너와 그 안에서 바뀐 파일이 지워져요. 이름 있는 볼륨은 남아요.' },
+      { code: 'DESTRUCTIVE', message: '삭제하면 되돌릴 수 없어요.' },
     ],
     // 기본값은 WEB 백엔드 승인 대기 시간(APPROVAL_TIMEOUT_MS) 기본값 5분
     expiresAt: new Date(Date.now() + ttlMs).toISOString(),
@@ -64,6 +62,7 @@ async function* requestApproval(
   options?: Parameters<typeof approvalEvent>[1],
 ): AsyncGenerator<AgentEvent> {
   await wait(400)
+  yield* streamText('nginx-web 컨테이너를 삭제할게요.')
   yield approvalEvent(sessionId, options)
 }
 
@@ -232,7 +231,7 @@ async function* sendDecision(
     status: 'succeeded',
     summary: '실행 완료',
   }
-  yield* streamText('승인해주셔서 진행했어요. (목업 응답)')
+  yield* streamText('\n\nnginx-web 컨테이너를 삭제했어요. (목업 응답)')
   yield { type: 'done' }
 }
 
