@@ -3,21 +3,38 @@
 // docker_proxy는 Docker Engine API 요청 하나라서 method와 path로 작업을 고른다.
 // 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다(계약 5장 4항).
 
-import type { ProposedAction, RiskReason } from '../src/lib/agentProtocol.ts'
+import type { ProposedAction, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
 import { maskText } from './mask.ts'
 
 interface ToolAction {
   // 처리 과정 문구에 쓰는 작업 이름
   label: string
-  // 승인 카드 제목. 없으면 공통 문구로 띄운다
+  // 승인 카드 제목. 없으면 "확인할 수 없는 작업" 카드로 띄운다
   summary?: string
   target?: string
   // 승인 카드에 보여줄 값(이름 → 값). 요청 본문에서 사람이 확인해야 할 것만 고른다
   params?: Record<string, string>
   reasons?: RiskReason[]
+  // 카드 맨 위 위험도 표시(계약 4.1)
+  risk?: RiskLevel
 }
 
 const DESTRUCTIVE: RiskReason = { code: 'DESTRUCTIVE', message: '삭제하면 되돌릴 수 없어요.' }
+
+const IRREVERSIBLE: RiskLevel = { level: 'high', label: '되돌릴 수 없음' }
+const UNKNOWN_RISK: RiskLevel = { level: 'unknown', label: '확인 필요' }
+
+// 컨테이너 동작 → 위험도. 다시 시작할 수 있는 동작은 medium, 실행만 하는 동작은 low다.
+const CONTAINER_RISKS: Record<string, RiskLevel> = {
+  start: { level: 'low', label: '실행' },
+  unpause: { level: 'low', label: '실행' },
+  restart: { level: 'medium', label: '잠깐 끊김' },
+  stop: { level: 'medium', label: '서비스 멈춤' },
+  kill: { level: 'medium', label: '서비스 멈춤' },
+  pause: { level: 'medium', label: '서비스 멈춤' },
+  update: { level: 'medium', label: '설정 바뀜' },
+  rename: { level: 'medium', label: '설정 바뀜' },
+}
 
 const RESOURCES: Record<string, string> = {
   containers: '컨테이너',
@@ -116,7 +133,7 @@ function bindSource(bind: string): string {
 // POST /containers/create 본문에서 승인 전에 봐야 할 값을 고른다(2026-10-11 실측).
 // 생성할 때 Cmd로 셸 명령을 넣거나 privileged·호스트 마운트를 켤 수 있어서, 카드가 이름만 보여주면 무엇을 승인하는지 알 수 없다.
 // 환경변수는 값에 비밀이 들어갈 수 있으므로 이름만 보여준다.
-function containerCreate(body: Record<string, unknown>): Pick<ToolAction, 'params' | 'reasons'> {
+function containerCreate(body: Record<string, unknown>): Pick<ToolAction, 'params' | 'reasons' | 'risk'> {
   const host = objectArg(body.HostConfig)
   const params: Record<string, string> = {}
   const reasons: RiskReason[] = []
@@ -127,7 +144,11 @@ function containerCreate(body: Record<string, unknown>): Pick<ToolAction, 'param
   const command = [...strings(body.Entrypoint), ...strings(body.Cmd)].join(' ')
   if (command) {
     params.명령 = maskText(command.length > MAX_COMMAND ? `${command.slice(0, MAX_COMMAND)}…` : command)
-    reasons.push({ code: 'COMMAND', message: '컨테이너가 시작될 때 이 명령이 실행돼요. 명령을 확인해주세요.' })
+    // 처음 보는 사람도 판단할 수 있게 기준을 같이 준다. 대부분은 이미지의 기본 명령을 그대로 옮긴 것이다(2026-10-28 실측).
+    reasons.push({
+      code: 'COMMAND',
+      message: '컨테이너가 시작될 때 이 명령이 실행돼요. 보통은 이미지에 정해진 기본 명령이에요. 모르는 명령이 보이면 거부해주세요.',
+    })
   }
 
   const ports = Object.entries(objectArg(host.PortBindings)).flatMap(([port, bindings]) =>
@@ -176,7 +197,9 @@ function containerCreate(body: Record<string, unknown>): Pick<ToolAction, 'param
   const env = strings(body.Env).map((e) => e.split('=')[0])
   if (env.length) params.환경변수 = `${env.join(', ')} (값은 숨김)`
 
-  return { params, reasons }
+  const hostRisk = reasons.some((r) => ['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE'].includes(r.code))
+  const risk: RiskLevel = hostRisk ? { level: 'high', label: '호스트까지 영향' } : { level: 'low', label: '새로 만듦' }
+  return { params, reasons, risk }
 }
 
 // 쿼리 값은 문자열("true")로 오기도 한다(2026-10-11 실측). Docker는 "", 0, no, false, none만
@@ -201,7 +224,7 @@ function dockerRequest(
   const [kind, ...rest] = pathParts(path)
   const resource = RESOURCES[kind]
   // GET은 permissions.allow라 보통 묻지 않는다. method를 빼고 부르면 승인 카드가 뜬다.
-  if (method === 'GET' || method === 'HEAD') return { label: '조회', summary: resource ? `${resource} 조회` : '조회' }
+  if (method === 'GET' || method === 'HEAD') return { label: '조회', summary: resource ? `${resource} 조회` : '조회', risk: { level: 'low', label: '조회' } }
   if (!resource) return { label: '변경' }
 
   if (method === 'DELETE') {
@@ -218,7 +241,7 @@ function dockerRequest(
     if (kind === 'containers' && truthy(query.v)) {
       reasons.push({ code: 'VOLUMES', message: '컨테이너에 딸린 익명 볼륨도 같이 지워져요.' })
     }
-    return { label: '삭제', summary: titled(resource, target, '삭제'), target, reasons }
+    return { label: '삭제', summary: titled(resource, target, '삭제'), target, reasons, risk: IRREVERSIBLE }
   }
 
   if (rest.length === 1 && rest[0] === 'create') {
@@ -231,6 +254,7 @@ function dockerRequest(
         summary: titled('이미지', target, '다운로드'),
         target,
         reasons: [effect('레지스트리에서 이미지를 받아 이 서버에 저장해요. 디스크 공간을 써요.')],
+        risk: { level: 'low', label: '새로 받음' },
       }
     }
     const target = str(query.name)
@@ -242,9 +266,10 @@ function dockerRequest(
         target,
         params: details.params,
         reasons: [effect('새 컨테이너를 만들기만 해요. 실행은 시작을 따로 승인해야 해요.'), ...(details.reasons ?? [])],
+        risk: details.risk,
       }
     }
-    return { label: '생성', summary: titled(resource, target, '생성'), target }
+    return { label: '생성', summary: titled(resource, target, '생성'), target, risk: { level: 'low', label: '새로 만듦' } }
   }
 
   // 나머지는 `/<종류>/<식별값>/<동작>`. 이미지는 식별값에 `/`가 들어가므로 마지막 조각만 동작으로 본다.
@@ -255,7 +280,10 @@ function dockerRequest(
     (action && kind === 'networks' && NETWORK_ACTIONS[action]) ||
     '변경'
   const about = action && kind === 'containers' ? CONTAINER_EFFECTS[action] : undefined
-  return { label: verb, summary: titled(resource, target, verb), target, ...(about ? { reasons: [effect(about)] } : {}) }
+  const risk =
+    (action && kind === 'containers' && CONTAINER_RISKS[action]) ||
+    (action && kind === 'networks' && NETWORK_ACTIONS[action] ? { level: 'medium' as const, label: '연결 바뀜' } : UNKNOWN_RISK)
+  return { label: verb, summary: titled(resource, target, verb), target, ...(about ? { reasons: [effect(about)] } : {}), risk }
 }
 
 export function describeTool(tool: string, args: Record<string, unknown>): ToolAction | undefined {
@@ -275,6 +303,14 @@ export interface ApprovalCard {
   summary: string
   action: ProposedAction
   reasons: RiskReason[]
+  risk?: RiskLevel
+}
+
+// WEB이 문구 표를 갖고 있지 않은 도구(새 MCP, 스택 도구 등)의 카드. 무엇을 하는지 설명할 수 없으므로
+// 판단 기준을 주고, 인자는 값 없이 이름만 보여준다. 값에는 비밀(환경변수 등)이 들어 있을 수 있다(계약 5장 4항).
+const UNKNOWN_TOOL: RiskReason = {
+  code: 'UNKNOWN',
+  message: 'BOSUN이 아직 설명할 수 없는 도구예요. 무엇을 하는지 확실하지 않으면 거부해주세요.',
 }
 
 const MAX_BODY = 500
@@ -307,9 +343,13 @@ export function approvalCard(
     }
     if (typeof args.path === 'string') params.요청 = `${method} ${args.path}`
   }
+  if (!info) {
+    const keys = Object.keys(args)
+    if (keys.length) params.인자 = keys.join(', ') + ' (값은 숨김)'
+  }
   if (Object.keys(params).length > 0) action.params = params
-  if (!summary) return { summary: '승인이 필요한 작업입니다.', action, reasons: [] }
-  return { summary, action, reasons: info?.reasons ?? [] }
+  if (!summary) return { summary: '어떤 작업인지 확인할 수 없어요.', action, reasons: [UNKNOWN_TOOL], risk: UNKNOWN_RISK }
+  return { summary, action, reasons: info?.reasons ?? [], ...(info?.risk ? { risk: info.risk } : {}) }
 }
 
 // ---- ID → 이름 ----

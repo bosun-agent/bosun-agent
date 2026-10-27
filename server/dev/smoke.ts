@@ -95,6 +95,7 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const ap = approvalOf(r.events)
   check('삭제는 approval_required로 끝난다', last(r.events) === 'approval_required', types(r.events))
   check('승인 카드 문구', ap?.summary === '컨테이너 nginx-web 삭제' && ap.action.target === 'nginx-web', ap)
+  check('삭제 카드 위험도는 되돌릴 수 없음', ap?.risk?.level === 'high' && ap.risk.label === '되돌릴 수 없음', ap?.risk)
   const busy = await send('목록')
   check('승인 대기 중 새 메시지는 409', busy.status === 409, busy)
   const del = await fetch(`${BASE}/api/sessions/${sid}`, { method: 'DELETE' })
@@ -117,6 +118,7 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const r = await send('web 재시작해줘')
   const ap = approvalOf(r.events)
   check('재시작 카드 문구', ap?.summary === '컨테이너 web 재시작' && JSON.stringify(ap.action.params).includes('POST /containers/web/restart'), ap)
+  check('재시작 카드 위험도는 잠깐 끊김', ap?.risk?.level === 'medium' && ap.risk.label === '잠깐 끊김', ap?.risk)
   const d = await decide(ap!.approvalId, 'approve')
   const tools = d.events.filter((e) => e.type === 'tool_status')
   check('승인 뒤 처리 과정에 작업 이름이 보인다', JSON.stringify(tools).includes('재시작 완료'), tools)
@@ -141,6 +143,11 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
     '생성 카드에 이미지·명령·포트와 명령 경고가 보인다',
     params.이미지 === 'nginx:alpine' && String(params.명령).includes('index.html') && params.포트 === '8090 → 80/tcp' &&
       ap!.reasons.some((x) => x.code === 'COMMAND'),
+    ap,
+  )
+  check(
+    '생성 카드는 새로 만듦, 명령 경고에 판단 기준이 있다',
+    ap?.risk?.level === 'low' && ap.reasons.some((x) => x.code === 'COMMAND' && x.message.includes('기본 명령')),
     ap,
   )
   const d = await decide(ap!.approvalId, 'deny')
@@ -213,6 +220,36 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const badKey = await post(`/api/sessions/${s3}/messages`, { text: '키 오류' })
   const err = badKey.events.at(-1)
   check('키가 틀리면 INVALID_API_KEY', err?.type === 'error' && err.code === 'INVALID_API_KEY', badKey.events)
+}
+
+// ---- 리허설(2026-10-28)에서 나온 경우 ----
+{
+  const sx = await newSession()
+  const empty = await post(`/api/sessions/${sx}/messages`, { text: '빈 답 테스트' })
+  const endEmpty = empty.events.at(-1)
+  check('모델이 아무것도 내지 않고 끝나면 EMPTY_REPLY 오류', endEmpty?.type === 'error' && endEmpty.code === 'EMPTY_REPLY' && !types(empty.events).includes('done'), types(empty.events))
+  const loop = await post(`/api/sessions/${sx}/messages`, { text: '같은 호출 되풀이' })
+  const endLoop = loop.events.at(-1)
+  check('같은 호출을 되풀이해 Agent가 끊으면 LOOP_DETECTED 안내', endLoop?.type === 'error' && endLoop.code === 'LOOP_DETECTED' && endLoop.message.includes('바꿔서'), loop.events)
+  const leaked = await post(`/api/sessions/${sx}/messages`, { text: '도구 표기 테스트' })
+  const endLeak = leaked.events.at(-1)
+  check(
+    '도구 호출 표기를 글로 보내면 표기는 숨기고 TOOL_CALL_AS_TEXT 오류',
+    text(leaked.events).includes("I'll first check") && !text(leaked.events).includes('DSML') && !text(leaked.events).includes('<') &&
+      endLeak?.type === 'error' && endLeak.code === 'TOOL_CALL_AS_TEXT',
+    leaked.events,
+  )
+  const lt = await post(`/api/sessions/${sx}/messages`, { text: '목록 보여줘' })
+  check('표기 뒤 다음 턴은 정상', last(lt.events) === 'done' && text(lt.events).includes('web 하나'), types(lt.events))
+  const unknown = await post(`/api/sessions/${sx}/messages`, { text: '모르는 도구 써줘' })
+  const ap = approvalOf(unknown.events)
+  check(
+    '모르는 도구 카드: 확인할 수 없다고 하고 인자는 이름만',
+    ap?.summary === '어떤 작업인지 확인할 수 없어요.' && ap.risk?.level === 'unknown' && ap.reasons.some((x) => x.code === 'UNKNOWN') &&
+      String(ap.action.params?.인자).includes('StackFileContent') && !JSON.stringify(ap).includes('super-secret-value'),
+    ap,
+  )
+  await post(`/api/sessions/${sx}/approvals/${ap!.approvalId}`, { decision: 'deny' })
 }
 {
   const put = (model: string) =>
@@ -308,6 +345,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const rc = await post(`/api/sessions/${c2}/messages`, { text: '지워줘' })
   const rd = await post(`/api/sessions/${d}/messages`, { text: '안녕' })
   check('동시 처리는 MAX_TURNS(3)까지, 넘으면 409 TOO_MANY', last(rc.events) === 'approval_required' && (rd.json as { error?: string })?.error === 'TOO_MANY', rd)
+  // a와 c2는 둘 다 nginx-web을 지우려 한다. 나중 카드에만 경고가 붙는다.
+  check(
+    '다른 대화가 같은 대상을 기다리면 새 카드에 CONCURRENT 경고',
+    approvalOf(rc.events)?.reasons.some((x) => x.code === 'CONCURRENT') === true && !approvalOf(ra.events)?.reasons.some((x) => x.code === 'CONCURRENT') &&
+      !approvalOf(rb.events)?.reasons.some((x) => x.code === 'CONCURRENT'),
+    [approvalOf(ra.events)?.reasons, approvalOf(rc.events)?.reasons],
+  )
 
   const list = (await fetch(`${BASE}/api/sessions`).then((r) => r.json())) as { sessions: { sessionId: string; running?: boolean }[] }
   check('대화 목록에 처리 중 표시', [a, b, c2].every((id) => list.sessions.find((s) => s.sessionId === id)?.running) && !list.sessions.find((s) => s.sessionId === d)?.running, list)
@@ -468,6 +512,34 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const s = list.records[0]?.summary ?? {}
   check('백업 목록에 이미지·포트·재시작 정책', s.이미지 === 'nginx:alpine' && s.포트 === '8080 → 80/tcp' && s['재시작 정책'] === 'unless-stopped', list)
   check('백업 목록에 환경변수 값이 없다', !raw.includes('super-secret-value') && s.환경변수?.includes('DB_PASSWORD') === true, raw.slice(0, 300))
+
+  // 백업은 승인 전에 만들어진다. 같은 대화에서 바로 뒤에 뜬 삭제 카드의 결정으로 실제 삭제 여부를 보여준다.
+  const backupFor = async (decision: string | null) => {
+    const s = await newSession()
+    const r = await post(`/api/sessions/${s}/messages`, { text: '삭제해줘' })
+    const bdb = new DatabaseSync(file)
+    bdb.prepare('INSERT INTO backups VALUES (?,?,?,?,?,?,?,?,?,?)').run((Date.now() - 2000) / 1000, '', s, '1', 'DELETE', '/containers/nginx-web', '{}', 'container', 'nginx-web', JSON.stringify(inspect))
+    bdb.close()
+    if (decision) await post(`/api/sessions/${s}/approvals/${approvalOf(r.events)!.approvalId}`, { decision })
+    const rows = (await fetch(`${BASE}/api/backups`).then((res) => res.json())) as { records: { sessionId: string; outcome: string }[] }
+    const outcome = rows.records.find((x) => x.sessionId === s)?.outcome
+    if (!decision) await post(`/api/sessions/${s}/approvals/${approvalOf(r.events)!.approvalId}`, { decision: 'deny' })
+    return outcome
+  }
+  const [pending, kept, deleted] = [await backupFor(null), await backupFor('deny'), await backupFor('approve')]
+  check('백업 목록에 삭제 여부: 대기·거부·승인', pending === 'pending' && kept === 'kept' && deleted === 'deleted', [pending, kept, deleted])
+  const older = list.records.find((x) => x.kind === 'container')
+  check('짝지을 카드가 없는 백업은 unknown', (older as { outcome?: string } | undefined)?.outcome === 'unknown', older)
+}
+
+// ---- 전체 사용량 ----
+{
+  const totals = (await fetch(`${BASE}/api/usage`).then((r) => r.json())) as Record<'today' | 'month' | 'total', { inputTokens: number; outputTokens: number; cost: number }>
+  check(
+    '전체 사용량: 턴마다 기록돼 오늘·이번 달·전체에 쌓인다',
+    totals.today.inputTokens > 0 && totals.today.cost > 0 && totals.month.inputTokens >= totals.today.inputTokens && totals.total.inputTokens >= totals.month.inputTokens,
+    totals,
+  )
 }
 
 // ---- 모델 관리 ----

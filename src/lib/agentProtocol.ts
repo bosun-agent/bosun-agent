@@ -1,4 +1,4 @@
-// WEB ↔ AI Agent 인터페이스 타입. docs/interface-web-agent.md(v0.4.0)의 3·4장과 1:1로 맞춘다.
+// WEB ↔ AI Agent 인터페이스 타입. docs/interface-web-agent.md(v0.5.0)의 3·4장과 1:1로 맞춘다.
 // 목업(mockAgent.ts)과 실제 클라이언트가 모두 이 타입의 이벤트 스트림을 내보낸다.
 
 export interface ProposedAction {
@@ -10,6 +10,13 @@ export interface ProposedAction {
 export interface RiskReason {
   code: string
   message: string
+}
+
+// 승인 카드 맨 위에 붙는 한눈에 보는 위험도(계약 4.1). high: 되돌릴 수 없거나 호스트까지 영향,
+// medium: 서비스가 멈추거나 끊김, low: 새로 만들거나 실행, unknown: WEB이 모르는 도구라 판단할 수 없음.
+export interface RiskLevel {
+  level: 'high' | 'medium' | 'low' | 'unknown'
+  label: string
 }
 
 export type ProgressStep = 'loading_tools' | 'understanding'
@@ -31,6 +38,7 @@ export type AgentEvent =
       summary: string
       action: ProposedAction
       reasons: RiskReason[]
+      risk?: RiskLevel
       expiresAt: string
     }
   | { type: 'rejected'; code: string; reason: string }
@@ -53,6 +61,7 @@ export type RestoredCard =
       summary: string
       action: ProposedAction
       reasons: RiskReason[]
+      risk?: RiskLevel
       expiresAt: string
     }
   | { kind: 'rejected'; code: string; reason: string }
@@ -128,6 +137,9 @@ export interface BackupRecord {
   kind: string
   target: string
   summary: Record<string, string>
+  // 백업은 승인 전에 만들어져서 거부한 삭제도 남는다. 같은 대화의 승인 카드와 짝지은 결과(계약 3장).
+  // deleted: 승인함, kept: 거부·만료·취소(지우지 않음), pending: 아직 결정 전, unknown: 짝을 찾지 못함
+  outcome: 'deleted' | 'kept' | 'pending' | 'unknown'
 }
 
 // 대화 사용량(GET /api/sessions/{id}/usage). cost는 달러다.
@@ -135,6 +147,13 @@ export interface SessionUsage {
   inputTokens: number
   outputTokens: number
   cost?: number
+}
+
+// 전체 사용량(GET /api/usage). 턴마다 WEB이 기록한 값의 합이다. 대화를 지워도 남는다.
+export interface UsageTotals {
+  today: Required<SessionUsage>
+  month: Required<SessionUsage>
+  total: Required<SessionUsage>
 }
 
 export interface AgentClient {
@@ -168,6 +187,7 @@ export interface AgentClient {
   forkSession?(sessionId: string, turn: number): Promise<{ sessionId: string; title: string }>
   exportUrl?(sessionId: string): string
   getUsage?(sessionId: string): Promise<SessionUsage>
+  getUsageTotals?(): Promise<UsageTotals>
   getSystem?(): Promise<SystemInfo>
   getToolCount?(): Promise<number>
   getAudit?(limit?: number): Promise<AuditRecord[]>

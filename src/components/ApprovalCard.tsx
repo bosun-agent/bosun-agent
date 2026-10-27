@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { RiskLevel } from '../lib/agentProtocol'
 import type { ApprovalRequest } from '../types'
 
 interface ApprovalCardProps {
@@ -12,8 +13,22 @@ interface ApprovalCardProps {
 // 남은 시간이 이보다 적으면 강조한다.
 const URGENT_MS = 60_000
 
-// 호스트까지 영향이 가는 사유는 빨간색으로 보여준다.
-const DANGER_CODES = new Set(['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE'])
+// 호스트까지 영향이 가는 사유와 설명할 수 없는 도구는 빨간색으로 보여준다.
+const DANGER_CODES = new Set(['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE', 'UNKNOWN'])
+// 다른 대화가 같은 대상을 기다리는 경우처럼 결정 전에 꼭 봐야 하는 안내
+const WARN_CODES = new Set(['CONCURRENT'])
+
+// 카드 맨 위 위험도 표시. 문장을 읽기 전에 재시작(곧 돌아옴)과 삭제(되돌릴 수 없음)를 구분하게 한다.
+const RISK_STYLE: Record<RiskLevel['level'], string> = {
+  high: 'bg-red-100 text-red-700',
+  medium: 'bg-amber-100 text-amber-800',
+  low: 'bg-neutral-100 text-neutral-600',
+  unknown: 'border border-red-300 bg-white text-red-700',
+}
+
+function RiskBadge({ risk }: { risk: RiskLevel }) {
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${RISK_STYLE[risk.level]}`}>{risk.label}</span>
+}
 // 위험 사유가 아니라 "승인하면 어떻게 되는지" 설명이다(server/tools.ts EFFECT). 점 대신 → 로 보여준다.
 const EFFECT_CODE = 'EFFECT'
 
@@ -24,7 +39,7 @@ export function ApprovalCard({
   onDeny,
   onExpire,
 }: ApprovalCardProps) {
-  const { summary, action, reasons, expiresAt } = approval
+  const { summary, action, reasons, risk, expiresAt } = approval
   const remainingMs = useRemainingMs(expiresAt, expired)
 
   useEffect(() => {
@@ -60,6 +75,7 @@ export function ApprovalCard({
         <span className="flex items-center gap-1.5 text-amber-700">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
           승인이 필요해요
+          {risk && <RiskBadge risk={risk} />}
         </span>
         <span
           className={`tabular-nums ${
@@ -82,9 +98,17 @@ export function ApprovalCard({
           {reasons.map((reason) => (
             <li
               key={reason.code}
-              className={DANGER_CODES.has(reason.code) ? 'font-medium text-red-700' : reason.code === EFFECT_CODE ? 'text-neutral-800' : 'text-neutral-600'}
+              className={
+                DANGER_CODES.has(reason.code)
+                  ? 'font-medium text-red-700'
+                  : WARN_CODES.has(reason.code)
+                    ? 'font-medium text-amber-800'
+                    : reason.code === EFFECT_CODE
+                      ? 'text-neutral-800'
+                      : 'text-neutral-600'
+              }
             >
-              {reason.code === EFFECT_CODE ? '→ ' : '· '}
+              {reason.code === EFFECT_CODE ? '→ ' : WARN_CODES.has(reason.code) ? '⚠ ' : '· '}
               {reason.message}
             </li>
           ))}

@@ -9,7 +9,7 @@ import type { AgentEvent, ApprovalDecision, ApprovalStatus, ProgressStep, Sessio
 import { agent, showScenarios } from './lib/agent'
 import { EXAMPLE_PROMPTS } from './lib/examples'
 import { notifyApproval } from './lib/notify'
-import { finishActive, finishToolStep, hasActive, startStep, startToolStep } from './lib/processSteps'
+import { finishActive, finishToolStep, hasActive, startStep, startToolStep, withSummary } from './lib/processSteps'
 import { toChatMessages } from './lib/restore'
 import type { ChatMessage, ChatSession, ProcessStep, StepState } from './types'
 
@@ -35,6 +35,26 @@ const PORTAINER_URL: string | undefined = import.meta.env.VITE_PORTAINER_URL
 
 // 좁은 화면에서는 사이드바가 채팅 위에 겹치므로, 대화를 고르면 닫는다. Tailwind md 기준과 같다.
 const isNarrowScreen = () => !window.matchMedia('(min-width: 768px)').matches
+
+// 마지막으로 보던 서버 대화. 다시 열면 그 대화를 연다(승인을 기다리던 대화를 사이드바에서 찾지 않게).
+// 이 브라우저에만 저장한다. 저장소를 쓸 수 없으면(사생활 보호 모드 등) 새 대화로 시작한다.
+const LAST_SESSION_KEY = 'bosun.lastSession'
+
+function readLastSession(): string | null {
+  try {
+    return localStorage.getItem(LAST_SESSION_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeLastSession(serverId: string) {
+  try {
+    localStorage.setItem(LAST_SESSION_KEY, serverId)
+  } catch {
+    // 저장하지 못해도 다음에 새 대화로 시작할 뿐이다.
+  }
+}
 
 function newSession(): ChatSession {
   return { id: crypto.randomUUID(), title: '새 대화', messages: [] }
@@ -72,6 +92,12 @@ function App({ onLogout }: { onLogout?: () => void }) {
 
   const active = sessions.find((s) => s.id === activeId) ?? sessions[0]
   const activeBusy = busy.has(active.id)
+
+  // 다시 열었을 때 열 대화. 첫 서버 목록에서 찾으면 한 번만 쓴다.
+  const reopen = useRef(readLastSession())
+  useEffect(() => {
+    if (active.serverId) writeLastSession(active.serverId)
+  }, [active.serverId])
 
   const markBusy = useCallback((id: string, on: boolean) => {
     setBusy((prev) => {
@@ -137,6 +163,21 @@ function App({ onLogout }: { onLogout?: () => void }) {
       window.removeEventListener('focus', onFocus)
     }
   }, [refreshList])
+
+  useEffect(() => {
+    const target = reopen.current
+    if (!target) return
+    const session = sessions.find((s) => s.serverId === target)
+    if (!session) return
+    reopen.current = null
+    // 목록을 받기 전에 사용자가 이미 다른 대화를 시작했으면 그대로 둔다.
+    if (active.messages.length > 0 || active.serverId) return
+    // 서버 목록(외부 상태)에서 찾은 대화를 연다. 목록을 받은 뒤 한 번만 돈다.
+    // oxlint-disable-next-line react/set-state-in-effect
+    handleSelectSession(session.id)
+    // 목록이 바뀔 때만 본다. 열고 나면 reopen을 비운다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions])
 
   // 메시지 id는 모든 대화에서 고유하므로, 처리 도중 다른 대화로 옮겨도 원래 메시지가 갱신된다.
   function updateMessage(id: string, fn: (m: ChatMessage) => Partial<ChatMessage>) {
@@ -207,9 +248,10 @@ function App({ onLogout }: { onLogout?: () => void }) {
                 summary: event.summary,
                 action: event.action,
                 reasons: event.reasons,
+                ...(event.risk ? { risk: event.risk } : {}),
                 expiresAt: event.expiresAt,
               },
-              steps: startStep(m.steps ?? [], { label: '사용자 승인 기다리는 중' }),
+              steps: startStep(m.steps ?? [], { label: withSummary('사용자 승인 기다리는 중', event.summary) }),
             }))
             break
           }
@@ -221,7 +263,7 @@ function App({ onLogout }: { onLogout?: () => void }) {
             updateMessage(id, (m) => ({
               status: 'thinking',
               approval: undefined,
-              steps: finishActive(m.steps ?? [], state, label),
+              steps: finishActive(m.steps ?? [], state, withSummary(label, m.approval?.summary)),
             }))
             break
           }
@@ -342,7 +384,7 @@ function App({ onLogout }: { onLogout?: () => void }) {
     const message = session?.messages.find((m) => m.id === id)
     updateMessage(id, (m) =>
       m.status === 'pending_approval'
-        ? { status: 'approval_expired', steps: finishActive(m.steps ?? [], 'stopped', '승인 시간이 지나 취소됨') }
+        ? { status: 'approval_expired', steps: finishActive(m.steps ?? [], 'stopped', withSummary('승인 시간이 지나 취소됨', m.approval?.summary)) }
         : {},
     )
     if (!session) return
@@ -363,7 +405,7 @@ function App({ onLogout }: { onLogout?: () => void }) {
     const message = session?.messages.find((m) => m.id === id)
     if (!session?.serverId || !message?.approval) return
 
-    const { approvalId } = message.approval
+    const { approvalId, summary } = message.approval
     const initialContent = message.content ? `${message.content}\n` : ''
     updateMessage(id, (m) => {
       const steps = m.steps ?? []
@@ -372,7 +414,9 @@ function App({ onLogout }: { onLogout?: () => void }) {
         approval: undefined,
         steps:
           // 승인 뒤 도구 실행 줄은 Agent가 보내는 tool_status로 붙는다.
-          decision === 'approve' ? finishActive(steps, 'done', '승인함') : finishActive(steps, 'stopped', '거부함'),
+          decision === 'approve'
+            ? finishActive(steps, 'done', withSummary('승인함', summary))
+            : finishActive(steps, 'stopped', withSummary('거부함', summary)),
       }
     })
 
@@ -444,6 +488,32 @@ function App({ onLogout }: { onLogout?: () => void }) {
     const next = rest.length > 0 ? rest : [newSession()]
     setSessions(next)
     if (id === activeId) setActiveId(next[0].id)
+  }
+
+  // 사이드바에서 고른 대화를 한꺼번에 지운다. 처리 중인 대화는 서버가 지우지 않으므로 뺀다.
+  async function handleDeleteMany(ids: string[]) {
+    const targets = sessions.filter((s) => ids.includes(s.id) && !busy.has(s.id))
+    if (targets.length === 0) return
+    if (!window.confirm(`대화 ${targets.length}개를 삭제할까요? 되돌릴 수 없어요.`)) return
+    const deleted = new Set<string>()
+    for (const s of targets) {
+      if (s.serverId && agent.deleteSession) {
+        try {
+          await agent.deleteSession(s.serverId)
+        } catch {
+          continue
+        }
+      }
+      deleted.add(s.id)
+    }
+    // 지우는 사이 목록이 바뀌었을 수 있어서 최신 목록에서 뺀다.
+    const rest = sessionsRef.current.filter((s) => !deleted.has(s.id))
+    const next = rest.length > 0 ? rest : [newSession()]
+    setSessions(next)
+    setActiveId((prev) => (deleted.has(prev) ? next[0].id : prev))
+    if (deleted.size < targets.length) {
+      window.alert(`${targets.length - deleted.size}개는 삭제하지 못했어요. 잠시 후 다시 시도해주세요.`)
+    }
   }
 
   async function handleRename(id: string, title: string) {
@@ -543,6 +613,7 @@ function App({ onLogout }: { onLogout?: () => void }) {
           onSelect={handleSelectSession}
           onNew={handleNewSession}
           onDelete={handleDeleteSession}
+          onDeleteMany={handleDeleteMany}
           onRename={handleRename}
           onPin={agent.pinSession || !agent.listSessions ? handlePin : undefined}
           onLogout={onLogout}

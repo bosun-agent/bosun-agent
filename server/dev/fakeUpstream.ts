@@ -116,6 +116,38 @@ const runs = new Map<string, Run>()
 
 const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
   {
+    // 모델이 글도 도구 호출도 없이 끝내는 경우(2026-10-28 실제 DeepSeek flash에서 나왔다). stream_stopped만 온다.
+    match: /빈 답/,
+    run: async () => {},
+  },
+  {
+    // 모델이 도구 호출을 자기 내부 표기로 글에 써 버리는 경우(2026-10-28 실제 DeepSeek flash). 도구는 불리지 않고 턴이 끝난다.
+    // say는 6글자씩 나눠 보내므로 표기가 조각으로 나뉘어 오는 경우도 같이 확인된다.
+    match: /도구 표기/,
+    run: async (r) => {
+      await r.say(
+        'I\'ll first check the environments. <｜DSML｜ calls> <｜DSML｜ invoke name="EndpointList"> <｜DSML｜ parameter name="select" string="false">[].{id:Id}</｜DSML｜ parameter> </｜DSML｜ invoke> </｜DSML｜ calls>',
+      )
+    },
+  },
+  {
+    // WEB이 문구 표를 갖고 있지 않은 도구(스택 도구, 새 MCP). 인자에는 비밀값이 들어 있을 수 있다.
+    match: /모르는 도구/,
+    run: async (r) => {
+      const res = await r.tool(
+        'StackCreateDockerStandaloneString',
+        {
+          endpointId: 1,
+          Name: 'web',
+          StackFileContent: 'services:\n  web:\n    image: nginx:alpine',
+          Env: [{ name: 'DB_PASSWORD', value: 'super-secret-value' }],
+        },
+        { ask: true, output: '{"Id":3}' },
+      )
+      await r.say(res.isError ? '승인되지 않아서 스택을 만들지 않았어요.' : '스택을 만들었어요.')
+    },
+  },
+  {
     match: /삭제|지워|만료/,
     run: async (r) => {
       await r.say('nginx-web 컨테이너를 삭제할게요.')
@@ -369,6 +401,15 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
         await r.send({ type: 'error', error: 'model failed: error receiving from stream: HTTP 401: User not found.', code: 'model_error' })
         return await r.stop()
       }
+      if (/되풀이/.test(text)) {
+        // 같은 도구 호출이 5번 이어지면 Docker Agent가 턴을 끊는다(2026-10-28 실측).
+        await r.send({
+          type: 'error',
+          error: 'Agent terminated: detected 5 consecutive identical calls to docker_proxy. This indicates a degenerate loop where the model is not making progress.',
+          code: 'loop_detected',
+        })
+        return await r.stop()
+      }
       if (/오류/.test(text)) {
         await r.send({ type: 'error', error: 'model provider returned 500' })
         return await r.stop()
@@ -383,7 +424,7 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
       }
       const scenario = SCENARIOS.find((sc) => sc.match.test(text))
       if (scenario) await scenario.run(r)
-      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 강제, 만료, 웹사이트, 재시작, 명령, 차단, 금지, 없는 도구, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
+      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 강제, 만료, 웹사이트, 재시작, 명령, 차단, 금지, 없는 도구, 모르는 도구, 도구 표기, 빈 답, 되풀이, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
       await r.stop()
     } finally {
       if (runs.get(s.id) === r) runs.delete(s.id)

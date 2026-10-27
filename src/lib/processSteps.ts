@@ -50,3 +50,26 @@ export function finishToolStep(
 export function hasActive(steps: ProcessStep[]) {
   return steps.some((s) => s.state === 'active')
 }
+
+// "승인함: 컨테이너 web 재시작"처럼 무엇을 결정했는지 붙인다. 카드가 연달아 뜨면 무엇을 승인했는지 놓치기 쉽다(2026-10-28 리허설).
+export function withSummary(label: string, summary: string | undefined): string {
+  return summary ? `${label}: ${summary}` : label
+}
+
+// 연달아 같은 결과가 나온 단계(정책에 따라 차단됨 ×4 등)를 한 줄로 묶는다. 진행 중인 단계는 묶지 않는다.
+export function groupSteps(steps: ProcessStep[]): { step: ProcessStep; count: number }[] {
+  const groups: { step: ProcessStep; count: number }[] = []
+  for (const step of steps) {
+    const prev = groups.at(-1)
+    const same =
+      prev &&
+      prev.step.state !== 'active' &&
+      step.state !== 'active' &&
+      prev.step.label === step.label &&
+      prev.step.state === step.state &&
+      prev.step.detail === step.detail
+    if (same) prev.count++
+    else groups.push({ step, count: 1 })
+  }
+  return groups
+}

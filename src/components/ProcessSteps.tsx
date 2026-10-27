@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { groupSteps } from '../lib/processSteps'
 import type { ProcessStep, StepState } from '../types'
 
 const STATE_STYLE: Record<StepState, string> = {
@@ -25,6 +26,7 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
   const [expanded, setExpanded] = useState(false)
 
   if (steps.length === 0) return null
+  const groups = groupSteps(steps)
 
   if (!live && !expanded) {
     return (
@@ -33,7 +35,7 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
         onClick={() => setExpanded(true)}
         className="mb-1 text-xs text-neutral-400 hover:text-neutral-600"
       >
-        처리 과정 보기 · {steps.length}단계
+        처리 과정 보기 · {groups.length}단계
       </button>
     )
   }
@@ -41,7 +43,7 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
   return (
     <div className="mb-1.5">
       <ol className="space-y-0.5 text-xs">
-        {steps.map((step) => (
+        {groups.map(({ step, count }) => (
           <li
             key={step.id}
             className={`flex items-center gap-1.5 ${STATE_STYLE[step.state]}`}
@@ -53,7 +55,10 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
                 STATE_ICON[step.state]
               )}
             </span>
-            <span>{step.label}</span>
+            <span>
+              {step.label}
+              {count > 1 && <span className="ml-1 tabular-nums">×{count}</span>}
+            </span>
             {step.detail && (
               <span className="font-mono text-[11px] text-neutral-400">
                 {step.detail}

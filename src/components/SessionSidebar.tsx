@@ -11,6 +11,8 @@ interface SessionSidebarProps {
   onSelect: (id: string) => void
   onNew: () => void
   onDelete: (id: string) => void
+  // 고른 대화를 한꺼번에 지운다(확인 창은 App이 띄운다)
+  onDeleteMany?: (ids: string[]) => void
   onRename: (id: string, title: string) => void
   onPin?: (id: string, pinned: boolean) => void
   // 로그인했을 때만 있다(목업에는 없음)
@@ -27,11 +29,14 @@ export function SessionSidebar({
   onSelect,
   onNew,
   onDelete,
+  onDeleteMany,
   onRename,
   onPin,
   onLogout,
 }: SessionSidebarProps) {
   const [query, setQuery] = useState('')
+  // 여러 개 골라 지우기. null이면 고르는 중이 아니다.
+  const [selected, setSelected] = useState<ReadonlySet<string> | null>(null)
   const q = query.trim().toLowerCase()
   // 제목과 이미 불러온 메시지 내용에서 찾는다.
   const matched = q
@@ -39,7 +44,41 @@ export function SessionSidebar({
     : sessions
   const pinned = matched.filter((s) => s.pinned)
   const rest = matched.filter((s) => !s.pinned)
-  const rowProps = { activeId, busy, exportUrl, onSelect, onDelete, onRename, onPin }
+  // "모두 선택"은 보이는 대화 중 고정하지 않았고 처리 중이 아닌 것만 고른다. 고정한 대화는 하나씩 골라야 지울 수 있다.
+  const selectable = rest.filter((s) => !busy.has(s.id))
+  const allSelected = selected !== null && selectable.length > 0 && selectable.every((s) => selected.has(s.id))
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(selectable.map((s) => s.id)))
+  }
+
+  function deleteSelected() {
+    if (!selected || !onDeleteMany) return
+    // 고르는 사이 처리가 시작된 대화는 뺀다.
+    const ids = [...selected].filter((id) => !busy.has(id))
+    setSelected(null)
+    onDeleteMany(ids)
+  }
+
+  const rowProps = {
+    activeId,
+    busy,
+    exportUrl,
+    onSelect: selected ? toggle : onSelect,
+    onDelete,
+    onRename,
+    onPin,
+    selected,
+  }
 
   return (
     <>
@@ -57,14 +96,41 @@ export function SessionSidebar({
           >
             + 새 대화
           </button>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="대화 찾기"
-            aria-label="대화 찾기"
-            className="w-full rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-sm outline-none focus:border-neutral-400"
-          />
+          <div className="flex gap-1.5">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="대화 찾기"
+              aria-label="대화 찾기"
+              className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-sm outline-none focus:border-neutral-400"
+            />
+            {onDeleteMany && (
+              <button
+                type="button"
+                onClick={() => setSelected(selected ? null : new Set())}
+                className="shrink-0 rounded-md px-2 text-xs text-neutral-600 hover:bg-neutral-200"
+              >
+                {selected ? '취소' : '선택'}
+              </button>
+            )}
+          </div>
+          {selected && (
+            <div className="flex items-center gap-2 px-1 text-xs">
+              <label className="flex flex-1 items-center gap-1.5 text-neutral-600">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={selectable.length === 0} />
+                모두 선택
+              </label>
+              <button
+                type="button"
+                onClick={deleteSelected}
+                disabled={selected.size === 0}
+                className="rounded-md bg-red-600 px-2 py-1 font-medium text-white disabled:opacity-40"
+              >
+                삭제 ({selected.size}개)
+              </button>
+            </div>
+          )}
         </div>
         <nav className="flex-1 space-y-1.5 overflow-y-auto px-2 pb-2">
           {pinned.length > 0 && (
@@ -106,12 +172,35 @@ function SessionRow({
   onDelete,
   onRename,
   onPin,
+  selected,
 }: Pick<SessionSidebarProps, 'activeId' | 'busy' | 'exportUrl' | 'onSelect' | 'onDelete' | 'onRename' | 'onPin'> & {
   session: ChatSession
+  // 여러 개 골라 지우는 중이면 고른 대화 id들
+  selected: ReadonlySet<string> | null
 }) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(session.title)
   const isBusy = busy.has(session.id)
+
+  if (selected) {
+    return (
+      <label
+        className={`flex w-full items-center gap-2 rounded-md bg-neutral-200 py-1.5 pr-2 pl-3 text-sm ${
+          isBusy ? 'text-neutral-400' : 'text-neutral-700 hover:bg-neutral-300'
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={selected.has(session.id)}
+          onChange={() => onSelect(session.id)}
+          disabled={isBusy}
+          aria-label={`${session.title} 선택`}
+        />
+        <span className="flex-1 truncate">{session.title}</span>
+        {isBusy && <span className="shrink-0 text-[11px]">처리 중</span>}
+      </label>
+    )
+  }
   const usage =
     session.inputTokens !== undefined ? `토큰 입력 ${session.inputTokens.toLocaleString()} · 출력 ${(session.outputTokens ?? 0).toLocaleString()}` : undefined
 

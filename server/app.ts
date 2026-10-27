@@ -13,6 +13,7 @@ import type {
   RestoredMessage,
   SessionSummary,
   SessionUsage,
+  UsageTotals,
 } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import { listBackups } from './backups.ts'
@@ -20,7 +21,7 @@ import { changePassword, checkLogin, endSession, requireAuth, startSession, MIN_
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
 import { addModel, getSettings, removeModel, saveApiKey, saveModel, validApiKey, validModelRef } from './settings.ts'
-import { cardSummaries, cardsFor, copyCards, deleteCards, pinnedSessions, recentDecisions, setPinned } from './store.ts'
+import { cardSummaries, cardsFor, copyCards, deleteCards, pinnedSessions, recentDecisions, setPinned, usageSince } from './store.ts'
 import { systemInfo } from './system.ts'
 import {
   HttpError,
@@ -305,6 +306,16 @@ app.get('/api/sessions/:id/usage', async (c) => {
     ...(typeof snap.cost === 'number' ? { cost: snap.cost } : {}),
   }
   return c.json(usage)
+})
+
+// 전체 사용량(오늘, 이번 달, 전체). 턴마다 WEB이 기록한 값의 합이라 대화를 지워도 남는다.
+// 날짜 경계는 WEB 백엔드가 도는 서버의 시간대를 따른다.
+app.get('/api/usage', (c) => {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+  const month = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  const totals: UsageTotals = { today: usageSince(today), month: usageSince(month), total: usageSince() }
+  return c.json(totals)
 })
 
 // 대화 삭제. 처리 중(승인 대기 포함)인 대화는 지우지 않는다. 승인 감사 기록은 남긴다(계약 7.1).

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import type { AgentConfigSummary, AuditRecord, BackupRecord, SessionUsage, SystemInfo } from '../lib/agentProtocol'
+import type { AgentConfigSummary, AuditRecord, BackupRecord, SessionUsage, SystemInfo, UsageTotals } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 import { notifyEnabled, setNotifyEnabled } from '../lib/notify'
 
@@ -185,9 +185,16 @@ export function AuditSection() {
 
 // ---- 정보 ----
 
+function usageText(u: SessionUsage): string {
+  return `입력 토큰 ${u.inputTokens.toLocaleString()} · 출력 토큰 ${u.outputTokens.toLocaleString()}${u.cost !== undefined ? ` · 약 $${u.cost.toFixed(4)}` : ''}`
+}
+
+const COST_NOTE = '비용은 Docker Agent가 모델 가격표로 계산한 값이에요. 실제 청구액은 provider 화면에서 확인해주세요.'
+
 export function InfoSection({ activeServerId }: { activeServerId?: string }) {
   const { data, failed } = useLoad<SystemInfo>(agent.getSystem)
   const { data: usage } = useLoad<SessionUsage>(agent.getUsage && activeServerId ? () => agent.getUsage!(activeServerId) : undefined)
+  const { data: totals } = useLoad<UsageTotals>(agent.getUsageTotals)
   const [tools, setTools] = useState<number | 'loading' | 'failed' | null>(null)
 
   async function countTools() {
@@ -212,7 +219,12 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
             {a.error && <span className="block text-xs text-red-600">{a.error}</span>}
           </dd>
           <dt className="text-neutral-500">Agent 버전</dt>
-          <dd className="font-mono text-[13px]">{a.version ?? '-'}</dd>
+          {/* 실제 Docker Agent(v1.148.0)는 /health에 빈 버전을 준다(2026-10-28 실측). */}
+          {a.version ? (
+            <dd className="font-mono text-[13px]">{a.version}</dd>
+          ) : (
+            <dd className="text-[13px] text-neutral-500">Agent가 알려주지 않음</dd>
+          )}
           <dt className="text-neutral-500">Agent 이름</dt>
           <dd className="font-mono text-[13px]">{a.name}</dd>
           <dt className="text-neutral-500">WEB 버전</dt>
@@ -223,13 +235,25 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
           </dd>
         </dl>
       </Box>
+      {totals && (
+        <Box title="전체 사용량">
+          <dl className="grid grid-cols-[5rem_1fr] gap-y-1 text-sm">
+            <dt className="text-neutral-500">오늘</dt>
+            <dd>{usageText(totals.today)}</dd>
+            <dt className="text-neutral-500">이번 달</dt>
+            <dd>{usageText(totals.month)}</dd>
+            <dt className="text-neutral-500">전체</dt>
+            <dd>{usageText(totals.total)}</dd>
+          </dl>
+          <p className="mt-1 text-xs text-neutral-500">
+            WEB 0.5.0부터 대화 한 번마다 기록해요. 대화를 지워도 남아요. 날짜는 서버 시간 기준이에요. {COST_NOTE}
+          </p>
+        </Box>
+      )}
       {usage && (
         <Box title="지금 대화의 사용량">
-          <p className="text-sm">
-            입력 토큰 {usage.inputTokens.toLocaleString()} · 출력 토큰 {usage.outputTokens.toLocaleString()}
-            {usage.cost !== undefined && ` · 약 $${usage.cost.toFixed(4)}`}
-          </p>
-          <p className="text-xs text-neutral-500">비용은 Docker Agent가 모델 가격표로 계산한 값이에요. 실제 청구액은 provider 화면에서 확인해주세요.</p>
+          <p className="text-sm">{usageText(usage)}</p>
+          <p className="text-xs text-neutral-500">{COST_NOTE}</p>
         </Box>
       )}
       {data.config?.agents.map((ag) => (
@@ -360,14 +384,31 @@ export function NotifySection() {
 
 const KIND_LABEL: Record<string, string> = { container: '컨테이너', image: '이미지', network: '네트워크' }
 
+// 다시 만들 때 요청에 넣는 값. 모델이 그대로 쓸 수 있는 것만 넣는다. 값이 숨겨진 환경변수나, 대부분 이미지 기본값인 명령까지
+// 넣었더니 모델이 생성 설정을 비우거나 잘못 감싸서 보내며 수십 번 헤맸다(2026-10-28 리허설).
+const RESTORE_KEYS: Record<string, string[]> = {
+  container: ['이미지', '포트', '마운트', '재시작 정책', '네트워크'],
+  network: ['드라이버', '서브넷'],
+}
+// Docker 기본값이라 적지 않아도 같은 값
+const RESTORE_DEFAULTS: Record<string, string> = { '재시작 정책': 'no', 네트워크: 'bridge', 드라이버: 'bridge' }
+
 // 백업한 설정으로 다시 만들어 달라는 요청 문장. 보내지는 않고 입력창에 채운다. 실행은 평소처럼 승인을 받는다.
 function restorePrompt(r: BackupRecord): string {
   const kind = KIND_LABEL[r.kind] ?? r.kind
-  const lines = Object.entries(r.summary)
-    .filter(([k]) => !['백업 때 상태', '연결된 컨테이너', 'ID', '크기', '생성'].includes(k))
-    .map(([k, v]) => `- ${k}: ${v}`)
   if (r.kind === 'image') return `지운 이미지 ${r.summary.태그 ?? r.target}를 다시 받아줘.`
-  return [`${new Date(r.at).toLocaleString()}에 지운 ${kind} ${r.summary.이름 ?? r.target}를 백업한 설정대로 다시 만들어줘.`, ...lines].join('\n')
+  const lines = (RESTORE_KEYS[r.kind] ?? [])
+    .filter((k) => r.summary[k] && r.summary[k] !== RESTORE_DEFAULTS[k])
+    .map((k) => `- ${k}: ${r.summary[k]}`)
+  return [`지운 ${kind} ${r.summary.이름 ?? r.target}를 다시 만들어줘.`, ...lines].join('\n')
+}
+
+// 백업은 승인 전에 만들어져서 거부한 삭제도 남는다. 같은 대화의 승인 카드와 짝지은 결과를 보여준다(server/backups.ts).
+const OUTCOME: Record<BackupRecord['outcome'], { label: string; tone: string }> = {
+  deleted: { label: '삭제 승인함', tone: 'bg-neutral-100 text-neutral-700' },
+  kept: { label: '지우지 않음(거부·만료)', tone: 'bg-emerald-50 text-emerald-700' },
+  pending: { label: '승인 기다리는 중', tone: 'bg-amber-50 text-amber-700' },
+  unknown: { label: '삭제 여부 확인 못 함', tone: 'bg-neutral-100 text-neutral-500' },
 }
 
 export function BackupSection({ onDraft }: { onDraft?: (text: string) => void }) {
@@ -379,18 +420,22 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
   return (
     <div className="space-y-1.5">
       <Note>
-        컨테이너·이미지·네트워크를 지우기 직전에 Agent 백업 훅이 설정을 저장해요(볼륨 안의 데이터는 백업하지 않아요). 보관 기간은 훅
-        설정(BACKUP_TTL_DAYS, 기본 30일)을 따라요.
+        컨테이너·이미지·네트워크를 지우기 직전에 Agent 백업 훅이 설정을 저장해요. 설정만 저장하고 볼륨이나 컨테이너 안의 파일은 저장하지
+        않아요. 백업은 승인을 묻기 전에 만들어져서, 거부한 삭제도 목록에 남아요. 보관 기간은 훅 설정(BACKUP_TTL_DAYS, 기본 30일)을 따라요.
       </Note>
       {data.records.length === 0 && <Note>아직 백업이 없어요.</Note>}
       <ul className="space-y-1.5">
-        {data.records.map((r) => (
+        {data.records.map((r) => {
+          // 0.5.0 전 백엔드는 outcome을 주지 않는다. 화면만 먼저 바뀐 경우에도 깨지지 않게 모름으로 둔다.
+          const outcome = OUTCOME[r.outcome] ?? OUTCOME.unknown
+          return (
           <li key={r.id} className="rounded-md bg-white px-3 py-2 text-sm">
             <details>
               <summary className="cursor-pointer">
                 <span className="font-medium">
                   {KIND_LABEL[r.kind] ?? r.kind} {r.summary.이름 ?? r.summary.태그 ?? r.target}
                 </span>
+                <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${outcome.tone}`}>{outcome.label}</span>
                 <span className="ml-2 text-xs text-neutral-500">{new Date(r.at).toLocaleString()}</span>
               </summary>
               <dl className="mt-1.5 grid grid-cols-[6rem_1fr] gap-y-0.5 text-xs">
@@ -401,18 +446,27 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
                   </div>
                 ))}
               </dl>
-              {onDraft && (
-                <button
-                  type="button"
-                  onClick={() => onDraft(restorePrompt(r))}
-                  className="mt-2 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
-                >
-                  이 설정으로 다시 만들어 달라고 쓰기
-                </button>
+              {/* 지우지 않았거나 아직 결정 전이면 다시 만들 대상이 없다. */}
+              {onDraft && r.outcome !== 'kept' && r.outcome !== 'pending' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onDraft(restorePrompt(r))}
+                    className="mt-2 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
+                  >
+                    이 설정으로 다시 만들어 달라고 쓰기
+                  </button>
+                  {r.kind === 'container' && (
+                    <p className="mt-1 text-[11px] text-neutral-500">
+                      이미지·포트 같은 기본 설정만 넣어요. 환경변수 값과 명령은 넣지 않으니, 필요하면 보내기 전에 직접 적어주세요.
+                    </p>
+                  )}
+                </>
               )}
             </details>
           </li>
-        ))}
+          )
+        })}
       </ul>
     </div>
   )

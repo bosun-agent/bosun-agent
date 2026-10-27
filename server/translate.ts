@@ -21,6 +21,13 @@ export function isPolicyDenied(response: string, isError: boolean): boolean {
 const HOOK_BLOCKED_REASON = '보안 규칙에 걸려 요청을 처리하지 않았어요.'
 const POLICY_DENIED_REASON = '보안 정책에 따라 이 작업은 실행하지 않았어요.'
 
+// 모델이 도구 호출을 정해진 형식 대신 자기 내부 표기로 글에 써 버린 경우(DeepSeek, 2026-10-28 실측:
+// "<｜DSML｜ invoke name=\"EndpointList\">"). Agent는 도구를 부르지 않고 그 글을 답으로 끝낸다.
+// 화면에는 표기를 보이지 않고, 턴이 끝나면 다시 시도하라고 알린다.
+const LEAKED_TOOL_CALL = /<｜\s*(DSML|tool)/
+// 표기가 조각으로 나뉘어 올 수 있어서, 끝에 걸친 "<｜…" 앞부분은 이만큼까지 다음 조각을 기다린다.
+const HOLD_MAX = 12
+
 export interface Translated {
   events: AgentEvent[]
   // 설정 오류처럼 더 진행하면 안 되는 경우 Agent 스트림을 끊는다.
@@ -37,6 +44,31 @@ export class Translator {
   // 도구 호출 앞뒤 문장이 붙어 나오지 않게, 도구 호출 뒤 첫 문장 앞에 빈 줄을 넣는다.
   private text = ''
   private toolSinceText = false
+  // 이 턴에서 모델이 글이나 도구 호출을 하나라도 냈는지. 아무것도 없이 끝나면 빈 답으로 알린다(2026-10-28 실측).
+  private produced = false
+  // 도구 호출 표기인지 아직 모르는 글 끝부분, 그리고 표기가 나왔는지(그 뒤 글은 보내지 않는다)
+  private held = ''
+  private leaked = false
+
+  // 모델 글 조각 → 화면에 보낼 text_delta. 마스킹하고, 도구 호출 바로 뒤 첫 문장 앞에는 빈 줄을 넣는다.
+  private textEvents(raw: string): AgentEvent[] {
+    if (!raw) return []
+    let delta = maskText(raw)
+    if (this.toolSinceText && this.text) {
+      const trailing = /\n*$/.exec(this.text)![0].length
+      delta = '\n'.repeat(Math.max(0, 2 - trailing)) + delta
+    }
+    this.toolSinceText = false
+    this.text = (this.text + delta).slice(-8)
+    return [{ type: 'text_delta', delta }]
+  }
+
+  // 붙잡아 둔 글 끝부분을 내보낸다(도구 호출이나 턴 끝처럼 더 이어지지 않을 때).
+  private flushHeld(): AgentEvent[] {
+    const held = this.held
+    this.held = ''
+    return this.leaked ? [] : this.textEvents(held)
+  }
 
   translate(ev: DAEvent): Translated {
     switch (ev.type) {
@@ -54,14 +86,22 @@ export class Translator {
       case 'agent_choice': {
         const { content } = ev as Extract<DAEvent, { type: 'agent_choice' }>
         if (!content) return { events: [] }
-        let delta = maskText(content)
-        if (this.toolSinceText && this.text) {
-          const trailing = /\n*$/.exec(this.text)![0].length
-          delta = '\n'.repeat(Math.max(0, 2 - trailing)) + delta
+        this.produced = true
+        if (this.leaked) return { events: [] }
+        let text = this.held + content
+        this.held = ''
+        const leak = LEAKED_TOOL_CALL.exec(text)
+        if (leak) {
+          this.leaked = true
+          text = text.slice(0, leak.index)
+        } else {
+          const cut = text.lastIndexOf('<')
+          if (cut >= 0 && text.length - cut < HOLD_MAX && !/[>\n]/.test(text.slice(cut))) {
+            this.held = text.slice(cut)
+            text = text.slice(0, cut)
+          }
         }
-        this.toolSinceText = false
-        this.text = (this.text + delta).slice(-8)
-        return { events: [{ type: 'text_delta', delta }] }
+        return { events: this.textEvents(text) }
       }
 
       case 'tool_call': {
@@ -75,10 +115,14 @@ export class Translator {
         }
         const label = describeTool(name, args)?.label
         if (call.id) this.labels.set(call.id, label)
+        const before = this.flushHeld()
+        // 표기를 글로 썼어도 실제 도구 호출이 이어지면 정상 진행이다. 그 뒤 글은 다시 보낸다.
+        this.leaked = false
         this.toolSinceText = true
+        this.produced = true
         const callId = call.id ? { callId: call.id } : {}
         return {
-          events: [{ type: 'tool_status', tool: name, status: 'running', summary: toolSummary(label, 'running'), ...callId }],
+          events: [...before, { type: 'tool_status', tool: name, status: 'running', summary: toolSummary(label, 'running'), ...callId }],
         }
       }
 
@@ -89,6 +133,7 @@ export class Translator {
         const label = this.labels.get(res.tool_call_id)
         this.labels.delete(res.tool_call_id)
         this.toolSinceText = true
+        this.produced = true
         if (isError && USER_REJECTED.test(res.response)) return { events: [] }
         if (isPolicyDenied(res.response, isError)) {
           // 규칙 ID가 오지 않으므로 공통 코드를 쓴다. 이어지는 Agent 설명이 text_delta로 온다(계약 6장).
@@ -120,9 +165,19 @@ export class Translator {
         console.warn('[agent error]', err.code ?? '', err.error)
         if (err.code === 'hook_blocked') {
           // Agent 훅이 턴을 멈춘 경우. 훅 메시지 원문은 로그에만 남긴다(계약 6장).
+          this.produced = true
           return { events: [{ type: 'rejected', code: 'HOOK_BLOCKED', reason: HOOK_BLOCKED_REASON }] }
         }
         this.failed = true
+        // 모델이 같은 도구 호출을 계속 되풀이하면 Docker Agent가 턴을 끊는다(2026-10-28 실측, 5번 연속).
+        // 그대로 다시 보내면 또 되풀이할 가능성이 크므로 요청을 바꿔 보라고 안내한다.
+        if (err.code === 'loop_detected') {
+          return {
+            events: [
+              { type: 'error', code: 'LOOP_DETECTED', message: 'AI가 같은 요청을 계속 되풀이해서 멈췄어요. 요청을 조금 바꿔서 다시 보내주세요.' },
+            ],
+          }
+        }
         // 키가 틀리거나 만료되면 모델 호출이 401로 실패한다. 다시 시도해도 같으므로 따로 안내한다.
         if (err.code === 'model_error' && /HTTP 401\b/.test(err.error)) {
           return {
@@ -144,7 +199,17 @@ export class Translator {
 
       case 'stream_stopped':
         // error로 끝난 스트림에는 done을 붙이지 않는다(계약 4장: 스트림은 done·error·approval_required 중 하나로 끝남).
-        return { events: this.failed ? [] : [{ type: 'done' }] }
+        if (this.failed) return { events: [] }
+        // 모델이 글도 도구 호출도 없이 끝내면 done만 와서 화면에 아무것도 안 남는다. 다시 시도할 수 있게 오류로 알린다.
+        if (!this.produced) {
+          return { events: [{ type: 'error', code: 'EMPTY_REPLY', message: 'AI가 빈 답을 보냈어요. 다시 시도해주세요.' }] }
+        }
+        if (this.leaked) {
+          return {
+            events: [{ type: 'error', code: 'TOOL_CALL_AS_TEXT', message: 'AI가 도구를 제대로 부르지 못했어요. 다시 시도해주세요.' }],
+          }
+        }
+        return { events: [...this.flushHeld(), { type: 'done' }] }
 
       default:
         return { events: [] }

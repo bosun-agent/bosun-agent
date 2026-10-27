@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { BackupRecord } from '../src/lib/agentProtocol.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
+import { approvalCardsBetween } from './store.ts'
 
 type Obj = Record<string, unknown>
 const obj = (v: unknown): Obj => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : {})
@@ -81,6 +82,28 @@ export function backupDbPath(): string {
   return config.backupDb
 }
 
+// 백업 훅은 승인을 묻기 직전(tool_input_transform)에 돌아서, 사용자가 거부한 삭제도 백업이 남는다(2026-10-28 실측).
+// 같은 대화에서 백업 직후에 뜬 삭제 카드를 찾아 그 결정으로 실제 삭제 여부를 정한다.
+const MATCH_WINDOW_MS = 60_000
+
+function outcomeOf(sessionId: string, atMs: number, target: string): BackupRecord['outcome'] {
+  if (!sessionId || !target) return 'unknown'
+  // 훅은 경로의 값(이름 또는 64자리 ID)을 저장하고, 카드는 ID를 앞 12자리로 줄이거나 "이름 (ID)"로 보여준다(server/tools.ts).
+  const key = (/^[0-9a-f]{64}$/i.test(target) ? target.slice(0, 12) : target).toLowerCase()
+  const keysOf = (cardTarget: string) => {
+    const m = /^(.*) \(([0-9a-f]{12})\)$/i.exec(cardTarget)
+    return (m ? [m[1], m[2]] : [cardTarget]).map((k) => k.trim().toLowerCase())
+  }
+  const cards = approvalCardsBetween(sessionId, new Date(atMs - 5_000).toISOString(), new Date(atMs + MATCH_WINDOW_MS).toISOString())
+  const match = cards.find(
+    ({ card }) => card.kind === 'approval' && card.summary.endsWith(' 삭제') && keysOf(card.action.target ?? '').includes(key),
+  )
+  if (!match) return 'unknown'
+  if (match.status === 'approved') return 'deleted'
+  if (match.status === 'pending') return 'pending'
+  return 'kept'
+}
+
 // 파일이 없거나 표가 없으면 빈 목록이다(아직 삭제한 적이 없음).
 export function listBackups(limit: number): { available: boolean; records: BackupRecord[] } {
   const path = backupDbPath()
@@ -102,6 +125,7 @@ export function listBackups(limit: number): { available: boolean; records: Backu
         kind: String(r.kind ?? ''),
         target: maskText(String(r.target ?? '')),
         summary: summarize(String(r.kind ?? ''), String(r.inspect_json ?? '')),
+        outcome: outcomeOf(String(r.session_id ?? ''), Number(r.ts) * 1000, String(r.target ?? '')),
       })),
     }
   } finally {

@@ -56,6 +56,7 @@ await newChat()
 await send('nginx 삭제해줘')
 await page.getByText('승인이 필요해요').waitFor()
 check('승인 카드에 승인하면 어떻게 되는지 한 줄', await page.getByText('→ 컨테이너와 그 안에서 바뀐 파일이 지워져요', { exact: false }).isVisible())
+check('삭제 카드 위에 되돌릴 수 없음 표시', await page.getByText('되돌릴 수 없음', { exact: true }).isVisible())
 check('요청 원문은 접혀 있다', !(await page.getByText('DELETE /containers/nginx-web').isVisible()))
 await page.getByText('기술 정보 (Docker에 보낼 요청)').click()
 check('펼치면 요청 원문', await page.getByText('DELETE /containers/nginx-web').isVisible())
@@ -68,8 +69,12 @@ await send('안녕')
 await page.getByText('가짜 Agent 응답이에요', { exact: false }).waitFor()
 check('승인 대기 중에도 다른 대화에서 보낼 수 있다', true)
 
-// 새로고침 → 대기 중인 카드가 돌아오고 승인할 수 있다
+// 새로고침하면 마지막으로 보던 대화가 열린다
 await page.reload()
+await page.getByText('가짜 Agent 응답이에요', { exact: false }).waitFor()
+check('새로고침하면 마지막으로 보던 대화가 다시 열린다', true)
+
+// 대기 중인 카드가 돌아오고 승인할 수 있다
 await openSidebar()
 await page.getByRole('button', { name: /^nginx 삭제해줘( 처리 중)?$/ }).click()
 await page.getByText('승인이 필요해요').waitFor()
@@ -77,7 +82,15 @@ check('새로고침 뒤 처리 중 대화에 다시 붙어 카드가 보인다',
 await page.getByRole('button', { name: '승인', exact: true }).click()
 await page.getByText('nginx-web을 삭제했어요.').waitFor()
 check('다시 붙은 카드를 승인하면 이어서 답', true)
+await page.getByRole('button', { name: /^처리 과정 보기/ }).last().click()
+check('처리 과정에 무엇을 승인했는지 남는다', await page.getByText('승인함: 컨테이너 nginx-web 삭제').isVisible())
 await shot('03-approved-after-reload')
+
+// 모델이 빈 답을 보내면 멈춘 것처럼 두지 않고 다시 시도를 띄운다
+await newChat()
+await send('빈 답 테스트')
+await page.getByText('AI가 빈 답을 보냈어요', { exact: false }).waitFor()
+check('빈 답이면 오류와 다시 시도', await page.getByRole('button', { name: '다시 시도' }).last().isVisible())
 
 // 멈추기
 await newChat()
@@ -179,6 +192,22 @@ await page.getByText('무엇을 할 수 있나요?').click()
 check('도움말에 안 되는 것 목록', await page.getByText('채팅으로는 할 수 없어요').isVisible())
 await shot('08-help')
 await page.getByLabel('도움말 닫기').click()
+
+// 여러 개 골라 지우기: 모두 선택은 고정한 대화를 빼고 고른다
+await openSidebar()
+await page.getByRole('button', { name: '선택', exact: true }).click()
+await page.getByLabel('모두 선택').check()
+page.once('dialog', (d) => void d.accept())
+await page.getByRole('button', { name: /^삭제 \(\d+개\)$/ }).click()
+// 고르는 중에도 제목은 보이므로, 사이드바에서 지운 제목이 사라질 때까지 기다린다.
+// waitForFunction은 화면의 CSP(script-src 'self')에 막혀서 로케이터로 기다린다.
+await page.locator('aside nav', { hasText: '인사 대화', hasNotText: '천천히 답해줘' }).waitFor()
+check(
+  '여러 개 골라 지우면 고정한 대화만 남는다',
+  (await page.getByRole('button', { name: '인사 대화', exact: true }).isVisible()) && (await rows(/^컨테이너 목록 보여줘( 처리 중)?$/)) === 0,
+)
+await shot('10-bulk-delete')
+await page.getByLabel('대화 목록 닫기').click()
 
 // 좁은 화면
 await page.setViewportSize({ width: 375, height: 760 })

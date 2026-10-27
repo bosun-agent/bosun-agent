@@ -11,6 +11,7 @@ import type {
   SessionUsage,
   Settings,
   SystemInfo,
+  UsageTotals,
 } from './agentProtocol'
 import { apiFetch } from './api'
 import { readSSE } from './sse'
@@ -123,6 +124,8 @@ export const httpAgent: AgentClient = {
   exportUrl: (sessionId) => `${sessionPath(sessionId)}/export`,
 
   getUsage: (sessionId) => json<SessionUsage>(`${sessionPath(sessionId)}/usage`),
+
+  getUsageTotals: () => json<UsageTotals>('/api/usage'),
 
   getSystem: () => json<SystemInfo>('/api/system'),
 

@@ -1,4 +1,4 @@
-import type { ProposedAction, RiskReason } from './lib/agentProtocol'
+import type { ProposedAction, RiskLevel, RiskReason } from './lib/agentProtocol'
 
 export type ChatRole = 'user' | 'assistant'
 
@@ -15,6 +15,7 @@ export interface ApprovalRequest {
   summary: string
   action: ProposedAction
   reasons: RiskReason[]
+  risk?: RiskLevel
   expiresAt: string
 }
 

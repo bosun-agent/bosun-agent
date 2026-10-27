@@ -1,13 +1,14 @@
 {
   "name": "bosun-web",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:http": "vite --mode http",
     "server": "node --env-file=server/dev/dev.env --watch server/main.ts",
     "start": "node --env-file=server/real.env server/main.ts",
+    "agent": "node --env-file=server/real.env server/runAgent.ts",
     "server:fake": "node --env-file=server/dev/dev.env server/dev/fakeUpstream.ts",
     "server:smoke": "node --env-file=server/dev/dev.env server/dev/smoke.ts",
     "build": "tsc -b && vite build",

@@ -65,6 +65,17 @@ db.exec(`
     session_id TEXT PRIMARY KEY,
     pinned_at  TEXT NOT NULL
   );
+
+  -- 턴마다 쓴 토큰과 비용(Docker Agent snapshot의 턴 전후 차이). 대화를 지워도 남겨서 전체 사용량을 센다.
+  CREATE TABLE IF NOT EXISTS usage_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    at            TEXT    NOT NULL,
+    session_id    TEXT    NOT NULL,
+    input_tokens  INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cost          REAL    NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_usage_at ON usage_log(at);
 `)
 
 // v0.2.x(Airlock) 때 만든 파일은 열 이름만 바꾼다.
@@ -154,6 +165,42 @@ export function cardSummaries(approvalIds: string[]): Map<string, { summary: str
 
 export function updateApprovalCard(approvalId: string, status: ApprovalStatus): void {
   updateStatus.run(status, approvalId)
+}
+
+// 한 대화에서 from~to 사이에 만든 승인 카드. 삭제 전 백업이 실제 삭제로 이어졌는지 짝지을 때 쓴다(server/backups.ts).
+export function approvalCardsBetween(sessionId: string, from: string, to: string): { status: ApprovalStatus; card: Card }[] {
+  return db
+    .prepare('SELECT status, body FROM cards WHERE session_id = ? AND approval_id IS NOT NULL AND created_at >= ? AND created_at <= ? ORDER BY id')
+    .all(sessionId, from, to)
+    .map((row) => ({ status: row.status as ApprovalStatus, card: JSON.parse(row.body as string) as Card }))
+}
+
+// ---- 사용량(설정의 정보 화면) ----
+
+export interface UsageSum {
+  inputTokens: number
+  outputTokens: number
+  cost: number
+}
+
+export function logUsage(sessionId: string, usage: UsageSum): void {
+  db.prepare('INSERT INTO usage_log (at, session_id, input_tokens, output_tokens, cost) VALUES (?, ?, ?, ?, ?)').run(
+    new Date().toISOString(),
+    sessionId,
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.cost,
+  )
+}
+
+// since(ISO 시각) 이후 합계. 없으면 전체.
+export function usageSince(since?: string): UsageSum {
+  const row = db
+    .prepare(
+      'SELECT COALESCE(SUM(input_tokens), 0) AS i, COALESCE(SUM(output_tokens), 0) AS o, COALESCE(SUM(cost), 0) AS c FROM usage_log WHERE at >= ?',
+    )
+    .get(since ?? '')
+  return { inputTokens: Number(row?.i ?? 0), outputTokens: Number(row?.o ?? 0), cost: Number(row?.c ?? 0) }
 }
 
 export function cardsFor(sessionId: string): StoredCard[] {

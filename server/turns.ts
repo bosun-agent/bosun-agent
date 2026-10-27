@@ -14,7 +14,7 @@ import * as agent from './agentClient.ts'
 import type { DAEvent } from './agentClient.ts'
 import { config } from './config.ts'
 import { currentModel } from './settings.ts'
-import { addCard, logDecision, updateApprovalCard, type ApprovalStatus } from './store.ts'
+import { addCard, logDecision, logUsage, updateApprovalCard, type ApprovalStatus } from './store.ts'
 import { approvalCard, learnNames } from './tools.ts'
 import { Translator } from './translate.ts'
 
@@ -53,6 +53,8 @@ interface Turn {
   // waiting을 브라우저에 보냈는지
   shown: boolean
   finished: boolean
+  // 턴을 시작하기 전 대화의 누적 사용량. 턴이 끝나면 차이를 사용량 기록에 남긴다.
+  usageBefore: agent.DASnapshot | null
 }
 
 // 세션 ID → 진행 중인 턴
@@ -186,6 +188,24 @@ function finish(t: Turn): void {
   t.sink = null
   t.abort.abort()
   if (turns.get(t.sessionId) === t) turns.delete(t.sessionId)
+  void recordUsage(t)
+}
+
+// 턴 전후 snapshot 차이를 남긴다. 비용은 Docker Agent가 모델 가격표로 계산한 값이다(session.db에는 0으로 남는다, 2026-10-28 실측).
+async function recordUsage(t: Turn): Promise<void> {
+  const before = t.usageBefore
+  if (!before) return
+  try {
+    const after = await agent.getSnapshot(t.sessionId)
+    const usage = {
+      inputTokens: Math.max(0, (after.input_tokens ?? 0) - (before.input_tokens ?? 0)),
+      outputTokens: Math.max(0, (after.output_tokens ?? 0) - (before.output_tokens ?? 0)),
+      cost: Math.max(0, (after.cost ?? 0) - (before.cost ?? 0)),
+    }
+    if (usage.inputTokens || usage.outputTokens || usage.cost) logUsage(t.sessionId, usage)
+  } catch (err) {
+    console.warn('[usage] snapshot failed', err)
+  }
 }
 
 // ---- 턴 시작 ----
@@ -206,6 +226,7 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
     waiting: null,
     shown: false,
     finished: false,
+    usageBefore: null,
   }
   // 기다리는 동안 같은 대화에 다른 요청이 끼어들지 않게 먼저 자리를 잡는다.
   turns.set(sessionId, t)
@@ -220,6 +241,8 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
       const title = text.trim().length > TITLE_MAX ? `${text.trim().slice(0, TITLE_MAX)}…` : text.trim()
       await agent.setTitle(sessionId, title).catch((err) => console.warn('[agent] set title failed', err))
     }
+    // 사용량 기록의 기준값. 못 받으면 이 턴은 기록하지 않는다.
+    t.usageBefore = await agent.getSnapshot(sessionId).catch(() => null)
     upstream = await agent.runAgent(sessionId, text, t.abort.signal, currentModel())
   } catch (err) {
     turns.delete(sessionId)
@@ -315,6 +338,16 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
 
   const expiresAt = Date.now() + config.approvalTimeoutMs
   const card = approvalCard(tool, args, names)
+  const busyWith = sameTargetWaiting(t, card.action.target)
+  if (busyWith) {
+    card.reasons = [
+      ...card.reasons,
+      {
+        code: 'CONCURRENT',
+        message: `다른 대화에서 같은 대상(${busyWith})에 대한 승인을 기다리고 있어요. 어느 쪽을 먼저 할지 확인하고 결정해주세요.`,
+      },
+    ]
+  }
   const ap: Approval = {
     id: `ap_${randomUUID()}`,
     sessionId: t.sessionId,
@@ -333,6 +366,26 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
   t.shown = false
   record(t, ap.event)
   show(t)
+}
+
+// 카드 대상은 "이름", "ID" 또는 "이름 (ID 앞 12자리)"다. 어느 쪽이든 겹치면 같은 대상으로 본다.
+function targetKeys(target: string | undefined): string[] {
+  if (!target) return []
+  const m = /^(.*) \(([0-9a-f]{12})\)$/i.exec(target)
+  return (m ? [m[1], m[2]] : [target]).map((k) => k.trim().toLowerCase()).filter(Boolean)
+}
+
+// 다른 대화가 같은 대상의 승인을 기다리고 있으면 그 카드의 대상을 돌려준다. 두 대화가 같은 컨테이너를 동시에 바꾸려는 경우를 알린다.
+// 이미 떠 있는 앞 카드는 바꾸지 않고 새 카드에만 붙인다.
+function sameTargetWaiting(t: Turn, target: string | undefined): string | undefined {
+  const keys = targetKeys(target)
+  if (!keys.length) return undefined
+  for (const other of turns.values()) {
+    if (other === t || other.waiting?.status !== 'pending') continue
+    const otherTarget = other.waiting.event.action.target
+    if (targetKeys(otherTarget).some((k) => keys.includes(k))) return otherTarget
+  }
+  return undefined
 }
 
 function resolve(ap: Approval, status: ApprovalStatus): void {

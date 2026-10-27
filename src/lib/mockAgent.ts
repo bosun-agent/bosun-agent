@@ -51,6 +51,7 @@ function approvalEvent(
       { code: 'EFFECT', message: '컨테이너와 그 안에서 바뀐 파일이 지워져요. 이름 있는 볼륨은 남아요.' },
       { code: 'DESTRUCTIVE', message: '삭제하면 되돌릴 수 없어요.' },
     ],
+    risk: { level: 'high', label: '되돌릴 수 없음' },
     // 기본값은 WEB 백엔드 승인 대기 시간(APPROVAL_TIMEOUT_MS) 기본값 5분
     expiresAt: new Date(Date.now() + ttlMs).toISOString(),
   }
