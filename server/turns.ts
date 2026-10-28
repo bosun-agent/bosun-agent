@@ -106,7 +106,10 @@ function emit(t: Turn, event: AgentEvent): void {
   record(t, event)
   if (t.sink) t.sink.send(event)
   else t.buffer.push(event)
-  if (event.type === 'rejected') addCard(t.sessionId, t.index, { kind: 'rejected', code: event.code, reason: event.reason })
+  if (event.type === 'rejected') {
+    const { code, reason, detail } = event
+    addCard(t.sessionId, t.index, { kind: 'rejected', code, reason, ...(detail ? { detail } : {}) })
+  }
   if (event.type === 'done' || event.type === 'error') finish(t)
 }
 

@@ -1,4 +1,4 @@
-// WEB ↔ AI Agent 인터페이스 타입. docs/interface-web-agent.md(v0.5.0)의 3·4장과 1:1로 맞춘다.
+// WEB ↔ AI Agent 인터페이스 타입. docs/interface-web-agent.md(v0.5.1)의 3·4장과 1:1로 맞춘다.
 // 목업(mockAgent.ts)과 실제 클라이언트가 모두 이 타입의 이벤트 스트림을 내보낸다.
 
 export interface ProposedAction {
@@ -41,7 +41,8 @@ export type AgentEvent =
       risk?: RiskLevel
       expiresAt: string
     }
-  | { type: 'rejected'; code: string; reason: string }
+  // detail: 무엇이 왜 막혔는지 한 줄(훅이 준 사유의 첫 문장). 사유가 없는 차단에는 없다(계약 4장).
+  | { type: 'rejected'; code: string; reason: string; detail?: string }
   // 다시 붙기(GET .../stream)에서만 온다. 앞에 보낸 approval_required가 이미 결정됐다(계약 4장).
   | { type: 'approval_resolved'; approvalId: string; status: Exclude<ApprovalStatus, 'pending'> }
   | { type: 'error'; code: string; message: string }
@@ -64,7 +65,7 @@ export type RestoredCard =
       risk?: RiskLevel
       expiresAt: string
     }
-  | { kind: 'rejected'; code: string; reason: string }
+  | { kind: 'rejected'; code: string; reason: string; detail?: string }
 
 export type RestoredMessage =
   | { role: 'user'; content: string }

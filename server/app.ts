@@ -287,7 +287,7 @@ app.get('/api/sessions/:id/export', async (c) => {
     }
     lines.push('## BOSUN', '')
     for (const card of m.cards ?? []) {
-      if (card.kind === 'rejected') lines.push(`> 정책 차단: ${card.reason}`, '')
+      if (card.kind === 'rejected') lines.push(`> 정책 차단: ${card.reason}${card.detail ? ` (${card.detail})` : ''}`, '')
       else lines.push(`> 승인 요청: ${card.summary} — ${DECISION_LABEL[card.status] ?? card.status}`, '')
     }
     if (m.content) lines.push(m.content, '')

@@ -43,6 +43,8 @@ export interface ChatMessage {
   approval?: ApprovalRequest
   // 이 턴에서 정책으로 막힌 호출이 있었다. 턴은 계속될 수 있으므로 상태와 따로 둔다(차단 안내 + 이어진 답).
   rejectionReason?: string
+  // 막힌 호출마다 무엇이 왜 막혔는지(rejected.detail). 같은 사유는 한 번만 둔다.
+  rejectionDetails?: string[]
   errorMessage?: string
   // 답 아래에 작게 붙는 안내(사용자가 멈춤 등)
   notice?: string

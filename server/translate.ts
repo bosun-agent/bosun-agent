@@ -18,6 +18,25 @@ export function isPolicyDenied(response: string, isError: boolean): boolean {
   return isError && POLICY_DENIED.some((re) => re.test(response))
 }
 
+// 훅 거부 문구의 "Reason: ..."에서 첫 문장만 뽑는다. 무엇이 왜 막혔는지 화면에 보여주려는 것이다(2026-10-28 리허설:
+// 생성 body가 빠져 두 번 막혔는데 화면에는 공통 문구만 나와서 무엇이 막혔는지 알 수 없었다).
+// 정책 훅 문구는 "정책 훅이 이 요청을 거부했습니다: <사유>. 허용 범위: ..."라서 앞머리와 허용 범위는 뺀다.
+// 사유에 모델이 만든 인자가 섞일 수 있으므로 가리고 길이를 줄인다. permissions.deny 문구에는 사유가 없다.
+const DETAIL_MAX = 120
+
+export function policyDeniedDetail(response: string): string | undefined {
+  const reason = /\bReason: ([\s\S]*)/.exec(response)?.[1]
+  if (!reason) return undefined
+  const first = reason
+    .replace(/^정책 훅이 이 요청을 거부했습니다:\s*/, '')
+    .split(/(?<=[.!?])\s|\n/)[0]
+    .replace(/[.\s]+$/, '')
+    .trim()
+  if (!first) return undefined
+  const masked = maskText(first)
+  return masked.length > DETAIL_MAX ? `${masked.slice(0, DETAIL_MAX - 1)}…` : masked
+}
+
 const HOOK_BLOCKED_REASON = '보안 규칙에 걸려 요청을 처리하지 않았어요.'
 const POLICY_DENIED_REASON = '보안 정책에 따라 이 작업은 실행하지 않았어요.'
 
@@ -138,7 +157,8 @@ export class Translator {
         if (isPolicyDenied(res.response, isError)) {
           // 규칙 ID가 오지 않으므로 공통 코드를 쓴다. 이어지는 Agent 설명이 text_delta로 온다(계약 6장).
           // 막힌 호출은 실행되지 않아 tool_call이 없다. 처리 과정에는 "정책에 따라 차단됨" 한 줄만 남기도록 tool_status는 보내지 않는다.
-          return { events: [{ type: 'rejected', code: 'POLICY_DENIED', reason: POLICY_DENIED_REASON }] }
+          const detail = policyDeniedDetail(res.response)
+          return { events: [{ type: 'rejected', code: 'POLICY_DENIED', reason: POLICY_DENIED_REASON, ...(detail ? { detail } : {}) }] }
         }
         const status = isError ? 'failed' : 'succeeded'
         return {

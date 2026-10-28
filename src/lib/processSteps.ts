@@ -56,6 +56,24 @@ export function withSummary(label: string, summary: string | undefined): string 
   return summary ? `${label}: ${summary}` : label
 }
 
+// 차단 사유 목록에 하나를 더한다. 같은 사유가 되풀이되면(모델이 같은 실수를 반복) 한 번만 둔다.
+export function addDetail(details: string[] | undefined, detail: string | undefined): string[] | undefined {
+  if (!detail || details?.includes(detail)) return details
+  return [...(details ?? []), detail]
+}
+
+export const APPROVED_LABEL = '승인함'
+export const BLOCKED_LABEL = '정책에 따라 차단됨'
+
+// 마지막 차단 뒤에 승인한 작업이 있다. 모델이 막힌 요청을 고쳐서 다시 해냈을 가능성이 커서
+// 차단 안내를 빨간 경고 대신 회색 안내로 낮춘다(2026-10-28 리허설: 생성 body가 빠져 두 번 막힌 뒤 생성·시작 성공).
+// 조회처럼 승인 없이 이어진 단계만으로는 낮추지 않는다. 막힌 요청을 포기하고 다른 걸 조회했을 수 있어서다.
+export function blockResolved(steps: ProcessStep[]): boolean {
+  const lastBlock = steps.findLastIndex((s) => s.state === 'failed' && s.label.startsWith(BLOCKED_LABEL))
+  if (lastBlock < 0) return false
+  return steps.slice(lastBlock + 1).some((s) => s.state === 'done' && s.label.startsWith(APPROVED_LABEL))
+}
+
 // 연달아 같은 결과가 나온 단계(정책에 따라 차단됨 ×4 등)를 한 줄로 묶는다. 진행 중인 단계는 묶지 않는다.
 export function groupSteps(steps: ProcessStep[]): { step: ProcessStep; count: number }[] {
   const groups: { step: ProcessStep; count: number }[] = []

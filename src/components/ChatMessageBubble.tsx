@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from 'react'
+import { blockResolved } from '../lib/processSteps'
 import type { ChatMessage, MessageStatus } from '../types'
 import { ApprovalCard } from './ApprovalCard'
 import { Markdown } from './Markdown'
@@ -31,7 +32,7 @@ export function ChatMessageBubble({ message, onApprove, onDeny, onExpire, onEdit
       <ProcessSteps steps={steps} live={!settled} />
       {message.rejectionReason && (
         <div className="mb-2 w-full">
-          <RejectedNotice reason={message.rejectionReason} />
+          <RejectedNotice reason={message.rejectionReason} details={message.rejectionDetails} resolved={blockResolved(steps)} />
         </div>
       )}
       <AssistantBody message={message} hasSteps={steps.length > 0} onApprove={onApprove} onDeny={onDeny} onExpire={onExpire} />

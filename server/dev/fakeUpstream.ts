@@ -195,6 +195,23 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
+    // 모델이 생성 body를 비워 훅에 두 번 막힌 뒤 설정을 넣어 다시 만드는 경우(2026-10-28 리허설, 정책 훅 문구 그대로).
+    match: /설정 없이/,
+    run: async (r) => {
+      const empty = { environment_id: 1, method: 'POST', path: '/containers/create', query_params: { name: 'simple-web' }, body: null }
+      const hookBlock =
+        '정책 훅이 이 요청을 거부했습니다: 컨테이너 생성 body(설정)가 없습니다. 허용 범위: 조회(목록·상세·로그·사용량·시스템 정보), 컨테이너 생성(제한된 설정)·시작·정지·재시작'
+      await r.tool('docker_proxy', empty, { hookBlock })
+      await r.tool('docker_proxy', empty, { hookBlock })
+      const made = await r.tool(
+        'docker_proxy',
+        { ...empty, body: { Image: 'nginx:alpine', HostConfig: { PortBindings: { '80/tcp': [{ HostPort: '8080' }] } } } },
+        { ask: true, output: '{"Id":"71165c83"}' },
+      )
+      await r.say(made.isError ? '승인되지 않아서 만들지 않았어요.' : 'simple-web을 만들었어요.')
+    },
+  },
+  {
     // 만들고 바로 시작하는 경우. 생성 결과에는 ID만 와서, 모델은 시작을 ID로 부른다(2026-10-13 실측).
     match: /만들고 시작/,
     run: async (r) => {

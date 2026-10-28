@@ -9,7 +9,7 @@ import type { AgentEvent, ApprovalDecision, ApprovalStatus, ProgressStep, Sessio
 import { agent, showScenarios } from './lib/agent'
 import { EXAMPLE_PROMPTS } from './lib/examples'
 import { notifyApproval } from './lib/notify'
-import { finishActive, finishToolStep, hasActive, startStep, startToolStep, withSummary } from './lib/processSteps'
+import { addDetail, APPROVED_LABEL, BLOCKED_LABEL, finishActive, finishToolStep, hasActive, startStep, startToolStep, withSummary } from './lib/processSteps'
 import { toChatMessages } from './lib/restore'
 import type { ChatMessage, ChatSession, ProcessStep, StepState } from './types'
 
@@ -20,7 +20,7 @@ const PROGRESS_LABEL: Record<ProgressStep, { label: string; doneLabel: string }>
 
 // 다시 붙었을 때 이미 결정된 카드를 처리 과정 한 줄로 바꾼다(계약 4장 approval_resolved).
 const RESOLVED_STEP: Record<Exclude<ApprovalStatus, 'pending'>, { state: Exclude<StepState, 'active'>; label: string }> = {
-  approved: { state: 'done', label: '승인함' },
+  approved: { state: 'done', label: APPROVED_LABEL },
   denied: { state: 'stopped', label: '거부함' },
   expired: { state: 'stopped', label: '승인 시간이 지나 취소됨' },
   cancelled: { state: 'stopped', label: '취소됨' },
@@ -271,8 +271,9 @@ function App({ onLogout }: { onLogout?: () => void }) {
             // 막힌 뒤에도 Agent가 다른 작업을 이어 갈 수 있어서 상태는 바꾸지 않는다.
             updateMessage(id, (m) => ({
               rejectionReason: event.reason,
+              rejectionDetails: addDetail(m.rejectionDetails, event.detail),
               // 진행 중이던 단계는 끝난 것으로 두고, 차단을 따로 한 줄 남긴다.
-              steps: finishActive(startStep(m.steps ?? [], { label: '정책에 따라 차단됨' }), 'failed'),
+              steps: finishActive(startStep(m.steps ?? [], { label: withSummary(BLOCKED_LABEL, event.detail) }), 'failed'),
             }))
             break
           case 'error':
@@ -415,7 +416,7 @@ function App({ onLogout }: { onLogout?: () => void }) {
         steps:
           // 승인 뒤 도구 실행 줄은 Agent가 보내는 tool_status로 붙는다.
           decision === 'approve'
-            ? finishActive(steps, 'done', withSummary('승인함', summary))
+            ? finishActive(steps, 'done', withSummary(APPROVED_LABEL, summary))
             : finishActive(steps, 'stopped', withSummary('거부함', summary)),
       }
     })

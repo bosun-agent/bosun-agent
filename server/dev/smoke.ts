@@ -168,10 +168,13 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
 {
   const r = await send('차단되는 작업')
   check('tool_guard 거부는 rejected + done', types(r.events).includes('rejected') && last(r.events) === 'done', types(r.events))
+  const rej = r.events.find((e) => e.type === 'rejected')
+  check('훅 거부 사유가 detail로 온다', rej?.type === 'rejected' && rej.detail === 'privileged containers are not allowed', rej)
 }
 {
   const r = await send('금지된 도구 써줘')
-  check('permissions.deny는 rejected', types(r.events).includes('rejected'), types(r.events))
+  const rej = r.events.find((e) => e.type === 'rejected')
+  check('permissions.deny는 rejected(사유 없음)', rej?.type === 'rejected' && rej.detail === undefined, rej)
 }
 {
   const r = await send('없는 도구 써줘')
@@ -196,6 +199,29 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const withCards = messages.filter((m) => m.cards?.length)
   check('대화 복원에 사용자 메시지가 모두 있다', messages.filter((m) => m.role === 'user').length === 15, messages.length)
   check('대화 복원에 승인·차단 카드가 붙는다', withCards.length === 10, withCards)
+}
+{
+  // 생성 body가 빠져 두 번 막힌 뒤 다시 만드는 경우(2026-10-28 리허설). 다른 대화에서 해서 위 개수에 섞이지 않게 한다.
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '설정 없이 만들어줘' })
+  const rejs = r.events.filter((e) => e.type === 'rejected')
+  check(
+    '정책 훅 사유는 앞머리와 허용 범위를 빼고 첫 문장만',
+    rejs.length === 2 && rejs.every((e) => e.type === 'rejected' && e.detail === '컨테이너 생성 body(설정)가 없습니다'),
+    rejs,
+  )
+  const ap = approvalOf(r.events)
+  const d = await post(`/api/sessions/${s}/approvals/${ap!.approvalId}`, { decision: 'approve' })
+  check('막힌 뒤 다시 만든 생성은 승인되고 done', last(d.events) === 'done', types(d.events))
+  const { messages } = (await fetch(`${BASE}/api/sessions/${s}/messages`).then((res) => res.json())) as {
+    messages: { cards?: { kind: string; detail?: string; status?: string }[] }[]
+  }
+  const cards = messages.flatMap((m) => m.cards ?? [])
+  check(
+    '복원 카드에 차단 사유가 남고 순서가 차단 → 승인',
+    cards.map((c) => (c.kind === 'rejected' ? c.detail : c.status)).join('|') === '컨테이너 생성 body(설정)가 없습니다|컨테이너 생성 body(설정)가 없습니다|approved',
+    cards,
+  )
 }
 {
   const r = await send('만료 테스트')
