@@ -42,6 +42,7 @@ export function toChatMessages(restored: RestoredMessage[], now = Date.now()): C
       }
       base.rejectionReason ??= card.reason
       base.rejectionDetails = addDetail(base.rejectionDetails, card.detail)
+      if (card.code === 'POLICY_DENIED') base.policyBlocked = true
     }
 
     // 아직 결정하지 않은 카드는 다시 띄운다. 시간이 지났으면 만료로 보여준다(서버가 이미 거부했다).

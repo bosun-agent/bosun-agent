@@ -1,6 +1,18 @@
 // 정책 차단 안내. 차단 뒤 Agent가 이어서 한 말은 그 아래 일반 말풍선에 나온다.
 // resolved: 차단 뒤에 승인한 작업이 있다(processSteps.blockResolved). 빨간 경고 대신 회색 안내로 보여준다.
-export function RejectedNotice({ reason, details = [], resolved = false }: { reason: string; details?: string[]; resolved?: boolean }) {
+// portainer: 정책 차단이면 Portainer에서 직접 하라고 안내한다. 빈 문자열이면 주소를 몰라 링크 없이 문구만 둔다.
+// 뒤에 승인한 작업이 있으면(resolved) 이미 다른 길로 진행했으므로 안내하지 않는다.
+export function RejectedNotice({
+  reason,
+  details = [],
+  resolved = false,
+  portainer,
+}: {
+  reason: string
+  details?: string[]
+  resolved?: boolean
+  portainer?: string
+}) {
   const box = resolved ? 'border-neutral-200 bg-neutral-50 text-neutral-700' : 'border-red-300 bg-red-50 text-red-900'
   return (
     <div className={`max-w-[85%] rounded-2xl border px-4 py-3 text-[15px] ${box}`}>
@@ -15,6 +27,19 @@ export function RejectedNotice({ reason, details = [], resolved = false }: { rea
             <li key={d}>{d}</li>
           ))}
         </ul>
+      )}
+      {portainer !== undefined && !resolved && (
+        <p className="mt-2 text-sm text-red-800">
+          꼭 필요한 작업이면 Portainer 화면에서 직접 할 수 있어요.
+          {portainer && (
+            <>
+              {' '}
+              <a href={portainer} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">
+                Portainer 열기 ↗
+              </a>
+            </>
+          )}
+        </p>
       )}
     </div>
   )

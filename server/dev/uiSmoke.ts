@@ -98,11 +98,16 @@ await send('설정 없이 만들어줘')
 await page.getByText('승인이 필요해요').waitFor()
 check('차단 안내에 무엇이 왜 막혔는지', await page.getByText('컨테이너 생성 body(설정)가 없습니다', { exact: true }).isVisible())
 check('승인 전에는 빨간 차단됨', await page.getByText('차단됨', { exact: true }).isVisible())
+check(
+  '정책 차단이면 Portainer에서 직접 하라는 안내와 링크',
+  (await page.getByRole('link', { name: 'Portainer 열기 ↗' }).getAttribute('href')) === 'https://localhost:9443',
+)
 check('처리 과정에 차단 사유가 붙고 같은 줄은 ×2로', await page.getByText('정책에 따라 차단됨: 컨테이너 생성 body(설정)가 없습니다').isVisible() && (await page.getByText('×2').isVisible()))
 await shot('04-blocked')
 await page.getByRole('button', { name: '승인', exact: true }).click()
 await page.getByText('simple-web을 만들었어요.').waitFor()
 check('뒤에 승인한 작업이 있으면 도중에 막힌 요청(회색)', await page.getByText('도중에 막힌 요청', { exact: true }).isVisible() && !(await page.getByText('차단됨', { exact: true }).isVisible()))
+check('회색으로 낮추면 Portainer 안내는 뺀다', !(await page.getByRole('link', { name: 'Portainer 열기 ↗' }).isVisible()))
 await shot('05-blocked-resolved')
 
 // 먼저 뜬 카드를 기다리는 사이 다른 대화가 같은 대상을 바꾸면, 승인해도 실행하지 않고 처리 과정과 답 아래 안내로 알린다

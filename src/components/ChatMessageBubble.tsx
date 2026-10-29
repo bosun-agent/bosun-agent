@@ -8,6 +8,8 @@ import { RejectedNotice } from './RejectedNotice'
 
 interface ChatMessageBubbleProps {
   message: ChatMessage
+  // 정책 차단 안내에 붙이는 Portainer 화면 주소
+  portainerUrl?: string
   onApprove?: (id: string) => void
   onDeny?: (id: string) => void
   onExpire?: (id: string) => void
@@ -21,7 +23,7 @@ const LIVE_STATUSES: MessageStatus[] = ['thinking', 'streaming', 'pending_approv
 // 첨부 파일이 붙은 긴 메시지는 접어서 보여준다.
 const FOLD_CHARS = 600
 
-export function ChatMessageBubble({ message, onApprove, onDeny, onExpire, onEdit, onRetry }: ChatMessageBubbleProps) {
+export function ChatMessageBubble({ message, portainerUrl, onApprove, onDeny, onExpire, onEdit, onRetry }: ChatMessageBubbleProps) {
   if (message.role === 'user') return <UserBubble message={message} onEdit={onEdit} />
 
   const steps = message.steps ?? []
@@ -32,7 +34,7 @@ export function ChatMessageBubble({ message, onApprove, onDeny, onExpire, onEdit
       <ProcessSteps steps={steps} live={!settled} />
       {message.rejectionReason && (
         <div className="mb-2 w-full">
-          <RejectedNotice reason={message.rejectionReason} details={message.rejectionDetails} resolved={blockResolved(steps)} />
+          <RejectedNotice reason={message.rejectionReason} details={message.rejectionDetails} resolved={blockResolved(steps)} portainer={message.policyBlocked ? (portainerUrl ?? '') : undefined} />
         </div>
       )}
       <AssistantBody message={message} hasSteps={steps.length > 0} onApprove={onApprove} onDeny={onDeny} onExpire={onExpire} />

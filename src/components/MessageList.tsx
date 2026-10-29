@@ -6,6 +6,7 @@ interface MessageListProps {
   messages: ChatMessage[]
   // 이 대화가 처리 중이면 수정·다시 시도를 숨긴다.
   busy?: boolean
+  portainerUrl?: string
   onApprove?: (id: string) => void
   onDeny?: (id: string) => void
   onExpire?: (id: string) => void
@@ -13,7 +14,7 @@ interface MessageListProps {
   onRetry?: (id: string) => void
 }
 
-export function MessageList({ messages, busy, onApprove, onDeny, onExpire, onEdit, onRetry }: MessageListProps) {
+export function MessageList({ messages, busy, portainerUrl, onApprove, onDeny, onExpire, onEdit, onRetry }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export function MessageList({ messages, busy, onApprove, onDeny, onExpire, onEdi
           <ChatMessageBubble
             key={message.id}
             message={message}
+            portainerUrl={portainerUrl}
             onApprove={onApprove}
             onDeny={onDeny}
             onExpire={onExpire}

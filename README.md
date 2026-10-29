@@ -56,7 +56,10 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD_HASH=scrypt$...
 JWT_SECRET=...
 # (선택) MAX_TURNS=3 동시에 처리할 대화 수, BACKUP_DB=Agent 백업 훅 DB, AGENT_CONFIG·AGENT_SESSION_DB=다른 폴더에 둘 때
+# (선택) PORTAINER_URL=https://localhost:9443  정책 차단 안내의 "Portainer 열기" 링크. 브라우저에서 여는 주소
 ```
+
+`PORTAINER_URL`의 Portainer가 자체 서명 인증서를 쓰면 링크를 처음 열 때 브라우저가 경고를 띄운다. 주소가 맞으면 계속 진행하면 된다.
 
 설정 화면에서 API 키를 바꾸면 `npm run agent`를 다시 띄워야 적용된다. 화면에서 바꾼 비밀번호를 잊었으면 `npm run set-password -- server/real.env`로 다시 정한다.
 

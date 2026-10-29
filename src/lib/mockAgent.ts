@@ -260,6 +260,7 @@ const mockSettings = () => ({
   models: [...MOCK_MODELS, ...customModels],
   customModels: [...customModels],
   apiKey: { editable: true, set: mockKeySet },
+  portainerUrl: 'https://localhost:9443',
 })
 
 export const mockAgent: AgentClient = {

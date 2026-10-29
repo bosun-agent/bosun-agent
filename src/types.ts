@@ -45,6 +45,8 @@ export interface ChatMessage {
   rejectionReason?: string
   // 막힌 호출마다 무엇이 왜 막혔는지(rejected.detail). 같은 사유는 한 번만 둔다.
   rejectionDetails?: string[]
+  // 막힌 것 중 정책 차단(POLICY_DENIED)이 있다. 이때만 Portainer에서 직접 하라고 안내한다.
+  policyBlocked?: boolean
   errorMessage?: string
   // 답 아래에 작게 붙는 안내(사용자가 멈춤 등)
   notice?: string

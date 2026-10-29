@@ -92,6 +92,8 @@ export interface Settings {
   // models 중 관리자가 화면에서 더한 것. 이것만 지울 수 있다.
   customModels: string[]
   apiKey: { editable: boolean; set: boolean }
+  // 정책 차단 안내의 "Portainer 열기" 링크. WEB 백엔드에 PORTAINER_URL이 없으면 빠진다.
+  portainerUrl?: string
 }
 
 // 설정의 정보·정책 화면(계약 3장 GET /api/system). agent.yaml에서 고른 값만 온다.

@@ -77,6 +77,11 @@ function App({ onLogout }: { onLogout?: () => void }) {
   const [helpOpen, setHelpOpen] = useState(false)
   // 입력창에 넣을 글(도움말 예시를 누르면 채운다)
   const [draft, setDraft] = useState<{ text: string; key: number } | null>(null)
+  // 정책 차단 안내의 "Portainer 열기" 링크. 못 받으면 링크 없이 문구만 보여준다.
+  const [portainerUrl, setPortainerUrl] = useState<string>()
+  useEffect(() => {
+    agent.getSettings?.().then((s) => setPortainerUrl(s.portainerUrl), () => undefined)
+  }, [])
   // 지금 이벤트를 받고 있는 대화
   const live = useRef(new Set<string>())
   const sessionsRef = useRef(sessions)
@@ -277,6 +282,7 @@ function App({ onLogout }: { onLogout?: () => void }) {
             updateMessage(id, (m) => ({
               rejectionReason: event.reason,
               rejectionDetails: addDetail(m.rejectionDetails, event.detail),
+              policyBlocked: m.policyBlocked || event.code === 'POLICY_DENIED',
               // 진행 중이던 단계는 끝난 것으로 두고, 차단을 따로 한 줄 남긴다.
               steps: finishActive(startStep(m.steps ?? [], { label: withSummary(BLOCKED_LABEL, event.detail) }), 'failed'),
             }))
@@ -675,6 +681,7 @@ function App({ onLogout }: { onLogout?: () => void }) {
             <MessageList
               messages={active.messages}
               busy={activeBusy}
+              portainerUrl={portainerUrl}
               onApprove={(id) => handleDecision(id, 'approve')}
               onDeny={(id) => handleDecision(id, 'deny')}
               onExpire={handleExpire}

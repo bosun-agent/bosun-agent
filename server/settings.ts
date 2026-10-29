@@ -33,6 +33,7 @@ export function getSettings(): Settings {
     models: allModels(),
     customModels: customModels().filter((m) => !config.agentModels.includes(m)),
     apiKey: { editable: config.agentEnvFile !== '', set: apiKeySet() },
+    ...(config.portainerUrl ? { portainerUrl: config.portainerUrl } : {}),
   }
 }
 

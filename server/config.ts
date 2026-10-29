@@ -62,6 +62,10 @@ export const config = {
     process.env.BACKUP_DB ??
     (process.env.AGENT_ENV_FILE ? join(dirname(process.env.AGENT_ENV_FILE), 'backups.sqlite3') : ''),
 
+  // 정책에 막힌 작업을 직접 하러 갈 Portainer 화면 주소. 브라우저에서 열리는 주소를 넣는다(Agent의 PORTAINER_URL과 다를 수 있다).
+  // 비어 있거나 http(s)가 아니면 차단 안내에 링크 없이 문구만 보여준다.
+  portainerUrl: /^https?:\/\/[^\s"'<>]+$/.test(process.env.PORTAINER_URL ?? '') ? process.env.PORTAINER_URL! : '',
+
   // 빌드한 화면 폴더(npm run build → dist). 정하면 WEB 백엔드가 화면도 내보낸다. 개발 중에는 비워 두고 Vite를 쓴다.
   staticDir: process.env.STATIC_DIR ?? '',
 }

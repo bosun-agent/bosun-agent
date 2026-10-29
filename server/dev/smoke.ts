@@ -282,7 +282,8 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
     fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) })
   const bad = await put('openrouter/unknown/model')
   check('목록에 없는 모델은 400', bad.status === 400, bad.status)
-  const settings = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { models: string[] }
+  const settings = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { models: string[]; portainerUrl?: string }
+  check('설정에 차단 안내용 Portainer 주소(dev.env PORTAINER_URL)', settings.portainerUrl === 'https://localhost:9443', settings.portainerUrl)
   const chosen = settings.models.at(-1)!
   const ok = await put(chosen)
   check('모델을 고르면 저장된다', ok.status === 200 && ((await ok.json()) as { model: string }).model === chosen, chosen)
