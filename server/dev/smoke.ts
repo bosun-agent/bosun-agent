@@ -405,6 +405,46 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   check('처리 중이 아니면 다시 붙기는 404 NOT_RUNNING', noRun.status === 404, noRun.status)
 }
 {
+  // x 카드가 nginx-web 삭제를 기다리는 사이 y가 같은 대상을 지운다. x를 승인해도 실행하지 않고 모델에 다시 확인하게 한다.
+  const [x, y, z] = [await newSession(), await newSession(), await newSession()]
+  const rx = await post(`/api/sessions/${x}/messages`, { text: '삭제해줘' })
+  const ry = await post(`/api/sessions/${y}/messages`, { text: '삭제해줘' })
+  const dy = await post(`/api/sessions/${y}/approvals/${approvalOf(ry.events)!.approvalId}`, { decision: 'approve' })
+  const dx = await post(`/api/sessions/${x}/approvals/${approvalOf(rx.events)!.approvalId}`, { decision: 'approve' })
+  const blocked = dx.events.find((e) => e.type === 'rejected')
+  const restored = (await fetch(`${BASE}/api/sessions/${x}/messages`).then((r) => r.json())) as {
+    messages: { cards?: { kind: string; status?: string; code?: string }[] }[]
+  }
+  const cards = restored.messages.at(-1)?.cards ?? []
+  check(
+    '먼저 뜬 카드는 그 사이 다른 대화가 같은 대상을 바꿨으면 승인해도 실행하지 않는다(TARGET_CHANGED)',
+    text(dy.events).includes('삭제했어요') &&
+      blocked?.type === 'rejected' &&
+      blocked.code === 'TARGET_CHANGED' &&
+      text(dx.events).includes('승인되지 않아서') &&
+      last(dx.events) === 'done' &&
+      cards.some((c) => c.kind === 'approval' && c.status === 'cancelled') &&
+      cards.some((c) => c.kind === 'rejected' && c.code === 'TARGET_CHANGED'),
+    { dx: types(dx.events), cards },
+  )
+  // 바뀐 뒤에 새로 뜬 카드는 지금 상태를 보고 물은 것이므로 그대로 승인된다.
+  const rz = await post(`/api/sessions/${z}/messages`, { text: '삭제해줘' })
+  const dz = await post(`/api/sessions/${z}/approvals/${approvalOf(rz.events)!.approvalId}`, { decision: 'approve' })
+  check('바뀐 뒤에 뜬 카드는 그대로 승인된다', text(dz.events).includes('삭제했어요') && !dz.events.some((e) => e.type === 'rejected'), types(dz.events))
+}
+{
+  // 이름을 바꾸면 ID → 이름 표도 바뀐다. 같은 ID로 부른 다음 카드에 옛 이름이 나오면 안 된다.
+  const s = await newSession()
+  const r1 = await post(`/api/sessions/${s}/messages`, { text: '이름 바꿔줘' })
+  const r2 = await post(`/api/sessions/${s}/approvals/${approvalOf(r1.events)!.approvalId}`, { decision: 'approve' })
+  check(
+    '이름을 바꾼 뒤 같은 ID로 부르면 카드에 새 이름',
+    approvalOf(r1.events)?.summary === '컨테이너 old-web 이름 변경' && approvalOf(r2.events)?.summary === '컨테이너 new-web 재시작',
+    [approvalOf(r1.events)?.summary, approvalOf(r2.events)?.summary],
+  )
+  await post(`/api/sessions/${s}/approvals/${approvalOf(r2.events)!.approvalId}`, { decision: 'deny' })
+}
+{
   // 브라우저가 중간에 나가도 턴은 계속 돌고, 다시 붙으면 처음부터 끝까지 받는다.
   const s = await newSession()
   const first = await readSome(`/api/sessions/${s}/messages`, { text: '천천히 답해줘' }, 3)

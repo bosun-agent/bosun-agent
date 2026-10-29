@@ -227,6 +227,24 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
+    // 이름을 바꾼 뒤 모델이 같은 ID로 다음 작업을 부르는 경우. 다음 카드는 바꾼 이름을 보여줘야 한다(WEB의 ID → 이름 표).
+    match: /이름 바꿔/,
+    run: async (r) => {
+      const id = `5f3c9a1b2d4e${'0'.repeat(52)}`
+      await r.tool('docker_proxy', { environment_id: 1, method: 'GET', path: '/containers/json', select: '[].{id:Id,name:Names[0]}' }, {
+        output: JSON.stringify([{ id, name: '/old-web' }]),
+      })
+      const renamed = await r.tool(
+        'docker_proxy',
+        { environment_id: 1, method: 'POST', path: `/containers/${id}/rename`, query_params: { name: 'new-web' } },
+        { ask: true, output: '' },
+      )
+      if (renamed.isError) return r.say('승인되지 않아서 이름을 바꾸지 않았어요.')
+      const res = await r.tool('docker_proxy', { environment_id: 1, method: 'POST', path: `/containers/${id}/restart` }, { ask: true, output: '' })
+      await r.say(res.isError ? '재시작하지 않았어요.' : '이름을 바꾸고 재시작했어요.')
+    },
+  },
+  {
     // 상태 변경(POST)은 승인을 받는다. GET은 permissions.allow라 묻지 않는다.
     match: /재시작|중지/,
     run: async (r) => {

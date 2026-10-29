@@ -15,7 +15,7 @@ import type { DAEvent } from './agentClient.ts'
 import { config } from './config.ts'
 import { currentModel } from './settings.ts'
 import { addCard, logDecision, logUsage, updateApprovalCard, type ApprovalStatus } from './store.ts'
-import { approvalCard, learnNames } from './tools.ts'
+import { approvalCard, learnNames, targetKeys } from './tools.ts'
 import { Translator } from './translate.ts'
 
 export interface Sink {
@@ -31,6 +31,9 @@ interface Approval {
   tool: string
   toolCallId: string
   status: ApprovalStatus
+  // 같은 대상 비교 키(tools.ts targetKeys)와 카드를 만든 시각. 다른 대화가 그 뒤에 같은 대상을 바꿨는지 볼 때 쓴다.
+  keys: string[]
+  createdAt: number
   // Agent에 결정을 보내는 중. 그 사이 만료 타이머나 두 번째 결정이 또 보내지 않게 막는다.
   sending: boolean
   timer?: NodeJS.Timeout
@@ -66,6 +69,9 @@ const MAX_LOG = 5000
 const approvals = new Map<string, Approval>()
 // 조회 결과로 알아 둔 컨테이너·이미지 ID(앞 12자리) → 이름. 승인 카드에 이름을 보여줄 때 쓴다.
 const names = new Map<string, string>()
+// 대상 키 → 마지막으로 승인한 변경. 먼저 뜬 카드를 승인할 때 그 사이 다른 대화가 같은 대상을 바꿨는지 본다.
+// 카드는 승인 시간이 지나면 만료되므로 그보다 오래된 기록은 지운다.
+const changes = new Map<string, { at: number; sessionId: string; target: string }>()
 
 export class HttpError extends Error {
   readonly status: number
@@ -326,6 +332,8 @@ function parseArgs(raw: string | undefined): Record<string, unknown> {
 
 // Agent(LLM)가 거부 사유로 받는 문장. 사용자가 거부할 때는 사유를 붙이지 않는다.
 const EXPIRED_REASON = 'The approval request expired without a decision.'
+const TARGET_CHANGED_REASON =
+  'Another session changed the same target after this approval was requested, so the call was not run. Look up the current state of the target again before retrying.'
 
 function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>): void {
   const call = ev.tool_call
@@ -341,7 +349,8 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
 
   const expiresAt = Date.now() + config.approvalTimeoutMs
   const card = approvalCard(tool, args, names)
-  const busyWith = sameTargetWaiting(t, card.action.target)
+  const keys = targetKeys(tool, args, names)
+  const busyWith = sameTargetWaiting(t, keys)
   if (busyWith) {
     card.reasons = [
       ...card.reasons,
@@ -357,6 +366,8 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
     tool,
     toolCallId: call.id ?? '',
     status: 'pending',
+    keys,
+    createdAt: Date.now(),
     sending: false,
     event: { type: 'approval_required', approvalId: '', ...card, expiresAt: new Date(expiresAt).toISOString() },
   }
@@ -371,22 +382,30 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
   show(t)
 }
 
-// 카드 대상은 "이름", "ID" 또는 "이름 (ID 앞 12자리)"다. 어느 쪽이든 겹치면 같은 대상으로 본다.
-function targetKeys(target: string | undefined): string[] {
-  if (!target) return []
-  const m = /^(.*) \(([0-9a-f]{12})\)$/i.exec(target)
-  return (m ? [m[1], m[2]] : [target]).map((k) => k.trim().toLowerCase()).filter(Boolean)
-}
-
 // 다른 대화가 같은 대상의 승인을 기다리고 있으면 그 카드의 대상을 돌려준다. 두 대화가 같은 컨테이너를 동시에 바꾸려는 경우를 알린다.
-// 이미 떠 있는 앞 카드는 바꾸지 않고 새 카드에만 붙인다.
-function sameTargetWaiting(t: Turn, target: string | undefined): string | undefined {
-  const keys = targetKeys(target)
+// 이미 떠 있는 앞 카드는 바꾸지 않고 새 카드에만 붙인다. 앞 카드는 결정할 때 changedBy로 다시 본다.
+function sameTargetWaiting(t: Turn, keys: string[]): string | undefined {
   if (!keys.length) return undefined
   for (const other of turns.values()) {
     if (other === t || other.waiting?.status !== 'pending') continue
-    const otherTarget = other.waiting.event.action.target
-    if (targetKeys(otherTarget).some((k) => keys.includes(k))) return otherTarget
+    if (other.waiting.keys.some((k) => keys.includes(k))) return other.waiting.event.action.target
+  }
+  return undefined
+}
+
+function noteChange(ap: Approval): void {
+  const now = Date.now()
+  for (const [k, c] of changes) if (now - c.at > config.approvalTimeoutMs + config.expiryGraceMs) changes.delete(k)
+  const target = ap.event.action.target ?? ''
+  for (const k of ap.keys) changes.set(k, { at: now, sessionId: ap.sessionId, target })
+}
+
+// 이 카드가 뜬 뒤 다른 대화가 같은 대상의 변경을 승인했으면 그 대상을 돌려준다.
+// 예: 이 카드가 web 삭제를 기다리는 사이 다른 대화가 web을 지우고 같은 이름으로 새로 만들면, 승인했을 때 새 web이 지워진다.
+function changedBy(ap: Approval): string | undefined {
+  for (const k of ap.keys) {
+    const c = changes.get(k)
+    if (c && c.sessionId !== ap.sessionId && c.at >= ap.createdAt) return c.target || ap.event.action.target
   }
   return undefined
 }
@@ -441,9 +460,12 @@ export async function decide(
     throw new HttpError(409, 'APPROVAL_CLOSED', '이미 처리됐거나 만료된 승인이에요.')
   }
 
+  // 승인하려는 사이 대상이 바뀌었으면 실행하지 않고 거부로 보낸다. 모델이 다시 조회하고 새 카드로 묻는다.
+  const changed = decision === 'approve' ? changedBy(ap) : undefined
   ap.sending = true
   try {
-    if (decision === 'approve') await agent.resume(sessionId, 'approve')
+    if (changed) await agent.resume(sessionId, 'reject', TARGET_CHANGED_REASON)
+    else if (decision === 'approve') await agent.resume(sessionId, 'approve')
     else await agent.resume(sessionId, 'reject', reason === 'expired' ? EXPIRED_REASON : undefined)
   } catch (err) {
     ap.sending = false
@@ -457,10 +479,24 @@ export async function decide(
   }
   ap.sending = false
 
-  const status: ApprovalStatus =
-    decision === 'approve' ? 'approved' : reason === 'expired' ? 'expired' : 'denied'
+  const status: ApprovalStatus = changed
+    ? 'cancelled'
+    : decision === 'approve'
+      ? 'approved'
+      : reason === 'expired'
+        ? 'expired'
+        : 'denied'
   // 보내는 사이 턴이 끝나 취소됐으면 그 상태를 둔다.
   if (ap.status === 'pending') resolve(ap, status)
+  if (status === 'approved') noteChange(ap)
+  if (changed && !t.finished) {
+    emit(t, {
+      type: 'rejected',
+      code: 'TARGET_CHANGED',
+      reason: `다른 대화에서 같은 대상(${changed})을 먼저 바꿔서 이 승인은 실행하지 않았어요. AI가 지금 상태를 다시 확인해요.`,
+      detail: ap.event.summary,
+    })
+  }
   logDecision({ user, sessionId, approvalId, toolCallId: ap.toolCallId, tool: ap.tool, decision: status })
   return (sink) => attach(t, sink)
 }

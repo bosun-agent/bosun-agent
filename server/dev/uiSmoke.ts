@@ -105,6 +105,35 @@ await page.getByText('simple-web을 만들었어요.').waitFor()
 check('뒤에 승인한 작업이 있으면 도중에 막힌 요청(회색)', await page.getByText('도중에 막힌 요청', { exact: true }).isVisible() && !(await page.getByText('차단됨', { exact: true }).isVisible()))
 await shot('05-blocked-resolved')
 
+// 먼저 뜬 카드를 기다리는 사이 다른 대화가 같은 대상을 바꾸면, 승인해도 실행하지 않고 처리 과정과 답 아래 안내로 알린다
+await newChat()
+await send('nginx 지워줘')
+await page.getByText('승인이 필요해요').waitFor()
+{
+  // 다른 대화는 API로 보내고 승인한다. 화면과 같은 로그인 쿠키에 X-Bosun 헤더를 붙인다.
+  const headers = { 'X-Bosun': '1' }
+  const { sessionId } = (await (await page.request.post(`${URL}api/sessions`, { headers })).json()) as { sessionId: string }
+  const sent = await (await page.request.post(`${URL}api/sessions/${sessionId}/messages`, { headers, data: { text: 'nginx 지워줘' } })).text()
+  const approvalId = /"approvalId":"([^"]+)"/.exec(sent)?.[1]
+  await page.request.post(`${URL}api/sessions/${sessionId}/approvals/${approvalId}`, { headers, data: { decision: 'approve' } })
+}
+await page.getByRole('button', { name: '승인', exact: true }).click()
+await page.getByText('승인되지 않아서 삭제하지 않았어요.').waitFor()
+const changedShown = async () => {
+  await page.getByRole('button', { name: /^처리 과정 보기/ }).last().click()
+  return (
+    (await page.getByText('다른 대화에서 같은 대상', { exact: false }).isVisible()) &&
+    (await page.getByText('대상이 바뀌어 실행 안 함: 컨테이너 nginx-web 삭제').isVisible()) &&
+    !(await page.getByText('승인함: 컨테이너 nginx-web 삭제').isVisible()) &&
+    !(await page.getByText('차단됨', { exact: true }).isVisible())
+  )
+}
+check('대상이 바뀌어 실행하지 않았으면 승인함 대신 그 줄과 안내(정책 차단 안내는 없음)', await changedShown())
+await shot('06-target-changed')
+await page.reload()
+await page.getByText('승인되지 않아서 삭제하지 않았어요.').waitFor()
+check('새로고침해도 같은 줄과 안내', await changedShown())
+
 // 멈추기
 await newChat()
 await send('천천히 답해줘')

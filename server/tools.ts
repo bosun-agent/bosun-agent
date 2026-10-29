@@ -359,6 +359,39 @@ export function approvalCard(
 const HEX_ID = /^(?:sha256:)?([0-9a-f]{12,64})$/i
 const MAX_NAMES = 2000
 
+// 비교용으로 맞춘 이름·ID. ID는 앞 12자리, 태그 없는 이미지는 `:latest`를 붙인다(Docker와 같은 기본값).
+function normalized(kind: string, value: string): string {
+  const v = value.trim().replace(/^\//, '').toLowerCase()
+  const id = HEX_ID.exec(v)
+  if (id) return id[1].slice(0, 12)
+  if (kind === 'images' && !v.split('/').at(-1)!.includes(':')) return `${v}:latest`
+  return v
+}
+
+// 이 이름으로 알아 둔 ID들. 이름 대신 ID로 왔으면 그 ID 하나다.
+function idsFor(names: ReadonlyMap<string, string>, kind: string, target: string): string[] {
+  const key = normalized(kind, target)
+  if (HEX_ID.test(key)) return [key]
+  return [...names].filter(([, name]) => normalized(kind, name) === key).map(([id]) => id)
+}
+
+// 두 요청이 같은 대상을 바꾸는지 비교하는 키. `환경/종류/이름 또는 ID`이고, 이름과 ID를 둘 다 알면 둘 다 넣는다.
+// 환경과 종류를 넣어서 다른 환경의 web이나 볼륨 web을 컨테이너 web과 같은 대상으로 보지 않는다.
+export function targetKeys(tool: string, args: Record<string, unknown>, names: ReadonlyMap<string, string>): string[] {
+  if (tool !== 'docker_proxy') return []
+  const kind = pathParts(str(args.path) ?? '')[0]
+  const target = describeTool(tool, args)?.target
+  if (!RESOURCES[kind] || !target) return []
+  const env = String(args.environment_id ?? '')
+  const values = new Set([normalized(kind, target)])
+  for (const id of idsFor(names, kind, target)) {
+    values.add(id)
+    const name = names.get(id)
+    if (name) values.add(normalized(kind, name))
+  }
+  return [...values].map((v) => `${env}/${kind}/${v}`)
+}
+
 function idOf(obj: Record<string, unknown>): string | undefined {
   for (const [k, v] of Object.entries(obj)) {
     if (/^id$/i.test(k) && typeof v === 'string') {
@@ -385,6 +418,21 @@ export function learnNames(
   output: string,
 ): void {
   if (tool !== 'docker_proxy' || output.length > 2_000_000) return
+  // 이름 변경·삭제가 성공하면 표를 고친다. 안 고치면 다른 대화의 카드가 옛 이름을 보여준다. 둘 다 결과 본문이 비어 있다.
+  const method = (str(args.method) ?? 'GET').toUpperCase()
+  const [kind, pathId, action] = pathParts(str(args.path) ?? '')
+  const target = describeTool(tool, args)?.target
+  if (target && (kind === 'containers' || kind === 'images') && method !== 'GET') {
+    if (method === 'DELETE') {
+      for (const id of idsFor(names, kind, target)) names.delete(id)
+      return
+    }
+    const renamed = str(objectArg(args.query_params).name)?.replace(/^\//, '')
+    if (kind === 'containers' && action === 'rename' && renamed) {
+      for (const id of idsFor(names, kind, target)) names.set(id, renamed)
+      return
+    }
+  }
   let data: unknown
   try {
     data = JSON.parse(output)
@@ -405,15 +453,14 @@ export function learnNames(
     if (id) remember(id, name)
   }
   if (!Array.isArray(data) && data && typeof data === 'object') {
-    const [kind, id, action] = pathParts(str(args.path) ?? '')
     // 상세 조회는 결과에 ID를 빼고 이름만 고르는 경우가 많아서 경로의 ID를 쓴다.
     const name = nameOf(data as Record<string, unknown>)
-    if (name && (kind === 'containers' || kind === 'images') && action === 'json' && id && HEX_ID.test(id)) {
-      remember(id.slice(0, 12).toLowerCase(), name)
+    if (name && (kind === 'containers' || kind === 'images') && action === 'json' && pathId && HEX_ID.test(pathId)) {
+      remember(pathId.slice(0, 12).toLowerCase(), name)
     }
     // 생성 결과에는 ID만 온다. 이름은 요청 쿼리에 있다(바로 이어지는 시작 카드에 이름을 보여주려고).
     const created = idOf(data as Record<string, unknown>)
     const requested = str(objectArg(args.query_params).name)?.replace(/^\//, '')
-    if (kind === 'containers' && id === 'create' && created && requested) remember(created, requested)
+    if (kind === 'containers' && pathId === 'create' && created && requested) remember(created, requested)
   }
 }

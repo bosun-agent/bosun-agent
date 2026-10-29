@@ -63,7 +63,19 @@ export function addDetail(details: string[] | undefined, detail: string | undefi
 }
 
 export const APPROVED_LABEL = '승인함'
+export const CANCELLED_LABEL = '취소됨'
 export const BLOCKED_LABEL = '정책에 따라 차단됨'
+export const CHANGED_LABEL = '대상이 바뀌어 실행 안 함'
+
+// 승인했지만 카드가 뜬 뒤 다른 대화가 같은 대상을 바꿔서 WEB이 실행하지 않았다(rejected TARGET_CHANGED).
+// 그 카드의 "승인함: X"(복원하면 "취소됨: X") 줄을 이 줄로 바꾼다. 승인함으로 남으면 실행된 것처럼 보인다.
+export function markTargetChanged(steps: ProcessStep[], summary: string | undefined): ProcessStep[] {
+  const label = withSummary(CHANGED_LABEL, summary)
+  const decided = [APPROVED_LABEL, CANCELLED_LABEL].map((l) => withSummary(l, summary))
+  const i = steps.findLastIndex((s) => s.state !== 'active' && decided.includes(s.label))
+  if (i < 0) return [...steps, { id: crypto.randomUUID(), label, state: 'stopped' }]
+  return steps.map((s, j) => (j === i ? { ...s, label, state: 'stopped' } : s))
+}
 
 // 마지막 차단 뒤에 승인한 작업이 있다. 모델이 막힌 요청을 고쳐서 다시 해냈을 가능성이 커서
 // 차단 안내를 빨간 경고 대신 회색 안내로 낮춘다(2026-10-28 리허설: 생성 body가 빠져 두 번 막힌 뒤 생성·시작 성공).

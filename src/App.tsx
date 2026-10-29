@@ -9,7 +9,7 @@ import type { AgentEvent, ApprovalDecision, ApprovalStatus, ProgressStep, Sessio
 import { agent, showScenarios } from './lib/agent'
 import { EXAMPLE_PROMPTS } from './lib/examples'
 import { notifyApproval } from './lib/notify'
-import { addDetail, APPROVED_LABEL, BLOCKED_LABEL, finishActive, finishToolStep, hasActive, startStep, startToolStep, withSummary } from './lib/processSteps'
+import { addDetail, APPROVED_LABEL, BLOCKED_LABEL, finishActive, finishToolStep, hasActive, markTargetChanged, startStep, startToolStep, withSummary } from './lib/processSteps'
 import { toChatMessages } from './lib/restore'
 import type { ChatMessage, ChatSession, ProcessStep, StepState } from './types'
 
@@ -268,6 +268,11 @@ function App({ onLogout }: { onLogout?: () => void }) {
             break
           }
           case 'rejected':
+            // 정책 차단이 아니라 WEB이 멈춘 것이다. 차단 안내 대신 처리 과정 한 줄과 답 아래 안내로 보여준다.
+            if (event.code === 'TARGET_CHANGED') {
+              updateMessage(id, (m) => ({ notice: event.reason, steps: markTargetChanged(m.steps ?? [], event.detail) }))
+              break
+            }
             // 막힌 뒤에도 Agent가 다른 작업을 이어 갈 수 있어서 상태는 바꾸지 않는다.
             updateMessage(id, (m) => ({
               rejectionReason: event.reason,

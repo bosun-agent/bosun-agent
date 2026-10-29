@@ -3,13 +3,13 @@
 
 import type { ChatMessage, ProcessStep } from '../types'
 import type { ApprovalStatus, RestoredCard, RestoredMessage } from './agentProtocol'
-import { addDetail, APPROVED_LABEL, BLOCKED_LABEL, withSummary } from './processSteps'
+import { addDetail, APPROVED_LABEL, BLOCKED_LABEL, CANCELLED_LABEL, markTargetChanged, withSummary } from './processSteps'
 
 const APPROVAL_STEP: Record<Exclude<ApprovalStatus, 'pending'>, Pick<ProcessStep, 'label' | 'state'>> = {
   approved: { label: APPROVED_LABEL, state: 'done' },
   denied: { label: '거부함', state: 'stopped' },
   expired: { label: '승인 시간이 지나 취소됨', state: 'stopped' },
-  cancelled: { label: '취소됨', state: 'stopped' },
+  cancelled: { label: CANCELLED_LABEL, state: 'stopped' },
 }
 
 function stepFor(card: RestoredCard): ProcessStep | undefined {
@@ -26,11 +26,20 @@ export function toChatMessages(restored: RestoredMessage[], now = Date.now()): C
     if (m.role === 'user') return { id, role: 'user', content: m.content, status: 'done' }
 
     const cards = m.cards ?? []
-    const steps = cards.map(stepFor).filter((s): s is ProcessStep => s !== undefined)
+    // TARGET_CHANGED는 앞 카드의 "취소됨" 줄을 바꾼다(화면에서 받을 때와 같게).
+    const steps = cards.reduce<ProcessStep[]>((acc, card) => {
+      if (card.kind === 'rejected' && card.code === 'TARGET_CHANGED') return markTargetChanged(acc, card.detail)
+      const step = stepFor(card)
+      return step ? [...acc, step] : acc
+    }, [])
     const base: ChatMessage = { id, role: 'assistant', content: m.content, status: 'done', ...(steps.length ? { steps } : {}) }
 
     for (const card of cards) {
       if (card.kind !== 'rejected') continue
+      if (card.code === 'TARGET_CHANGED') {
+        base.notice ??= card.reason
+        continue
+      }
       base.rejectionReason ??= card.reason
       base.rejectionDetails = addDetail(base.rejectionDetails, card.detail)
     }
