@@ -1,7 +1,7 @@
 {
   "name": "bosun-web",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +16,6 @@
     "lint": "oxlint",
     "build:demo": "tsc -b && vite build --mode demo",
     "preview": "vite preview",
-    "set-password": "node server/setPassword.ts",
     "test:ui": "node server/dev/uiSmoke.ts"
   },
   "dependencies": {

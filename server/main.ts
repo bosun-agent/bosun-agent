@@ -3,15 +3,13 @@
 import { serve } from '@hono/node-server'
 import { app } from './app.ts'
 import { config } from './config.ts'
+import { isLoopbackHost } from './guard.ts'
 import { cancelPendingCards } from './store.ts'
 
-// 로그인 설정이 없으면 뜨지 않는다. 승인 엔드포인트가 아무나 부를 수 있게 열리면 안 된다(계약 5장).
-if (!config.adminPasswordHash.startsWith('scrypt$') || config.jwtSecret.length < 32) {
-  console.error('[config] ADMIN_PASSWORD_HASH and JWT_SECRET (32+ chars) are required. Run: npm run set-password -- <env file>')
+// 로그인이 없으므로 같은 네트워크의 다른 PC가 붙을 수 있는 주소로는 뜨지 않는다(계약 5장).
+if (!isLoopbackHost(config.host) && !config.inContainer) {
+  console.error(`[config] HOST=${config.host} is not loopback. BOSUN WEB has no login; listen on 127.0.0.1 only`)
   process.exit(1)
-}
-if (!config.cookieSecure && config.host !== '127.0.0.1' && config.host !== 'localhost') {
-  console.warn(`[config] listening on ${config.host} with COOKIE_SECURE=0; use HTTPS and secure cookies outside localhost`)
 }
 
 serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {

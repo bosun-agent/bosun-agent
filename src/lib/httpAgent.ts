@@ -142,15 +142,4 @@ export const httpAgent: AgentClient = {
   async saveApiKey(apiKey) {
     return json<Settings>('/api/settings/api-key', { method: 'PUT', body: JSON.stringify({ apiKey }) })
   },
-
-  async changePassword(current, next) {
-    const res = await apiFetch('/api/auth/password', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ current, next }),
-    })
-    if (res.ok) return { ok: true }
-    const body = (await res.json().catch(() => null)) as { message?: string } | null
-    return { ok: false, message: body?.message ?? '바꾸지 못했어요. 잠시 후 다시 시도해주세요.' }
-  },
 }

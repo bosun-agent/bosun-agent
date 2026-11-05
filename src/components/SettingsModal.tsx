@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { Settings } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
-import { AccountSection, AuditSection, BackupSection, InfoSection, NotifySection, PolicySection } from './SettingsSections'
+import { AuditSection, BackupSection, InfoSection, NotifySection, PolicySection } from './SettingsSections'
 
 // 설정 화면. 모델·API 키는 바꿀 수 있고, 정책·정보·승인 기록은 Agent 설정과 WEB 기록을 보여준다.
 const SECTIONS = [
@@ -11,7 +11,6 @@ const SECTIONS = [
   { id: 'audit', label: '승인 기록' },
   { id: 'backup', label: '백업' },
   { id: 'about', label: '정보' },
-  { id: 'account', label: '계정' },
   { id: 'notify', label: '알림' },
 ] as const
 
@@ -80,7 +79,6 @@ export function SettingsModal({
           {sectionId === 'audit' && <AuditSection />}
           {sectionId === 'backup' && <BackupSection onDraft={onDraft} />}
           {sectionId === 'about' && <InfoSection activeServerId={activeServerId} />}
-          {sectionId === 'account' && <AccountSection />}
           {sectionId === 'notify' && <NotifySection />}
         </section>
       </div>

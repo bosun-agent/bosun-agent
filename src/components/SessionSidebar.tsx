@@ -15,8 +15,6 @@ interface SessionSidebarProps {
   onDeleteMany?: (ids: string[]) => void
   onRename: (id: string, title: string) => void
   onPin?: (id: string, pinned: boolean) => void
-  // 로그인했을 때만 있다(목업에는 없음)
-  onLogout?: () => void
 }
 
 // 열렸을 때만 그린다. 넓은 화면에서는 채팅을 오른쪽으로 밀고, 좁은 화면에서는 위에 겹친다.
@@ -32,7 +30,6 @@ export function SessionSidebar({
   onDeleteMany,
   onRename,
   onPin,
-  onLogout,
 }: SessionSidebarProps) {
   const [query, setQuery] = useState('')
   // 여러 개 골라 지우기. null이면 고르는 중이 아니다.
@@ -147,17 +144,6 @@ export function SessionSidebar({
           ))}
           {q && matched.length === 0 && <p className="px-1 py-2 text-xs text-neutral-500">찾는 대화가 없어요.</p>}
         </nav>
-        {onLogout && (
-          <div className="border-t border-neutral-200 px-2 py-2">
-            <button
-              type="button"
-              onClick={onLogout}
-              className="w-full rounded-md px-3 py-1.5 text-left text-sm text-neutral-600 hover:bg-neutral-200"
-            >
-              로그아웃
-            </button>
-          </div>
-        )}
       </aside>
     </>
   )

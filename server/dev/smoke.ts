@@ -2,6 +2,7 @@
 // 실행: npm run server:fake, npm run server를 띄운 뒤 npm run server:smoke
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { request } from 'node:http'
 import { dirname } from 'node:path'
 import type { AgentEvent } from '../../src/lib/agentProtocol.ts'
 import { readSSE } from '../../src/lib/sse.ts'
@@ -14,40 +15,42 @@ function check(name: string, ok: boolean, detail?: unknown) {
   console.info(`${ok ? 'ok  ' : 'FAIL'} ${name}`, ok ? '' : JSON.stringify(detail))
 }
 
-// ---- 로그인(server/auth.ts) ----
-// 아래 요청은 모두 로그인 쿠키와 X-Bosun 헤더를 붙여 보낸다. 브라우저 화면(httpAgent)과 같다.
+// ---- 이 PC에서만(server/guard.ts) ----
+// 아래 요청은 모두 X-Bosun 헤더를 붙여 보낸다. 브라우저 화면(httpAgent)과 같다.
 const rawFetch = globalThis.fetch
-let cookie = ''
 globalThis.fetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
   if (!String(input).startsWith(BASE)) return rawFetch(input, init)
   const headers = new Headers(init.headers)
   headers.set('X-Bosun', '1')
-  if (cookie) headers.set('Cookie', cookie)
   return rawFetch(input, { ...init, headers })
 }
-const login = (username: string, password: string) =>
-  fetch(`${BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+// fetch로는 Host를 바꿀 수 없어서 node:http로 보낸다.
+function rawRequest(method: string, path: string, headers: Record<string, string>): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = request(`${BASE}${path}`, { method, headers }, (res) => {
+      res.resume()
+      resolve(res.statusCode ?? 0)
+    })
+    req.on('error', reject)
+    req.end()
   })
+}
 {
-  const anon = await fetch(`${BASE}/api/sessions`)
-  check('로그인하지 않으면 401', anon.status === 401, anon.status)
-  const bad = await login('admin', 'wrong-password')
-  check('비밀번호가 틀리면 401', bad.status === 401, bad.status)
-  const noHeader = await rawFetch(`${BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'bosun-dev-password' }),
-  })
+  const list = await fetch(`${BASE}/api/sessions`)
+  check('로그인 없이 /api를 부른다', list.status === 200, list.status)
+  const noHeader = await rawFetch(`${BASE}/api/sessions`, { method: 'POST' })
   check('X-Bosun 헤더 없는 POST는 403', noHeader.status === 403, noHeader.status)
-  const ok = await login('admin', 'bosun-dev-password')
-  const set = ok.headers.get('set-cookie') ?? ''
-  cookie = set.split(';')[0]
-  check('로그인하면 HttpOnly·SameSite=Strict 쿠키', ok.status === 200 && /HttpOnly/i.test(set) && /SameSite=Strict/i.test(set), set)
-  const me = await fetch(`${BASE}/api/auth/me`)
-  check('로그인 뒤 /api/auth/me', me.status === 200 && ((await me.json()) as { username: string }).username === 'admin', me.status)
+  const rebind = await rawRequest('GET', '/api/sessions', { Host: 'evil.example:3001' })
+  const lan = await rawRequest('GET', '/api/sessions', { Host: '192.168.0.10:3001' })
+  const vite = await rawRequest('GET', '/api/sessions', { Host: 'localhost:5173' })
+  const v6 = await rawRequest('GET', '/api/sessions', { Host: '[::1]:3001' })
+  check('Host가 루프백이 아니면 403(DNS 리바인딩)', rebind === 403 && lan === 403 && vite === 200 && v6 === 200, [rebind, lan, vite, v6])
+  const cross = await rawRequest('POST', '/api/sessions', { 'X-Bosun': '1', Origin: 'https://evil.example' })
+  const nullOrigin = await rawRequest('POST', '/api/sessions', { 'X-Bosun': '1', Origin: 'null' })
+  const same = await rawRequest('POST', '/api/sessions', { 'X-Bosun': '1', Origin: 'http://localhost:5173' })
+  check('Origin이 루프백이 아니면 403', cross === 403 && nullOrigin === 403 && same === 201, [cross, nullOrigin, same])
+  const gone = await fetch(`${BASE}/api/auth/me`)
+  check('로그인 엔드포인트는 없다', gone.status === 404, gone.status)
 }
 
 async function post(path: string, body: unknown): Promise<{ status: number; events: AgentEvent[]; json?: unknown }> {
@@ -623,40 +626,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   check('더한 모델만 지울 수 있다', delEnv.status === 400 && del.status === 200 && !after.models.includes('openrouter/test/model-1'), after)
 }
 
-// ---- 비밀번호 변경 ----
 {
-  const change = (current: string, next: string) =>
-    fetch(`${BASE}/api/auth/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current, next }) })
-  const wrong = await change('not-the-password', 'new-password-123')
-  const weak = await change('bosun-dev-password', 'short')
-  const oldCookie = cookie
-  const ok = await change('bosun-dev-password', 'new-password-123')
-  const newCookie = (ok.headers.get('set-cookie') ?? '').split(';')[0]
-  check('비밀번호 변경: 틀리면 403, 짧으면 400, 맞으면 204 + 새 쿠키', wrong.status === 403 && weak.status === 400 && ok.status === 204 && newCookie.startsWith('bosun_session='), [wrong.status, weak.status, ok.status])
-  cookie = oldCookie
-  const stale = await fetch(`${BASE}/api/auth/me`)
-  cookie = newCookie
-  const fresh = await fetch(`${BASE}/api/auth/me`)
-  check('비밀번호를 바꾸면 전에 받은 쿠키는 401', stale.status === 401 && fresh.status === 200, [stale.status, fresh.status])
-  const back = await change('new-password-123', 'bosun-dev-password')
-  cookie = (back.headers.get('set-cookie') ?? '').split(';')[0]
-  check('바꾼 비밀번호로 다시 바꿀 수 있다', back.status === 204, back.status)
-}
-
-{
-  // 승인 감사 기록에 로그인한 사용자가 남는다.
+  // 승인 감사 기록에는 화면에서 누른 결정이 local로 남는다(만료 자동 거부는 system).
   const db = process.env.WEB_DB_PATH
   if (db && db !== ':memory:') {
     const { DatabaseSync } = await import('node:sqlite')
     const users = new DatabaseSync(db).prepare("SELECT DISTINCT user FROM approval_audit WHERE user != 'system'").all()
-    check('승인 감사 기록에 로그인한 사용자', users.every((u) => u.user === 'admin'), users)
+    check('승인 감사 기록의 user는 local', users.every((u) => u.user === 'local'), users)
   }
-  const out = await fetch(`${BASE}/api/auth/logout`, { method: 'POST' })
-  check('로그아웃하면 쿠키를 지운다', out.status === 204 && /bosun_session=;/.test(out.headers.get('set-cookie') ?? ''), out.headers.get('set-cookie'))
-  cookie = ''
-  for (let i = 0; i < 5; i++) await login('admin', 'wrong-password')
-  const locked = await login('admin', 'bosun-dev-password')
-  check('5번 틀리면 맞는 비밀번호도 잠깐 막힌다(429)', locked.status === 429, locked.status)
 }
 
 console.info(failures ? `${failures} failure(s)` : 'all passed')

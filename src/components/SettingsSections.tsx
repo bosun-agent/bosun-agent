@@ -1,9 +1,9 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { AgentConfigSummary, AuditRecord, BackupRecord, SessionUsage, SystemInfo, UsageTotals } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 import { notifyEnabled, setNotifyEnabled } from '../lib/notify'
 
-// 설정 창의 정책·승인 기록·정보·계정·알림 화면.
+// 설정 창의 정책·승인 기록·정보·알림 화면.
 // 정책은 Agent 설정(agent.yaml)에서 고른 값을 읽어서 보여준다. 웹에서 바꾸는 기능은 팀 결정이 필요하다(계약 7장).
 
 function useLoad<T>(load: (() => Promise<T>) | undefined) {
@@ -171,7 +171,7 @@ export function AuditSection() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{r.summary ?? '(지운 대화의 카드)'}</span>
                 <span className="block text-[11px] text-neutral-500">
-                  {new Date(r.at).toLocaleString()} · {r.user === 'system' ? '자동(만료)' : r.user} · <code>{r.tool}</code>
+                  {new Date(r.at).toLocaleString()} · {r.user === 'system' ? '자동(만료)' : '사용자'} · <code>{r.tool}</code>
                   {r.target && ` · ${r.target}`}
                 </span>
               </span>
@@ -304,53 +304,6 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
         </Box>
       )}
     </div>
-  )
-}
-
-// ---- 계정 ----
-
-export function AccountSection() {
-  const [current, setCurrent] = useState('')
-  const [next, setNext] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
-
-  if (!agent.changePassword) return <Note>목업 모드에는 로그인이 없어요.</Note>
-
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (busy) return
-    if (next !== confirm) {
-      setResult({ ok: false, message: '새 비밀번호 두 칸이 달라요.' })
-      return
-    }
-    setBusy(true)
-    setResult(null)
-    const res = await agent.changePassword!(current, next)
-    setBusy(false)
-    if (res.ok) {
-      setCurrent('')
-      setNext('')
-      setConfirm('')
-      setResult({ ok: true, message: '바꿨어요. 다른 브라우저에 로그인돼 있었다면 거기서는 다시 로그인해야 해요.' })
-    } else {
-      setResult({ ok: false, message: res.message })
-    }
-  }
-
-  const field = 'w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm'
-  return (
-    <form onSubmit={submit} className="max-w-sm space-y-2">
-      <Note>관리자 비밀번호를 바꿔요. 10자 이상으로 정해주세요. 잊어버리면 서버에서 `npm run set-password`로 다시 정할 수 있어요.</Note>
-      <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="지금 비밀번호" autoComplete="current-password" aria-label="지금 비밀번호" className={field} />
-      <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="새 비밀번호" autoComplete="new-password" aria-label="새 비밀번호" className={field} />
-      <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="새 비밀번호 다시" autoComplete="new-password" aria-label="새 비밀번호 다시" className={field} />
-      <button type="submit" disabled={busy || !current || next.length < 10} className="rounded-md bg-neutral-800 px-3 py-2 text-sm text-white disabled:opacity-40">
-        비밀번호 바꾸기
-      </button>
-      {result && <p className={`text-sm ${result.ok ? 'text-neutral-700' : 'text-red-600'}`}>{result.message}</p>}
-    </form>
   )
 }
 

@@ -17,8 +17,8 @@ import type {
 } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import { listBackups } from './backups.ts'
-import { changePassword, checkLogin, endSession, requireAuth, startSession, MIN_PASSWORD, type AuthEnv } from './auth.ts'
 import { config } from './config.ts'
+import { LOCAL_USER, localOnly } from './guard.ts'
 import { maskText } from './mask.ts'
 import { addModel, getSettings, removeModel, saveApiKey, saveModel, validApiKey, validModelRef } from './settings.ts'
 import { cardSummaries, cardsFor, copyCards, deleteCards, pinnedSessions, recentDecisions, setPinned, usageSince } from './store.ts'
@@ -36,7 +36,7 @@ import {
   type Sink,
 } from './turns.ts'
 
-export const app = new Hono<AuthEnv>()
+export const app = new Hono()
 
 // 보안 헤더. 화면은 같은 출처의 스크립트와 /api만 쓴다. 마크다운의 HTML·이미지는 그리지 않지만(계약 7.1)
 // 화면에 섞인 외부 문자열이 스크립트로 실행되는 경우에 대비해 CSP로 한 번 더 막는다.
@@ -123,40 +123,8 @@ function requireIdle(sessionId: string): void {
 
 // ---- 브라우저용 /api ----
 
-// 로그인 말고는 모두 로그인한 관리자만 부른다(server/auth.ts).
-app.use('/api/*', requireAuth)
-
-app.post('/api/auth/login', async (c) => {
-  const body = await jsonBody<{ username: unknown; password: unknown }>(c)
-  const result = checkLogin(body.username, body.password)
-  if (!result.ok) {
-    if (result.locked) throw new HttpError(429, 'LOCKED', '로그인 시도가 많아요. 잠시 후 다시 시도해주세요.')
-    throw new HttpError(401, 'BAD_CREDENTIALS', '아이디나 비밀번호가 맞지 않아요.')
-  }
-  await startSession(c, body.username as string)
-  return c.json({ username: body.username })
-})
-
-app.post('/api/auth/logout', (c) => {
-  endSession(c)
-  return c.body(null, 204)
-})
-
-app.get('/api/auth/me', (c) => c.json({ username: c.get('user') }))
-
-// 비밀번호를 바꾸면 다른 곳에 로그인된 쿠키는 끊기고, 이 브라우저에는 새 쿠키를 준다.
-app.put('/api/auth/password', async (c) => {
-  const body = await jsonBody<{ current: unknown; next: unknown }>(c)
-  const result = changePassword(body.current, body.next)
-  if (!result.ok) {
-    if (result.reason === 'locked') throw new HttpError(429, 'LOCKED', '시도가 많아요. 잠시 후 다시 시도해주세요.')
-    if (result.reason === 'wrong') throw new HttpError(403, 'BAD_CREDENTIALS', '지금 비밀번호가 맞지 않아요.')
-    throw new HttpError(400, 'WEAK_PASSWORD', `새 비밀번호는 ${MIN_PASSWORD}자 이상이고 지금 비밀번호와 달라야 해요.`)
-  }
-  await startSession(c, c.get('user'))
-  console.info('[auth] admin password changed; other sessions signed out')
-  return c.body(null, 204)
-})
+// 이 PC의 화면만 부른다(server/guard.ts).
+app.use('/api/*', localOnly)
 
 app.post('/api/sessions', async (c) => {
   const sessionId = await agent.createSession()
@@ -346,7 +314,7 @@ app.post('/api/sessions/:id/approvals/:approvalId', async (c) => {
   }
   // reason은 만료 거부("expired")만 받는다. 그 밖의 값은 버린다.
   const reason = body.decision === 'deny' && body.reason === 'expired' ? 'expired' : undefined
-  const attach = await decide(c.req.param('id'), c.req.param('approvalId'), body.decision as ApprovalDecision, c.get('user'), reason)
+  const attach = await decide(c.req.param('id'), c.req.param('approvalId'), body.decision as ApprovalDecision, LOCAL_USER, reason)
   return streamTo(c, attach)
 })
 

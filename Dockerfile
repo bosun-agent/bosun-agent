@@ -4,7 +4,8 @@
 #   docker build -t bosun-web .
 #   docker run --env-file web.env -p 127.0.0.1:3001:3001 -v bosun_web_data:/data bosun-web
 #
-# web.env에 넣을 값은 README의 "실제 Docker Agent에 붙일 때"와 같다. ADMIN_PASSWORD_HASH와 JWT_SECRET이 없으면 뜨지 않는다.
+# web.env에 넣을 값은 README의 "진짜 Agent로 띄우기"와 같다. 로그인이 없으므로 -p는 꼭 127.0.0.1로 연다
+# (컨테이너 안은 0.0.0.0이라 HOST_IN_CONTAINER=1로 루프백 검사를 넘긴다).
 # AGENT_URL은 컨테이너 밖 Docker Agent 주소다(같은 compose면 서비스 이름, 예: http://agent:8080).
 
 FROM node:22.19-alpine AS build
@@ -26,7 +27,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY src/lib/agentProtocol.ts src/lib/sse.ts ./src/lib/
 COPY --from=build /app/dist ./dist
-# 개발용 값(가짜 Agent, 개발 계정)은 이미지에 넣지 않는다.
+# 개발용 값(가짜 Agent)은 이미지에 넣지 않는다.
 RUN rm -rf server/dev && mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data

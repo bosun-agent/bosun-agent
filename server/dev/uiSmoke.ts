@@ -1,4 +1,4 @@
-// 화면 스모크 테스트. 브라우저로 로그인부터 승인·멈춤·다시 붙기·설정 화면까지 눌러 본다.
+// 화면 스모크 테스트. 브라우저로 첫 화면부터 승인·멈춤·다시 붙기·설정 화면까지 눌러 본다.
 // 실행: npm run server:fake, npm run server, npm run dev:http를 띄운 뒤 npm run test:ui
 // 운영 빌드(STATIC_DIR=dist)로 확인하려면 URL=http://127.0.0.1:3001/ npm run test:ui
 // 브라우저는 설치된 Chrome을 쓴다(CHROME_PATH). 캡처를 남기려면 SHOTS=<폴더>.
@@ -16,8 +16,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } })
 const page = await ctx.newPage()
 const errors: string[] = []
-// 로그인 전 /api/auth/me 401은 정상이다.
-page.on('console', (m) => m.type() === 'error' && !/status of 401/.test(m.text()) && errors.push(m.text()))
+page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
 page.on('pageerror', (e) => errors.push(String(e)))
 const shot = async (name: string) => {
   if (OUT) await page.screenshot({ path: `${OUT}/${name}.png` })
@@ -36,12 +35,10 @@ async function newChat() {
   await page.getByRole('button', { name: '+ 새 대화' }).click()
 }
 
-// 로그인
+// 로그인 없이 바로 Home
 await page.goto(URL)
-await page.getByLabel('비밀번호').fill('bosun-dev-password')
-await page.getByRole('button', { name: '로그인' }).click()
 await input().waitFor()
-check('로그인 뒤 Home', await page.getByText('BOSUN', { exact: true }).first().isVisible())
+check('로그인 없이 바로 Home', await page.getByText('BOSUN', { exact: true }).first().isVisible() && !(await page.getByText('로그인').count()))
 
 // 예시 버튼 → 입력창 채우기
 await page.getByRole('button', { name: '실행 중인 컨테이너 목록 보여줘' }).click()
@@ -115,7 +112,7 @@ await newChat()
 await send('nginx 지워줘')
 await page.getByText('승인이 필요해요').waitFor()
 {
-  // 다른 대화는 API로 보내고 승인한다. 화면과 같은 로그인 쿠키에 X-Bosun 헤더를 붙인다.
+  // 다른 대화는 API로 보내고 승인한다. 화면처럼 X-Bosun 헤더를 붙인다.
   const headers = { 'X-Bosun': '1' }
   const { sessionId } = (await (await page.request.post(`${URL}api/sessions`, { headers })).json()) as { sessionId: string }
   const sent = await (await page.request.post(`${URL}api/sessions/${sessionId}/messages`, { headers, data: { text: 'nginx 지워줘' } })).text()
@@ -227,8 +224,7 @@ check('모델을 더할 수 있다', true)
 await page.getByRole('button', { name: '빼기' }).click()
 await page.getByText('openrouter/test/extra').waitFor({ state: 'detached' })
 check('더한 모델을 뺄 수 있다', true)
-await page.getByRole('button', { name: '계정' }).click()
-check('계정: 비밀번호 바꾸기 화면', await page.getByRole('button', { name: '비밀번호 바꾸기' }).isVisible())
+check('설정에 계정 탭이 없다', (await page.getByRole('button', { name: '계정' }).count()) === 0)
 await page.getByRole('button', { name: '알림' }).click()
 check('알림 화면', await page.getByText('승인이 필요하면 브라우저 알림 보내기').isVisible())
 await page.getByLabel('설정 닫기').click()

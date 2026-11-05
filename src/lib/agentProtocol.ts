@@ -196,6 +196,4 @@ export interface AgentClient {
   getAudit?(limit?: number): Promise<AuditRecord[]>
   // available: false면 WEB 백엔드에 백업 파일 위치가 없다(BACKUP_DB, AGENT_ENV_FILE).
   getBackups?(): Promise<{ available: boolean; records: BackupRecord[] }>
-  // 실패하면 화면에 보여줄 문장을 준다.
-  changePassword?(current: string, next: string): Promise<{ ok: true } | { ok: false; message: string }>
 }

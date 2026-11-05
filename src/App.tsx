@@ -65,7 +65,7 @@ function titleFor(text: string) {
   return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX)}…` : line || '새 대화'
 }
 
-function App({ onLogout }: { onLogout?: () => void }) {
+function App() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => [newSession()])
   const [activeId, setActiveId] = useState(() => sessions[0].id)
   // 이 화면에서 처리 중인 대화(승인 대기 포함). 대화마다 따로 처리한다(인터페이스 계약 3장).
@@ -628,7 +628,6 @@ function App({ onLogout }: { onLogout?: () => void }) {
           onDeleteMany={handleDeleteMany}
           onRename={handleRename}
           onPin={agent.pinSession || !agent.listSessions ? handlePin : undefined}
-          onLogout={onLogout}
         />
       )}
 

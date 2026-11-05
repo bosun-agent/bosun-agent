@@ -12,8 +12,10 @@ function num(name: string, fallback: number): number {
 }
 
 export const config = {
-  // 브라우저(Vite 개발 서버 프록시)가 붙는 주소. 로그인을 붙이기 전까지는 루프백에서만 연다(계약 3장).
+  // 브라우저(Vite 개발 서버 프록시)가 붙는 주소. 로그인이 없으므로 루프백에서만 연다(계약 3장, main.ts).
   host: process.env.HOST ?? '127.0.0.1',
+  // 컨테이너 안에서만 1로 둔다. 컨테이너 안은 0.0.0.0으로 열고, 밖에서는 `-p 127.0.0.1:...`로만 내보낸다(Dockerfile).
+  inContainer: process.env.HOST_IN_CONTAINER === '1',
   port: num('PORT', 3001),
 
   // Docker Agent API 서버(`docker agent serve api`). 기본 주소는 Agent 담당 확인값(계약 7장).
@@ -34,14 +36,6 @@ export const config = {
   agentEnvFile: process.env.AGENT_ENV_FILE ?? '',
   // 그 파일에서 바꿀 키 이름. agent.yaml 모델의 provider에 맞춘다.
   agentKeyName: process.env.AGENT_KEY_NAME ?? 'OPENROUTER_API_KEY',
-
-  // 로그인(관리자 한 명, server/auth.ts). 비밀번호 해시와 서명 키는 `npm run set-password -- <env 파일>`로 만든다.
-  adminUsername: process.env.ADMIN_USERNAME ?? 'admin',
-  adminPasswordHash: process.env.ADMIN_PASSWORD_HASH ?? '',
-  jwtSecret: process.env.JWT_SECRET ?? '',
-  sessionHours: num('SESSION_HOURS', 12),
-  // HTTPS가 아닌 곳(로컬 개발)에서만 0으로 둔다. 기본은 Secure 쿠키다.
-  cookieSecure: process.env.COOKIE_SECURE !== '0',
 
   // 승인·차단 카드와 승인 감사 기록을 두는 SQLite 파일. 대화 내용은 Docker Agent session.db에 있다.
   dbPath: process.env.WEB_DB_PATH ?? 'server/data/web.db',
