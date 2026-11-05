@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { AgentConfigSummary, AuditRecord, BackupRecord, SessionUsage, SystemInfo, UsageTotals } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
+import { agentStateText, restartAgent, useAgentStatus } from '../lib/agentStatus'
 import { notifyEnabled, setNotifyEnabled } from '../lib/notify'
 
 // 설정 창의 정책·승인 기록·정보·알림 화면.
@@ -196,6 +197,8 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
   const { data: usage } = useLoad<SessionUsage>(agent.getUsage && activeServerId ? () => agent.getUsage!(activeServerId) : undefined)
   const { data: totals } = useLoad<UsageTotals>(agent.getUsageTotals)
   const [tools, setTools] = useState<number | 'loading' | 'failed' | null>(null)
+  const [proc, setProc] = useAgentStatus()
+  const canRestart = proc?.managed && proc.state !== 'external' && proc.state !== 'starting' && proc.state !== 'restarting'
 
   async function countTools() {
     if (!agent.getToolCount) return
@@ -218,6 +221,27 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
             {a.reachable ? (a.ready === false ? '연결됨(준비 안 됨)' : '연결됨') : '연결 안 됨'}
             {a.error && <span className="block text-xs text-red-600">{a.error}</span>}
           </dd>
+          {proc && (
+            <>
+              <dt className="text-neutral-500">Agent 실행</dt>
+              <dd>
+                {agentStateText(proc)}
+                {proc.restarts > 0 && <span className="text-xs text-neutral-500"> · 다시 시작 {proc.restarts}번</span>}
+                {canRestart && (
+                  <button
+                    type="button"
+                    onClick={() => void restartAgent(setProc)}
+                    className="ml-2 rounded-md border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                  >
+                    다시 시작
+                  </button>
+                )}
+                {proc.state === 'external' && (
+                  <span className="block text-xs text-neutral-500">WEB이 띄운 Agent가 아니라서 다시 시작은 Agent를 띄운 창에서 해주세요.</span>
+                )}
+              </dd>
+            </>
+          )}
           <dt className="text-neutral-500">Agent 버전</dt>
           {/* 실제 Docker Agent(v1.148.0)는 /health에 빈 버전을 준다(2026-10-28 실측). */}
           {a.version ? (

@@ -16,7 +16,8 @@
     "lint": "oxlint",
     "build:demo": "tsc -b && vite build --mode demo",
     "preview": "vite preview",
-    "test:ui": "node server/dev/uiSmoke.ts"
+    "test:ui": "node server/dev/uiSmoke.ts",
+    "test:agent": "node server/dev/agentSmoke.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",

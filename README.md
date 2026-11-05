@@ -16,8 +16,9 @@ WEB 백엔드까지 같이 돌리려면 터미널 3개를 띄운다. 실제 Agen
 npm run server:fake  # 가짜 Docker Agent(8080)
 npm run server       # WEB 백엔드(3001). 코드를 고치면 다시 뜬다
 npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
-npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트(94항목)
-npm run test:ui      # (선택) 브라우저 화면 테스트(42항목). 설치된 Chrome을 쓴다(CHROME_PATH)
+npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트(95항목)
+npm run test:ui      # (선택) 브라우저 화면 테스트(43항목). 설치된 Chrome을 쓴다(CHROME_PATH)
+npm run test:agent   # (선택) 백엔드가 Agent를 띄우고 다시 시작하는 흐름(9항목). 백엔드를 직접 띄우므로 따로 켤 것이 없다
 ```
 
 화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`).
@@ -32,15 +33,14 @@ npm run test:ui      # (선택) 브라우저 화면 테스트(42항목). 설치�
 
 ### 진짜 Agent로 띄우기
 
-Docker Desktop과 Portainer 컨테이너(`bosun-portainer`)를 켠 뒤 터미널 3개를 띄운다. PowerShell이든 Git Bash든 같다.
+Docker Desktop과 Portainer 컨테이너(`bosun-portainer`)를 켠 뒤 터미널 2개를 띄운다. PowerShell이든 Git Bash든 같다.
 
 ```bash
-npm run agent      # Docker Agent(8080)
-npm start          # WEB 백엔드(3001). 코드를 바꿨으면 다시 띄운다
+npm start          # WEB 백엔드(3001) + Docker Agent(8080). 코드를 바꿨으면 다시 띄운다
 npm run dev:http   # 화면 → http://localhost:5173
 ```
 
-셋 다 `server/real.env`(커밋하지 않는다)를 읽는다. 끌 때는 각 터미널에서 Ctrl+C를 누른다. `bosun-portainer`는 끄지 않는다(Agent가 Portainer에 붙지 못한다).
+둘 다 `server/real.env`(커밋하지 않는다)를 읽는다. `AGENT_BIN`이 있으면 `npm start`가 Docker Agent를 같이 띄우고 관리한다(`server/agentProcess.ts`). Agent가 죽으면 다시 띄우고, 설정 화면에서 API 키를 바꾸면 다시 시작한다(처리 중인 대화가 있으면 끝난 뒤). 상태는 화면 위쪽 안내와 설정 > 정보에 나온다. 끌 때는 각 터미널에서 Ctrl+C를 누르면 Agent도 같이 꺼진다. 백엔드가 강제로 꺼져 Agent가 남았으면 다음 `npm start`가 그 Agent를 끝내고 새로 띄운다. `npm run agent`는 Agent 로그만 따로 보고 싶을 때 쓴다. 그렇게 띄운 Agent가 먼저 떠 있으면 `npm start`는 그것을 쓰고, API 키를 바꿔도 다시 시작하지 못한다. `bosun-portainer`는 끄지 않는다(Agent가 Portainer에 붙지 못한다).
 
 다른 PC에서 처음 할 때는 `server/real.env`를 이렇게 만든다.
 
@@ -57,7 +57,7 @@ AGENT_MODELS=openrouter/deepseek/deepseek-v4.1-flash
 
 `PORTAINER_URL`의 Portainer가 자체 서명 인증서를 쓰면 링크를 처음 열 때 브라우저가 경고를 띄운다. 주소가 맞으면 계속 진행하면 된다.
 
-설정 화면에서 API 키를 바꾸면 `npm run agent`를 다시 띄워야 적용된다. 예전 `real.env`에 남은 `ADMIN_USERNAME`·`ADMIN_PASSWORD_HASH`·`JWT_SECRET`·`COOKIE_SECURE`는 더 이상 읽지 않으니 지워도 된다.
+예전 `real.env`에 남은 `ADMIN_USERNAME`·`ADMIN_PASSWORD_HASH`·`JWT_SECRET`·`COOKIE_SECURE`는 더 이상 읽지 않으니 지워도 된다.
 
 ### 배포
 
@@ -86,7 +86,8 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 | `guard.ts` | 이 PC의 화면만 `/api`를 부르게 막기: Host·Origin 루프백 검사, `X-Bosun` 헤더 검사 |
 | `settings.ts` | 설정 화면 값: 모델 목록(`AGENT_MODELS` + 화면에서 더한 것), API 키를 Agent env 파일에 쓰기 |
 | `config.ts` | 환경변수 읽기 |
-| `runAgent.ts` | `npm run agent`: `server/real.env` 값으로 실제 Docker Agent(`serve api`)를 띄운다 |
+| `agentProcess.ts` | Docker Agent를 자식 프로세스로 띄우고 관리: 죽으면 다시 띄우기, API 키를 바꾸면 다시 시작, 남은 Agent 정리(PID 파일) |
+| `runAgent.ts` | `npm run agent`: Agent만 따로 띄운다(로그를 따로 볼 때) |
 | `dev/` | 개발용 값(`dev.env`), 가짜 Docker Agent(`fakeUpstream.ts`), 백엔드 스모크 테스트(`smoke.ts`), 화면 테스트(`uiSmoke.ts`), 연동 확인용 `agent.yaml` |
 
 ## 목업으로 화면 상태 테스트하기

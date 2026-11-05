@@ -4,6 +4,8 @@
 import type {
   AgentClient,
   AgentEvent,
+  AgentProcessStatus,
+  AgentRestart,
   AuditRecord,
   BackupRecord,
   RestoredMessage,
@@ -142,4 +144,8 @@ export const httpAgent: AgentClient = {
   async saveApiKey(apiKey) {
     return json<Settings>('/api/settings/api-key', { method: 'PUT', body: JSON.stringify({ apiKey }) })
   },
+
+  getAgentStatus: () => json<AgentProcessStatus>('/api/agent'),
+
+  restartAgent: () => json<{ restart: AgentRestart; status: AgentProcessStatus }>('/api/agent/restart', { method: 'POST' }),
 }

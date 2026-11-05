@@ -24,6 +24,12 @@ export const config = {
   agentName: process.env.AGENT_NAME ?? 'agent',
   // `serve api --auth-token`을 켰을 때만 넣는다.
   agentToken: process.env.AGENT_TOKEN ?? '',
+  // docker-agent 실행 파일(v1.148.0 이상). 있으면 WEB 백엔드가 Agent를 띄우고 관리한다(server/agentProcess.ts).
+  // Docker Desktop에 든 플러그인(docker agent)은 버전이 낮으면 agent.yaml의 safety 같은 키를 읽지 못한다.
+  agentBin: process.env.AGENT_BIN ?? '',
+  // agent.yaml과 session.db. 비어 있으면 AGENT_ENV_FILE과 같은 폴더의 <AGENT_NAME>.yaml, session.db.
+  agentConfig: process.env.AGENT_CONFIG ?? '',
+  agentSessionDb: process.env.AGENT_SESSION_DB ?? '',
   // 설정 화면에서 고를 수 있는 모델. 쉼표로 나눈 `provider/model` 또는 agent.yaml models의 이름.
   // 비어 있으면 모델을 고르지 않고 agent.yaml에 적힌 모델을 쓴다.
   agentModels: (process.env.AGENT_MODELS ?? '')

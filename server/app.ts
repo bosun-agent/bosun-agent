@@ -16,6 +16,7 @@ import type {
   UsageTotals,
 } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
+import { agentStarting, agentStatus, restartAgent } from './agentProcess.ts'
 import { listBackups } from './backups.ts'
 import { config } from './config.ts'
 import { LOCAL_USER, localOnly } from './guard.ts'
@@ -303,6 +304,7 @@ app.post('/api/sessions/:id/messages', async (c) => {
   if (body.text.length > config.maxMessageChars) {
     throw new HttpError(400, 'TOO_LONG', `메시지는 ${config.maxMessageChars.toLocaleString()}자까지 보낼 수 있어요.`)
   }
+  if (agentStarting()) throw new HttpError(503, 'AGENT_STARTING', 'AI Agent를 켜는 중이에요. 잠시 후 다시 보내주세요.')
   const attach = await startTurn(c.req.param('id'), body.text)
   return streamTo(c, attach)
 })
@@ -346,15 +348,31 @@ app.delete('/api/settings/models', (c) => {
   return c.json(getSettings())
 })
 
-// API 키는 Docker Agent env 파일에 쓴다. Agent를 다시 시작해야 적용된다(계약 7장 ①).
+// API 키는 Docker Agent env 파일에 쓴다. Agent는 시작할 때 키를 읽으므로 WEB이 띄운 Agent면 다시 시작한다(계약 7장 ①).
+// 처리 중인 대화가 있으면 끝난 뒤에 다시 시작한다(server/agentProcess.ts).
 app.put('/api/settings/api-key', async (c) => {
   if (!config.agentEnvFile) throw new HttpError(409, 'NOT_EDITABLE', 'API 키를 바꿀 수 없게 설정돼 있어요.')
   const body = await jsonBody<{ apiKey: unknown }>(c)
   const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : undefined
   if (!validApiKey(apiKey)) throw new HttpError(400, 'BAD_REQUEST', 'API 키 형식이 올바르지 않아요.')
   saveApiKey(apiKey)
-  console.info(`[settings] ${config.agentKeyName} updated; restart Docker Agent to apply`)
-  return c.json(getSettings())
+  const agentRestart = restartAgent()
+  console.info(`[settings] ${config.agentKeyName} updated; agent restart: ${agentRestart}`)
+  return c.json({ ...getSettings(), agentRestart })
+})
+
+// WEB이 띄운 Docker Agent 상태(server/agentProcess.ts). 화면이 몇 초마다 부른다.
+app.get('/api/agent', async (c) => {
+  const reachable = await agent.health().then(
+    (h) => h.status === 'ok',
+    () => false,
+  )
+  return c.json({ ...agentStatus(), reachable })
+})
+
+app.post('/api/agent/restart', (c) => {
+  const restart = restartAgent()
+  return c.json({ restart, status: agentStatus() })
 })
 
 // 정보·정책 화면. Docker Agent 상태와 agent.yaml 요약(server/system.ts).

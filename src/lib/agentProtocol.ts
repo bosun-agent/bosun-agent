@@ -94,6 +94,28 @@ export interface Settings {
   apiKey: { editable: boolean; set: boolean }
   // 정책 차단 안내의 "Portainer 열기" 링크. WEB 백엔드에 PORTAINER_URL이 없으면 빠진다.
   portainerUrl?: string
+  // PUT /api/settings/api-key 응답에만 있다. 새 키를 적용하려고 Agent를 다시 시작했는지(AgentRestart).
+  agentRestart?: AgentRestart
+}
+
+// Agent 다시 시작 요청 결과. started: 지금 다시 시작함, waiting: 처리 중인 대화가 끝나면 다시 시작함,
+// manual: WEB이 띄운 Agent가 아니라서 사람이 다시 띄워야 함.
+export type AgentRestart = 'started' | 'waiting' | 'manual'
+
+// WEB 백엔드가 띄운 Docker Agent 상태(계약 3장 GET /api/agent).
+export interface AgentProcessStatus {
+  // false면 WEB이 Agent를 띄우지 않는다(AGENT_BIN 없음). AGENT_URL에 붙기만 한다.
+  managed: boolean
+  // off: 관리 안 함, starting·restarting: 켜는 중, running: 켜짐, external: 이미 떠 있던 Agent를 씀, crashed: 멈춤(다시 시작 필요)
+  state: 'off' | 'starting' | 'restarting' | 'running' | 'external' | 'crashed'
+  // 이 백엔드가 뜬 뒤 Agent를 다시 띄운 횟수
+  restarts: number
+  // 처리 중인 대화가 끝나면 다시 시작한다
+  pendingRestart?: boolean
+  // 마지막 오류(가림). running이면 없다
+  error?: string
+  // Agent가 /health에 답하는지. GET /api/agent가 그때 확인한다
+  reachable?: boolean
 }
 
 // 설정의 정보·정책 화면(계약 3장 GET /api/system). agent.yaml에서 고른 값만 온다.
@@ -196,4 +218,6 @@ export interface AgentClient {
   getAudit?(limit?: number): Promise<AuditRecord[]>
   // available: false면 WEB 백엔드에 백업 파일 위치가 없다(BACKUP_DB, AGENT_ENV_FILE).
   getBackups?(): Promise<{ available: boolean; records: BackupRecord[] }>
+  getAgentStatus?(): Promise<AgentProcessStatus>
+  restartAgent?(): Promise<{ restart: AgentRestart; status: AgentProcessStatus }>
 }

@@ -53,6 +53,13 @@ function rawRequest(method: string, path: string, headers: Record<string, string
   check('로그인 엔드포인트는 없다', gone.status === 404, gone.status)
 }
 
+// ---- Agent 관리(server/agentProcess.ts). AGENT_BIN이 없으면 붙기만 한다. 관리 흐름은 npm run test:agent ----
+{
+  const s = (await (await fetch(`${BASE}/api/agent`)).json()) as { managed: boolean; state: string; reachable?: boolean }
+  const restart = (await (await fetch(`${BASE}/api/agent/restart`, { method: 'POST' })).json()) as { restart: string }
+  check('AGENT_BIN이 없으면 관리 안 함(off), 다시 시작은 manual', !s.managed && s.state === 'off' && s.reachable === true && restart.restart === 'manual', [s, restart])
+}
+
 async function post(path: string, body: unknown): Promise<{ status: number; events: AgentEvent[]; json?: unknown }> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',

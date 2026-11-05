@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AgentStatusBanner } from './components/AgentStatusBanner'
 import { ChatInput } from './components/ChatInput'
 import { DevScenarioBar } from './components/DevScenarioBar'
 import { HelpPanel } from './components/HelpPanel'
@@ -637,6 +638,7 @@ function App() {
             <SidebarToggle label="대화 목록 열기" onClick={() => setSidebarOpen(true)} />
           </div>
         )}
+        <AgentStatusBanner />
 
         {isEmpty ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto py-12">

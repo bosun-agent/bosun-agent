@@ -189,12 +189,20 @@ function ModelSection() {
   )
 }
 
+// Agent는 시작할 때 키를 읽는다. WEB이 띄운 Agent면 저장한 뒤 다시 시작한다(계약 7장 ①).
+const SAVED_TEXT: Record<NonNullable<Settings['agentRestart']> | 'saved', string> = {
+  started: '저장했어요. 새 키로 AI Agent를 다시 켜고 있어요.',
+  waiting: '저장했어요. 처리 중인 대화가 끝나면 AI Agent를 다시 켜서 새 키를 적용해요.',
+  manual: '저장했어요. AI Agent를 띄운 창에서 Agent를 다시 시작해야 새 키가 적용돼요.',
+  saved: '저장했어요. AI Agent를 다시 시작해야 새 키가 적용돼요.',
+}
+
 // 키는 Agent env 파일에 저장된다. 화면은 키 값을 다시 받지 않고 저장 여부만 보여준다.
 function ApiKeySection() {
   const { settings, setSettings, failed } = useSettings()
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [saved, setSaved] = useState<Settings['agentRestart'] | 'saved' | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
 
   async function save(e: FormEvent) {
@@ -202,12 +210,13 @@ function ApiKeySection() {
     const apiKey = value.trim()
     if (!agent.saveApiKey || saving || !apiKey) return
     setSaving(true)
-    setSaved(false)
+    setSaved(null)
     setSaveFailed(false)
     try {
-      setSettings(await agent.saveApiKey(apiKey))
+      const next = await agent.saveApiKey(apiKey)
+      setSettings(next)
       setValue('')
-      setSaved(true)
+      setSaved(next.agentRestart ?? 'saved')
     } catch {
       setSaveFailed(true)
     } finally {
@@ -238,7 +247,7 @@ function ApiKeySection() {
           저장
         </button>
       </div>
-      {saved && <p className="px-1 text-sm text-neutral-700">저장했어요. AI Agent를 다시 시작해야 새 키가 적용돼요.</p>}
+      {saved && <p className="px-1 text-sm text-neutral-700">{SAVED_TEXT[saved]}</p>}
       {saveFailed && <p className="px-1 text-sm text-red-600">저장하지 못했어요. 키를 확인하고 다시 시도해주세요.</p>}
     </form>
   )
