@@ -1,6 +1,6 @@
-// Docker Agent API 서버 클라이언트. 엔드포인트 대응은 인터페이스 계약 8.1에 있다.
+// Docker Agent API 서버 클라이언트.
 // 승인 절차를 끄거나 바꾸는 엔드포인트(tools/toggle, safety-policy, permissions)는 부르지 않는다.
-// resume은 approve와 reject만 보낸다. approve-tool 등은 세션 권한을 넓힌다(계약 5장).
+// resume은 approve와 reject만 보낸다. approve-tool 등은 세션 권한을 넓힌다.
 
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
@@ -87,7 +87,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
 }
 
 export async function createSession(): Promise<string> {
-  // safety_policy를 보내지 않는다. 정책은 agent.yaml(`safety`, `permissions`) 한 곳에서 정한다(계약 6장).
+  // safety_policy를 보내지 않는다. 정책은 agent.yaml(`safety`, `permissions`) 한 곳에서 정한다.
   const res = await request('/api/sessions', { method: 'POST', body: '{}' })
   const session = (await res.json()) as { id: string }
   return session.id
@@ -155,7 +155,7 @@ export async function toolCount(agentName: string): Promise<number> {
 
 // Agent 스트림은 fetch 대신 node:http로 연다. Node fetch(undici)는 본문이 300초 동안 오지 않으면 끊는데
 // (bodyTimeout, 실측 2026-10-09), Docker Agent는 승인 대기나 오래 걸리는 도구 호출 중에 아무것도 보내지 않는다.
-// node:http 클라이언트에는 기본 타임아웃이 없다. 끊으면 Docker Agent도 실행을 취소하므로 끊는 건 signal로만 한다(계약 7.1).
+// node:http 클라이언트에는 기본 타임아웃이 없다. 끊으면 Docker Agent도 실행을 취소하므로 끊는 건 signal로만 한다.
 function openStream(path: string, body: unknown, signal: AbortSignal): Promise<ReadableStream<Uint8Array>> {
   const url = new URL(`${config.agentUrl}${path}`)
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest
@@ -177,7 +177,7 @@ function openStream(path: string, body: unknown, signal: AbortSignal): Promise<R
   })
 }
 
-// 메시지를 보내고 응답 스트림을 연다. 같은 이름의 Docker Agent `.../messages`는 모델을 부르지 않으므로 쓰지 않는다(계약 8.1).
+// 메시지를 보내고 응답 스트림을 연다. 같은 이름의 Docker Agent `.../messages`는 모델을 부르지 않으므로 쓰지 않는다.
 // model을 주면 이 대화의 모델을 바꾼다. Docker Agent가 대화에 저장하므로 다음 턴도 같은 모델을 쓴다.
 export async function runAgent(
   sessionId: string,
@@ -194,7 +194,7 @@ export async function runAgent(
 }
 
 // 승인 대기 중인 도구 호출에 결정을 보낸다. Docker Agent는 기다리는 건이 없으면 200을 주고 버린다.
-// 요청에 도구 호출 ID가 없어서, 지금 기다리는 건 하나에 적용된다(계약 6장).
+// 요청에 도구 호출 ID가 없어서, 지금 기다리는 건 하나에 적용된다.
 export async function resume(sessionId: string, confirmation: 'approve' | 'reject', reason?: string): Promise<void> {
   await request(`/api/sessions/${encodeURIComponent(sessionId)}/resume`, {
     method: 'POST',

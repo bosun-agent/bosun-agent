@@ -1,6 +1,6 @@
 // 설정의 정보·정책 화면 값. Docker Agent 상태와 agent.yaml 요약을 만든다.
 // agent.yaml JSON(GET /api/agents/:id)에는 훅 경로, MCP 실행 줄, env 이름 같은 운영 정보가 있다.
-// 화면에는 아래에서 고른 필드만 보내고, 문자열은 비밀값 형식을 한 번 더 가린다(계약 5장 4항).
+// 화면에는 아래에서 고른 필드만 보내고, 문자열은 비밀값 형식을 한 번 더 가린다.
 
 import { readFileSync } from 'node:fs'
 import type { AgentConfigSummary, SystemInfo } from '../src/lib/agentProtocol.ts'

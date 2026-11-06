@@ -1,6 +1,6 @@
-// 한 턴(메시지 하나에 대한 Agent 처리)과 그 안의 승인 요청을 관리한다. 계약 6장 흐름을 코드로 옮긴 것이다.
+// 한 턴(메시지 하나에 대한 Agent 처리)과 그 안의 승인 요청을 관리한다.
 //
-// - 턴은 대화마다 하나다. 대화가 다르면 동시에 돌 수 있다(계약 3장). Docker Agent도 세션마다 런타임이 따로 있어서
+// - 턴은 대화마다 하나다. 대화가 다르면 동시에 돌 수 있다. Docker Agent도 세션마다 런타임이 따로 있어서
 //   /resume과 승인 대기가 세션 단위다. 동시에 도는 턴 수는 MAX_TURNS로 막는다.
 // - 승인 요청은 Agent 스트림의 tool_call_confirmation으로 온다. 결정은 Docker Agent /resume으로 보낸다.
 //   Docker Agent는 한 세션에서 승인을 한 번에 하나만 기다리고 resume에는 도구 호출 ID가 없다. 그래서 카드도 대화마다 한 장이다.
@@ -160,7 +160,7 @@ export function reattach(sessionId: string): (sink: Sink) => void {
       sink.end()
       return
     }
-    // 결정을 기다리는 카드가 있으면 log 끝에 그 카드가 있다. 브라우저 스트림은 거기서 끝난다(계약 4장).
+    // 결정을 기다리는 카드가 있으면 log 끝에 그 카드가 있다. 브라우저 스트림은 거기서 끝난다.
     if (t.waiting?.status === 'pending') {
       t.shown = true
       sink.end()
@@ -170,7 +170,7 @@ export function reattach(sessionId: string): (sink: Sink) => void {
   }
 }
 
-// 사용자가 처리를 멈춘다. Agent 스트림을 끊으면 Docker Agent도 실행을 취소하고 기다리던 승인도 취소된다(계약 6장).
+// 사용자가 처리를 멈춘다. Agent 스트림을 끊으면 Docker Agent도 실행을 취소하고 기다리던 승인도 취소된다.
 export function stopTurn(sessionId: string): void {
   const t = turns.get(sessionId)
   if (!t) throw new HttpError(404, 'NOT_RUNNING', '처리 중인 작업이 없어요.')
@@ -181,7 +181,7 @@ function show(t: Turn): void {
   if (!t.waiting || t.shown || !t.sink || t.finished) return
   t.shown = true
   t.sink.send(t.waiting.event)
-  // 브라우저 쪽 스트림은 approval_required로 끝난다(계약 4장). Agent 스트림은 계속 열어 둔다.
+  // 브라우저 쪽 스트림은 approval_required로 끝난다. Agent 스트림은 계속 열어 둔다.
   const sink = t.sink
   t.sink = null
   sink.end()
@@ -190,7 +190,7 @@ function show(t: Turn): void {
 function finish(t: Turn): void {
   if (t.finished) return
   t.finished = true
-  // Agent 스트림을 끊으면 Docker Agent도 기다리던 승인을 취소한다. 카드도 취소로 둔다(계약 6장).
+  // Agent 스트림을 끊으면 Docker Agent도 기다리던 승인을 취소한다. 카드도 취소로 둔다.
   if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
   t.calls.clear()
   t.sink?.end()

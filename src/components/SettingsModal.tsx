@@ -189,7 +189,7 @@ function ModelSection() {
   )
 }
 
-// Agent는 시작할 때 키를 읽는다. WEB이 띄운 Agent면 저장한 뒤 다시 시작한다(계약 7장 ①).
+// Agent는 시작할 때 키를 읽는다. WEB이 띄운 Agent면 저장한 뒤 다시 시작한다.
 const SAVED_TEXT: Record<NonNullable<Settings['agentRestart']> | 'saved', string> = {
   started: '저장했어요. 새 키로 AI Agent를 다시 켜고 있어요.',
   waiting: '저장했어요. 처리 중인 대화가 끝나면 AI Agent를 다시 켜서 새 키를 적용해요.',

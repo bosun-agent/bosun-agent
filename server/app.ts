@@ -1,4 +1,4 @@
-// 브라우저 ↔ WEB 백엔드 엔드포인트(계약 3장).
+// 브라우저 ↔ WEB 백엔드 엔드포인트.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -39,7 +39,7 @@ import {
 
 export const app = new Hono()
 
-// 보안 헤더. 화면은 같은 출처의 스크립트와 /api만 쓴다. 마크다운의 HTML·이미지는 그리지 않지만(계약 7.1)
+// 보안 헤더. 화면은 같은 출처의 스크립트와 /api만 쓴다. 마크다운의 HTML·이미지는 그리지 않지만
 // 화면에 섞인 외부 문자열이 스크립트로 실행되는 경우에 대비해 CSP로 한 번 더 막는다.
 // style 'unsafe-inline'은 React style 속성(애니메이션 지연) 때문이다.
 app.use(
@@ -70,7 +70,7 @@ app.onError((err, c) => {
 
 // SSE 응답을 열고 턴에 붙인다. 브라우저가 끊고 나가도 턴은 계속 돈다(출력은 모았다가 다시 붙을 때 보낸다).
 function streamTo(c: Context, attach: (sink: Sink) => void) {
-  // 리버스 프록시가 응답을 모아 두지 않게 한다(계약 7.1).
+  // 리버스 프록시가 응답을 모아 두지 않게 한다.
   c.header('X-Accel-Buffering', 'no')
   return streamSSE(c, async (stream) => {
     let open = true
@@ -172,7 +172,7 @@ async function restoredMessages(sessionId: string): Promise<{ title: string; mes
   return { title: session.title, messages, running: running !== undefined }
 }
 
-// 대화 복원(계약 3장). 사용자·Agent 문장만 내보내고 도구 인자·결과 원본은 내보내지 않는다(계약 5장 4항).
+// 대화 복원. 사용자·Agent 문장만 내보내고 도구 인자·결과 원본은 내보내지 않는다.
 app.get('/api/sessions/:id/messages', async (c) => {
   const { messages, running } = await restoredMessages(c.req.param('id'))
   return c.json({ messages, ...(running ? { running: true } : {}) })
@@ -287,7 +287,7 @@ app.get('/api/usage', (c) => {
   return c.json(totals)
 })
 
-// 대화 삭제. 처리 중(승인 대기 포함)인 대화는 지우지 않는다. 승인 감사 기록은 남긴다(계약 7.1).
+// 대화 삭제. 처리 중(승인 대기 포함)인 대화는 지우지 않는다. 승인 감사 기록은 남긴다.
 app.delete('/api/sessions/:id', async (c) => {
   const sessionId = c.req.param('id')
   if (isRunning(sessionId)) throw new HttpError(409, 'BUSY', '처리 중인 대화는 지울 수 없어요.')
@@ -320,7 +320,7 @@ app.post('/api/sessions/:id/approvals/:approvalId', async (c) => {
   return streamTo(c, attach)
 })
 
-// 설정 화면(계약 3장). 모델 선택과 API 키.
+// 설정 화면. 모델 선택과 API 키.
 app.get('/api/settings', (c) => c.json(getSettings()))
 
 app.put('/api/settings', async (c) => {
@@ -348,7 +348,7 @@ app.delete('/api/settings/models', (c) => {
   return c.json(getSettings())
 })
 
-// API 키는 Docker Agent env 파일에 쓴다. Agent는 시작할 때 키를 읽으므로 WEB이 띄운 Agent면 다시 시작한다(계약 7장 ①).
+// API 키는 Docker Agent env 파일에 쓴다. Agent는 시작할 때 키를 읽으므로 WEB이 띄운 Agent면 다시 시작한다.
 // 처리 중인 대화가 있으면 끝난 뒤에 다시 시작한다(server/agentProcess.ts).
 app.put('/api/settings/api-key', async (c) => {
   if (!config.agentEnvFile) throw new HttpError(409, 'NOT_EDITABLE', 'API 키를 바꿀 수 없게 설정돼 있어요.')

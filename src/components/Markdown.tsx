@@ -1,7 +1,7 @@
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-// Agent 답은 마크다운(표, 굵은 글씨, 코드)으로 온다. 원본 HTML은 그리지 않는다(react-markdown 기본값, 계약 7.1).
+// Agent 답은 마크다운(표, 굵은 글씨, 코드)으로 온다. 원본 HTML은 그리지 않는다(react-markdown 기본값).
 // 이미지는 그리지 않는다. 도구 결과에 섞인 외부 문자열이 이미지 주소로 들어오면
 // 브라우저가 그 주소로 바로 요청을 보내서 대화 내용이 밖으로 샐 수 있다.
 const components: Components = {

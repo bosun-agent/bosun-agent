@@ -19,7 +19,7 @@ const PROGRESS_LABEL: Record<ProgressStep, { label: string; doneLabel: string }>
   understanding: { label: '요청 이해하는 중', doneLabel: '요청 이해함' },
 }
 
-// 다시 붙었을 때 이미 결정된 카드를 처리 과정 한 줄로 바꾼다(계약 4장 approval_resolved).
+// 다시 붙었을 때 이미 결정된 카드를 처리 과정 한 줄로 바꾼다(approval_resolved).
 const RESOLVED_STEP: Record<Exclude<ApprovalStatus, 'pending'>, { state: Exclude<StepState, 'active'>; label: string }> = {
   approved: { state: 'done', label: APPROVED_LABEL },
   denied: { state: 'stopped', label: '거부함' },
@@ -69,7 +69,7 @@ function titleFor(text: string) {
 function App() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => [newSession()])
   const [activeId, setActiveId] = useState(() => sessions[0].id)
-  // 이 화면에서 처리 중인 대화(승인 대기 포함). 대화마다 따로 처리한다(인터페이스 계약 3장).
+  // 이 화면에서 처리 중인 대화(승인 대기 포함). 대화마다 따로 처리한다.
   const [localBusy, setBusy] = useState<ReadonlySet<string>>(() => new Set())
   // 서버 목록이 처리 중이라고 한 대화(서버 ID). 아직 열지 않은 대화에만 쓴다. 열면 다시 붙어서 이 화면이 맡는다.
   const [serverRunning, setServerRunning] = useState<ReadonlySet<string>>(() => new Set())
@@ -222,7 +222,7 @@ function App() {
           case 'text_delta':
             // 앞에 받은 내용이 없으면 맨 앞 줄바꿈은 버린다(복원된 카드를 승인한 뒤 등).
             content += content ? event.delta : event.delta.replace(/^\n+/, '')
-            // 만료 뒤에 오는 Agent 설명은 만료 카드와 같이 보여준다(계약 6장).
+            // 만료 뒤에 오는 Agent 설명은 만료 카드와 같이 보여준다.
             updateMessage(id, (m) => ({
               status: m.status === 'approval_expired' ? m.status : 'streaming',
               content,
@@ -391,7 +391,7 @@ function App() {
   }
 
   // 승인 대기 시간이 지나면 카드를 만료로 바꾸고, 서버에 만료 거부를 보내 Agent의 이어지는 말을 받는다.
-  // 입력 잠금은 그 스트림이 끝날 때 푼다(계약 6장).
+  // 입력 잠금은 그 스트림이 끝날 때 푼다.
   async function handleExpire(id: string) {
     const session = sessions.find((s) => s.messages.some((m) => m.id === id))
     const message = session?.messages.find((m) => m.id === id)

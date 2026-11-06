@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AgentProcessStatus } from './agentProtocol'
 import { agent } from './agent'
 
-// WEB 백엔드가 띄운 Docker Agent 상태(계약 3장 GET /api/agent). 몇 초마다 다시 읽는다. 목업에는 없다.
+// WEB 백엔드가 띄운 Docker Agent 상태(GET /api/agent). 몇 초마다 다시 읽는다. 목업에는 없다.
 const POLL_MS = 3_000
 
 export function useAgentStatus(): [AgentProcessStatus | null, (s: AgentProcessStatus) => void] {

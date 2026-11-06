@@ -1,5 +1,4 @@
 // WEB 백엔드 설정. 주소와 비밀값은 환경변수로 받는다.
-// 연동 전에 받을 값은 인터페이스 계약 7장에 있다.
 
 import { dirname, join } from 'node:path'
 
@@ -12,13 +11,13 @@ function num(name: string, fallback: number): number {
 }
 
 export const config = {
-  // 브라우저(Vite 개발 서버 프록시)가 붙는 주소. 로그인이 없으므로 루프백에서만 연다(계약 3장, main.ts).
+  // 브라우저(Vite 개발 서버 프록시)가 붙는 주소. 로그인이 없으므로 루프백에서만 연다(main.ts).
   host: process.env.HOST ?? '127.0.0.1',
   // 컨테이너 안에서만 1로 둔다. 컨테이너 안은 0.0.0.0으로 열고, 밖에서는 `-p 127.0.0.1:...`로만 내보낸다(Dockerfile).
   inContainer: process.env.HOST_IN_CONTAINER === '1',
   port: num('PORT', 3001),
 
-  // Docker Agent API 서버(`docker agent serve api`). 기본 주소는 Agent 담당 확인값(계약 7장).
+  // Docker Agent API 서버(`docker agent serve api`). 기본 주소는 Agent 담당 확인값.
   agentUrl: process.env.AGENT_URL ?? 'http://127.0.0.1:8080',
   // POST /api/sessions/:id/agent/:agent의 :agent. Docker Agent의 GET /api/agents로 확인한다.
   agentName: process.env.AGENT_NAME ?? 'agent',
@@ -37,7 +36,7 @@ export const config = {
     .map((m) => m.trim())
     .filter(Boolean),
 
-  // Docker Agent `--env-from-file`로 넘기는 env 파일. 설정 화면에서 API 키를 바꾸면 이 파일에 쓴다(계약 7장 ①).
+  // Docker Agent `--env-from-file`로 넘기는 env 파일. 설정 화면에서 API 키를 바꾸면 이 파일에 쓴다.
   // 비어 있으면 화면에서 키를 바꿀 수 없다. 저장한 키는 Agent를 다시 시작해야 적용된다.
   agentEnvFile: process.env.AGENT_ENV_FILE ?? '',
   // 그 파일에서 바꿀 키 이름. agent.yaml 모델의 provider에 맞춘다.
@@ -46,13 +45,13 @@ export const config = {
   // 승인·차단 카드와 승인 감사 기록을 두는 SQLite 파일. 대화 내용은 Docker Agent session.db에 있다.
   dbPath: process.env.WEB_DB_PATH ?? 'server/data/web.db',
 
-  // 승인 카드를 띄운 뒤 이 시간이 지나면 거부한다. Docker Agent는 승인을 무기한 기다리므로 WEB이 정한다(계약 6장).
+  // 승인 카드를 띄운 뒤 이 시간이 지나면 거부한다. Docker Agent는 승인을 무기한 기다리므로 WEB이 정한다.
   approvalTimeoutMs: num('APPROVAL_TIMEOUT_MS', 300_000),
   // 브라우저가 만료 거부를 먼저 보낼 수 있게, 서버 쪽 자동 거부는 expiresAt보다 조금 늦게 한다.
   expiryGraceMs: num('EXPIRY_GRACE_MS', 3_000),
-  // 리버스 프록시 idle 타임아웃에 끊기지 않도록 보내는 SSE 주석 간격(계약 7.1).
+  // 리버스 프록시 idle 타임아웃에 끊기지 않도록 보내는 SSE 주석 간격.
   pingMs: num('PING_MS', 15_000),
-  // 동시에 처리하는 대화 수 상한. 대화마다 Agent 스트림 하나와 모델 호출이 돈다(계약 3장).
+  // 동시에 처리하는 대화 수 상한. 대화마다 Agent 스트림 하나와 모델 호출이 돈다.
   maxTurns: num('MAX_TURNS', 3),
   // 메시지 한 개 최대 길이. 첨부한 파일 내용도 메시지에 들어간다.
   maxMessageChars: num('MAX_MESSAGE_CHARS', 100_000),

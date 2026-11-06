@@ -1,5 +1,5 @@
-// Docker Agent 이벤트 → WEB 이벤트(계약 8.1 대응표). 표에 없는 이벤트는 버린다.
-// 승인 요청(tool_call_confirmation)은 여기서 바꾸지 않는다. turns.ts가 카드를 만들고 결정을 기다린다(계약 6장).
+// Docker Agent 이벤트 → WEB 이벤트. 표에 없는 이벤트는 버린다.
+// 승인 요청(tool_call_confirmation)은 여기서 바꾸지 않는다. turns.ts가 카드를 만들고 결정을 기다린다.
 
 import type { AgentEvent } from '../src/lib/agentProtocol.ts'
 import type { DAEvent } from './agentClient.ts'
@@ -7,7 +7,7 @@ import { maskText } from './mask.ts'
 import { describeTool, toolSummary } from './tools.ts'
 
 // 도구 호출이 정책으로 막혔을 때 Docker Agent가 도구 결과로 돌려주는 문구(v1.145.0 `pkg/runtime/toolexec`).
-// 도구 결과에는 컨테이너 이름·로그 같은 외부 문자열이 섞이므로 맨 앞부터 맞춰 본다(계약 6장).
+// 도구 결과에는 컨테이너 이름·로그 같은 외부 문자열이 섞이므로 맨 앞부터 맞춰 본다.
 // - permissions.deny 또는 restricted 모드: "Tool 'x' is denied by permissions configuration." 등(denyErrorMessage)
 // - tool_guard·tool_input_transform·pre_tool_use·permission_request 훅 거부: blockToolHook
 const POLICY_DENIED = [/^Tool '[^']+' is denied by /, /^The tool call was rejected by a \w+ hook\./]
@@ -92,7 +92,7 @@ export class Translator {
   translate(ev: DAEvent): Translated {
     switch (ev.type) {
       case 'mcp_init_started':
-        // 한 턴 안에서 모델을 다시 부를 때마다 반복되므로 첫 번째만 쓴다(계약 8.1).
+        // 한 턴 안에서 모델을 다시 부를 때마다 반복되므로 첫 번째만 쓴다.
         if (this.initStarted) return { events: [] }
         this.initStarted = true
         return { events: [{ type: 'progress', step: 'loading_tools' }] }
@@ -155,7 +155,7 @@ export class Translator {
         this.produced = true
         if (isError && USER_REJECTED.test(res.response)) return { events: [] }
         if (isPolicyDenied(res.response, isError)) {
-          // 규칙 ID가 오지 않으므로 공통 코드를 쓴다. 이어지는 Agent 설명이 text_delta로 온다(계약 6장).
+          // 규칙 ID가 오지 않으므로 공통 코드를 쓴다. 이어지는 Agent 설명이 text_delta로 온다.
           // 막힌 호출은 실행되지 않아 tool_call이 없다. 처리 과정에는 "정책에 따라 차단됨" 한 줄만 남기도록 tool_status는 보내지 않는다.
           const detail = policyDeniedDetail(res.response)
           return { events: [{ type: 'rejected', code: 'POLICY_DENIED', reason: POLICY_DENIED_REASON, ...(detail ? { detail } : {}) }] }
@@ -184,7 +184,7 @@ export class Translator {
         const err = ev as Extract<DAEvent, { type: 'error' }>
         console.warn('[agent error]', err.code ?? '', err.error)
         if (err.code === 'hook_blocked') {
-          // Agent 훅이 턴을 멈춘 경우. 훅 메시지 원문은 로그에만 남긴다(계약 6장).
+          // Agent 훅이 턴을 멈춘 경우. 훅 메시지 원문은 로그에만 남긴다.
           this.produced = true
           return { events: [{ type: 'rejected', code: 'HOOK_BLOCKED', reason: HOOK_BLOCKED_REASON }] }
         }
@@ -218,7 +218,7 @@ export class Translator {
       }
 
       case 'stream_stopped':
-        // error로 끝난 스트림에는 done을 붙이지 않는다(계약 4장: 스트림은 done·error·approval_required 중 하나로 끝남).
+        // error로 끝난 스트림에는 done을 붙이지 않는다(스트림은 done·error·approval_required 중 하나로 끝남).
         if (this.failed) return { events: [] }
         // 모델이 글도 도구 호출도 없이 끝내면 done만 와서 화면에 아무것도 안 남는다. 다시 시도할 수 있게 오류로 알린다.
         if (!this.produced) {

@@ -2,7 +2,7 @@
 // 삭제 직전에 inspect 결과를 SQLite에 저장한 것이다. WEB은 그 파일을 읽기만 한다.
 // - 위치: BACKUP_DB, 없으면 AGENT_ENV_FILE과 같은 폴더의 backups.sqlite3(훅 기본값과 같다). 같은 호스트(또는 공유 볼륨)여야 한다.
 // - 표: backups(ts, time, session_id, environment_id, method, path, query_json, kind, target, inspect_json)
-// - inspect에는 환경변수 값 같은 비밀이 들어 있다. 원본은 보내지 않고 허용 목록으로 고른 값만 보낸다(계약 5장 4항).
+// - inspect에는 환경변수 값 같은 비밀이 들어 있다. 원본은 보내지 않고 허용 목록으로 고른 값만 보낸다.
 
 import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'

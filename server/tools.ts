@@ -1,7 +1,7 @@
-// 도구 호출 → 화면 문구. 처리 과정 줄과 승인 카드를 코드 템플릿으로 만든다(LLM 재요약 금지, 계약 4장).
-// 도구는 Portainer MCP(mcp-portainer)의 docker_proxy와 EndpointList다(Agent 담당 agent.direct.yaml, 계약 7장).
+// 도구 호출 → 화면 문구. 처리 과정 줄과 승인 카드를 코드 템플릿으로 만든다(LLM 재요약 금지).
+// 도구는 Portainer MCP(mcp-portainer)의 docker_proxy와 EndpointList다(Agent 담당 agent.direct.yaml).
 // docker_proxy는 Docker Engine API 요청 하나라서 method와 path로 작업을 고른다.
-// 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다(계약 5장 4항).
+// 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다.
 
 import type { ProposedAction, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
 import { maskText } from './mask.ts'
@@ -15,7 +15,7 @@ interface ToolAction {
   // 승인 카드에 보여줄 값(이름 → 값). 요청 본문에서 사람이 확인해야 할 것만 고른다
   params?: Record<string, string>
   reasons?: RiskReason[]
-  // 카드 맨 위 위험도 표시(계약 4.1)
+  // 카드 맨 위 위험도 표시
   risk?: RiskLevel
 }
 
@@ -307,7 +307,7 @@ export interface ApprovalCard {
 }
 
 // WEB이 문구 표를 갖고 있지 않은 도구(새 MCP, 스택 도구 등)의 카드. 무엇을 하는지 설명할 수 없으므로
-// 판단 기준을 주고, 인자는 값 없이 이름만 보여준다. 값에는 비밀(환경변수 등)이 들어 있을 수 있다(계약 5장 4항).
+// 판단 기준을 주고, 인자는 값 없이 이름만 보여준다. 값에는 비밀(환경변수 등)이 들어 있을 수 있다.
 const UNKNOWN_TOOL: RiskReason = {
   code: 'UNKNOWN',
   message: 'BOSUN이 아직 설명할 수 없는 도구예요. 무엇을 하는지 확실하지 않으면 거부해주세요.',

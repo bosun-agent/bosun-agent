@@ -12,7 +12,7 @@ export interface RiskReason {
   message: string
 }
 
-// 승인 카드 맨 위에 붙는 한눈에 보는 위험도(계약 4.1). high: 되돌릴 수 없거나 호스트까지 영향,
+// 승인 카드 맨 위에 붙는 한눈에 보는 위험도. high: 되돌릴 수 없거나 호스트까지 영향,
 // medium: 서비스가 멈추거나 끊김, low: 새로 만들거나 실행, unknown: WEB이 모르는 도구라 판단할 수 없음.
 export interface RiskLevel {
   level: 'high' | 'medium' | 'low' | 'unknown'
@@ -29,7 +29,7 @@ export type AgentEvent =
       tool: string
       status: 'running' | 'succeeded' | 'failed'
       summary: string
-      // 도구 호출 ID. 모델이 도구를 한꺼번에 여러 개 부르면 시작·결과를 이걸로 짝짓는다(계약 4.1)
+      // 도구 호출 ID. 모델이 도구를 한꺼번에 여러 개 부르면 시작·결과를 이걸로 짝짓는다
       callId?: string
     }
   | {
@@ -41,16 +41,16 @@ export type AgentEvent =
       risk?: RiskLevel
       expiresAt: string
     }
-  // detail: 무엇이 왜 막혔는지 한 줄(훅이 준 사유의 첫 문장). 사유가 없는 차단에는 없다(계약 4장).
+  // detail: 무엇이 왜 막혔는지 한 줄(훅이 준 사유의 첫 문장). 사유가 없는 차단에는 없다.
   | { type: 'rejected'; code: string; reason: string; detail?: string }
-  // 다시 붙기(GET .../stream)에서만 온다. 앞에 보낸 approval_required가 이미 결정됐다(계약 4장).
+  // 다시 붙기(GET .../stream)에서만 온다. 앞에 보낸 approval_required가 이미 결정됐다.
   | { type: 'approval_resolved'; approvalId: string; status: Exclude<ApprovalStatus, 'pending'> }
   | { type: 'error'; code: string; message: string }
   | { type: 'done' }
 
 export type ApprovalDecision = 'approve' | 'deny'
 
-// ---- 대화 목록과 복원(계약 3장) ----
+// ---- 대화 목록과 복원 ----
 
 export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled'
 
@@ -84,7 +84,7 @@ export interface SessionSummary {
 
 // 실제 클라이언트도 이 모양을 구현하면 App.tsx는 바꿀 필요가 없다.
 // 목록·복원은 서버가 있어야 하므로 목업에는 없다.
-// 설정 화면 값(계약 3장). model이 null이면 agent.yaml에 적힌 모델을 쓴다.
+// 설정 화면 값. model이 null이면 agent.yaml에 적힌 모델을 쓴다.
 // apiKey는 키 값 없이 상태만 준다. editable이 false면 WEB 백엔드에 Agent env 파일 경로가 없다.
 export interface Settings {
   model: string | null
@@ -102,7 +102,7 @@ export interface Settings {
 // manual: WEB이 띄운 Agent가 아니라서 사람이 다시 띄워야 함.
 export type AgentRestart = 'started' | 'waiting' | 'manual'
 
-// WEB 백엔드가 띄운 Docker Agent 상태(계약 3장 GET /api/agent).
+// WEB 백엔드가 띄운 Docker Agent 상태(GET /api/agent).
 export interface AgentProcessStatus {
   // false면 WEB이 Agent를 띄우지 않는다(AGENT_BIN 없음). AGENT_URL에 붙기만 한다.
   managed: boolean
@@ -118,7 +118,7 @@ export interface AgentProcessStatus {
   reachable?: boolean
 }
 
-// 설정의 정보·정책 화면(계약 3장 GET /api/system). agent.yaml에서 고른 값만 온다.
+// 설정의 정보·정책 화면(GET /api/system). agent.yaml에서 고른 값만 온다.
 export interface AgentConfigSummary {
   agents: {
     name: string
@@ -162,7 +162,7 @@ export interface BackupRecord {
   kind: string
   target: string
   summary: Record<string, string>
-  // 백업은 승인 전에 만들어져서 거부한 삭제도 남는다. 같은 대화의 승인 카드와 짝지은 결과(계약 3장).
+  // 백업은 승인 전에 만들어져서 거부한 삭제도 남는다. 같은 대화의 승인 카드와 짝지은 결과.
   // deleted: 승인함, kept: 거부·만료·취소(지우지 않음), pending: 아직 결정 전, unknown: 짝을 찾지 못함
   outcome: 'deleted' | 'kept' | 'pending' | 'unknown'
 }
@@ -184,7 +184,7 @@ export interface UsageTotals {
 export interface AgentClient {
   createSession(): Promise<string>
   sendMessage(sessionId: string, text: string): AsyncIterable<AgentEvent>
-  // reason: 승인 시간이 지나 브라우저가 거부를 보낼 때만 'expired'(계약 6장)
+  // reason: 승인 시간이 지나 브라우저가 거부를 보낼 때만 'expired'
   sendDecision(
     sessionId: string,
     approvalId: string,
@@ -202,7 +202,7 @@ export interface AgentClient {
   saveModel?(model: string): Promise<Settings>
   addModel?(model: string): Promise<Settings>
   removeModel?(model: string): Promise<Settings>
-  // 저장해도 Docker Agent를 다시 시작해야 적용된다(계약 7장 ①).
+  // 저장해도 Docker Agent를 다시 시작해야 적용된다.
   saveApiKey?(apiKey: string): Promise<Settings>
   // 서버 대화 삭제. 처리 중인 대화는 서버가 409로 거절한다.
   deleteSession?(sessionId: string): Promise<void>

@@ -305,7 +305,7 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
 }
 
 {
-  // 키 저장은 Agent env 파일의 키 줄만 바꾸고 Portainer 줄은 남긴다(계약 7장 ①).
+  // 키 저장은 Agent env 파일의 키 줄만 바꾸고 Portainer 줄은 남긴다.
   const file = process.env.AGENT_ENV_FILE!
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, '# agent env\nPORTAINER_URL=https://127.0.0.1:9443\nOPENROUTER_API_KEY=old-key-0000\n')
@@ -336,7 +336,7 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
     { del: del.status, gone: gone.status },
   )
 }
-// ---- 대화별 동시 처리, 다시 붙기, 중지(계약 3장) ----
+// ---- 대화별 동시 처리, 다시 붙기, 중지 ----
 
 // 응답을 n개 이벤트만 읽고 끊는다(새로고침한 브라우저처럼).
 async function readSome(path: string, body: unknown, n: number): Promise<AgentEvent[]> {

@@ -62,7 +62,7 @@ export function removeModel(model: string): boolean {
   return true
 }
 
-// ---- API 키(계약 7장 ①) ----
+// ---- API 키 ----
 // Docker Agent의 env 파일 형식(v1.148.0 pkg/environment/env_files.go): 줄마다 KEY=VALUE, 빈 줄과 #으로 시작하는 줄은 건너뛴다.
 // 같은 파일에 Portainer 주소·키도 있으므로 바꿀 키 줄만 고치고 나머지 줄은 그대로 둔다.
 

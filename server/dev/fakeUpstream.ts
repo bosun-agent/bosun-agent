@@ -306,7 +306,7 @@ const agentApp = new Hono()
 
 agentApp.post('/api/sessions', async (c) => {
   const body = await c.req.json<{ safety_policy?: string }>().catch(() => ({}) as { safety_policy?: string })
-  // 정책은 agent.yaml에서 정한다. WEB이 세션마다 안전 모드를 덮어쓰면 안 된다(계약 6장).
+  // 정책은 agent.yaml에서 정한다. WEB이 세션마다 안전 모드를 덮어쓰면 안 된다.
   if (body.safety_policy) console.warn(`[fake agent] session created with safety_policy=${body.safety_policy}`)
   const s: Session = { id: randomUUID(), title: '', created_at: new Date().toISOString(), messages: [] }
   sessions.set(s.id, s)
@@ -396,7 +396,7 @@ agentApp.post('/api/sessions/:id/resume', async (c) => {
   if (!run) return c.json({ message: 'failed to resume session: session not running' }, 500)
   const body = await c.req.json<Resume>()
   if (!['approve', 'reject'].includes(body.confirmation)) {
-    // WEB은 approve·reject만 보내야 한다. 나머지는 세션 권한을 넓힌다(계약 5장).
+    // WEB은 approve·reject만 보내야 한다. 나머지는 세션 권한을 넓힌다.
     console.warn(`[fake agent] unexpected confirmation ${body.confirmation}`)
   }
   run.waiting?.(body)

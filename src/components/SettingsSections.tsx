@@ -5,7 +5,7 @@ import { agentStateText, restartAgent, useAgentStatus } from '../lib/agentStatus
 import { notifyEnabled, setNotifyEnabled } from '../lib/notify'
 
 // 설정 창의 정책·승인 기록·정보·알림 화면.
-// 정책은 Agent 설정(agent.yaml)에서 고른 값을 읽어서 보여준다. 웹에서 바꾸는 기능은 팀 결정이 필요하다(계약 7장).
+// 정책은 Agent 설정(agent.yaml)에서 고른 값을 읽어서 보여준다. 웹에서 바꾸는 기능은 팀 결정이 필요하다.
 
 function useLoad<T>(load: (() => Promise<T>) | undefined) {
   const [data, setData] = useState<T | null>(null)

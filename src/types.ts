@@ -22,7 +22,7 @@ export interface ApprovalRequest {
 // stopped: 거부·만료처럼 실패는 아니지만 진행하지 않은 단계
 export type StepState = 'active' | 'done' | 'failed' | 'stopped'
 
-// 처리 과정 한 줄. 도구 인자는 담지 않는다(인터페이스 계약 5장 4항).
+// 처리 과정 한 줄. 도구 인자는 담지 않는다.
 export interface ProcessStep {
   id: string
   label: string

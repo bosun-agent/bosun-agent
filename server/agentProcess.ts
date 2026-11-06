@@ -1,10 +1,10 @@
-// WEB 백엔드가 Docker Agent를 자식 프로세스로 띄우고 관리한다(10-28 회의 9번, 계약 3장 "Agent 관리").
+// WEB 백엔드가 Docker Agent를 자식 프로세스로 띄우고 관리한다(10-28 회의 9번).
 // - AGENT_BIN이 있을 때만 관리한다. 없으면(개발용 가짜 Agent, 다른 PC의 Agent) AGENT_URL에 붙기만 한다.
 // - 이미 AGENT_URL에서 Agent가 응답하면 새로 띄우지 않고 그 Agent를 쓴다(`npm run agent`로 따로 띄운 경우 등).
 //   그 Agent는 WEB이 다시 시작할 수 없다(external). 다만 지난번에 WEB이 띄운 Agent가 남아 있던 것이면
 //   (백엔드가 강제로 꺼지면 Windows에서는 자식이 남는다) PID 파일로 알아보고 끝낸 뒤 새로 띄운다.
 // - 죽으면 잠시 뒤 다시 띄운다. 짧은 시간에 여러 번 죽으면 멈추고 화면에 알린다(crashed).
-// - API 키를 바꾸면 다시 시작한다. Agent는 키를 시작할 때 한 번 읽기 때문이다(계약 7장 ①).
+// - API 키를 바꾸면 다시 시작한다. Agent는 키를 시작할 때 한 번 읽기 때문이다.
 //   처리 중인 대화가 있으면 끝난 뒤에 한다. 다시 시작하면 Docker Agent가 기다리던 승인과 실행을 취소한다.
 // - 띄우는 명령은 `npm run agent`(server/runAgent.ts)와 같다.
 
