@@ -3,6 +3,7 @@
 // docker_proxy는 Docker Engine API 요청 하나라서 method와 path로 작업을 고른다.
 // 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다.
 
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { ProposedAction, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
 import { maskText } from './mask.ts'
 
@@ -286,8 +287,13 @@ function dockerRequest(
   return { label: verb, summary: titled(resource, target, verb), target, ...(about ? { reasons: [effect(about)] } : {}), risk }
 }
 
-export function describeTool(tool: string, args: Record<string, unknown>): ToolAction | undefined {
+export function describeTool(
+  tool: string,
+  args: Record<string, unknown>,
+  stacks: ReadonlyMap<string, StackInfo> = new Map(),
+): ToolAction | undefined {
   if (tool === 'EndpointList') return { label: '환경 목록 조회', summary: '환경 목록 조회' }
+  if (tool.startsWith('Stack')) return stackAction(tool, args, stacks)
   if (tool !== 'docker_proxy') return undefined
   // mcp-portainer는 method를 빼면 GET으로 보낸다.
   const method = (str(args.method) ?? 'GET').toUpperCase()
@@ -320,8 +326,9 @@ export function approvalCard(
   tool: string,
   args: Record<string, unknown>,
   names: ReadonlyMap<string, string> = new Map(),
+  stacks: ReadonlyMap<string, StackInfo> = new Map(),
 ): ApprovalCard {
-  const info = describeTool(tool, args)
+  const info = describeTool(tool, args, stacks)
   let target = info?.target
   let summary = info?.summary
   const name = target ? names.get(target.toLowerCase()) : undefined
@@ -377,7 +384,13 @@ function idsFor(names: ReadonlyMap<string, string>, kind: string, target: string
 
 // 두 요청이 같은 대상을 바꾸는지 비교하는 키. `환경/종류/이름 또는 ID`이고, 이름과 ID를 둘 다 알면 둘 다 넣는다.
 // 환경과 종류를 넣어서 다른 환경의 web이나 볼륨 web을 컨테이너 web과 같은 대상으로 보지 않는다.
-export function targetKeys(tool: string, args: Record<string, unknown>, names: ReadonlyMap<string, string>): string[] {
+export function targetKeys(
+  tool: string,
+  args: Record<string, unknown>,
+  names: ReadonlyMap<string, string>,
+  stacks: ReadonlyMap<string, StackInfo> = new Map(),
+): string[] {
+  if (tool.startsWith('Stack')) return stackKeys(tool, args, stacks)
   if (tool !== 'docker_proxy') return []
   const kind = pathParts(str(args.path) ?? '')[0]
   const target = describeTool(tool, args)?.target
@@ -416,8 +429,11 @@ export function learnNames(
   tool: string,
   args: Record<string, unknown>,
   output: string,
+  stacks: Map<string, StackInfo> = new Map(),
 ): void {
-  if (tool !== 'docker_proxy' || output.length > 2_000_000) return
+  if (output.length > 2_000_000) return
+  if (tool.startsWith('Stack')) return learnStacks(stacks, tool, args, output)
+  if (tool !== 'docker_proxy') return
   // 이름 변경·삭제가 성공하면 표를 고친다. 안 고치면 다른 대화의 카드가 옛 이름을 보여준다. 둘 다 결과 본문이 비어 있다.
   const method = (str(args.method) ?? 'GET').toUpperCase()
   const [kind, pathId, action] = pathParts(str(args.path) ?? '')
@@ -463,4 +479,342 @@ export function learnNames(
     const requested = str(objectArg(args.query_params).name)?.replace(/^\//, '')
     if (kind === 'containers' && pathId === 'create' && created && requested) remember(created, requested)
   }
+}
+
+// ---- 스택(Portainer compose 스택) ----
+// 컨테이너를 직접 만드는 대신 스택으로 배포한다(Secure 정책표: 생성은 스택으로만).
+// mcp-portainer 2.45.1은 Portainer OpenAPI로 도구를 만들고 경로·쿼리·본문 인자를 한 단계로 펼친다.
+// 그래서 StackCreateDockerStandaloneString은 { endpointId, Name, StackFileContent, Env: [{name, value}] }로 온다.
+// 스택 ID는 Portainer 전체에서 하나라서(환경과 무관) ID만으로 짝짓는다.
+
+export interface StackInfo {
+  name?: string
+  // 마지막으로 본 compose의 서비스 이름. 수정 카드에서 빠지는 서비스를 알려줄 때 쓴다.
+  services?: string[]
+}
+
+const MAX_STACKS = 500
+const MAX_FILE = 3000
+
+// 인자 이름은 대소문자가 섞여 온다(Name, endpointId). 모델이 바꿔 써도 찾게 대소문자를 무시한다.
+function argOf(args: Record<string, unknown>, name: string): unknown {
+  const key = Object.keys(args).find((k) => k.toLowerCase() === name.toLowerCase())
+  return key === undefined ? undefined : args[key]
+}
+
+function numericId(value: unknown): string | undefined {
+  return typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value)) ? String(value) : undefined
+}
+
+interface ComposeDetails {
+  services: string[]
+  params: Record<string, string>
+  reasons: RiskReason[]
+  hostRisk: boolean
+  // 읽지 못한 compose. 카드는 확인할 수 없는 작업처럼 띄운다.
+  unreadable: boolean
+  // 화면에 보여줄 compose. 환경변수 값은 가린다.
+  shown: string
+}
+
+const HIDDEN = '••••'
+
+// compose 환경변수는 목록(`- KEY=value`)이나 맵(`KEY: value`)으로 쓴다. 이름만 꺼낸다.
+function envNames(env: unknown): string[] {
+  if (Array.isArray(env)) return env.filter((e): e is string => typeof e === 'string').map((e) => e.split('=')[0])
+  return env && typeof env === 'object' ? Object.keys(env) : []
+}
+
+function hideEnv(env: unknown): unknown {
+  if (Array.isArray(env)) return env.map((e) => (typeof e === 'string' && e.includes('=') ? `${e.split('=')[0]}=${HIDDEN}` : e))
+  if (env && typeof env === 'object') return Object.fromEntries(Object.keys(env).map((k) => [k, HIDDEN]))
+  return env
+}
+
+function cut(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+function parseCompose(content: string): unknown {
+  try {
+    return parseYaml(content, { maxAliasCount: 100 })
+  } catch {
+    return undefined
+  }
+}
+
+// compose 파일에서 승인 전에 봐야 할 값을 고른다. 컨테이너 생성 카드(containerCreate)와 같은 기준이다.
+function composeDetails(content: string): ComposeDetails {
+  const doc = parseCompose(content)
+  const services = objectArg(objectArg(doc).services)
+  const names = Object.keys(services)
+  if (!names.length) {
+    return {
+      services: [],
+      params: {},
+      reasons: [{ code: 'UNKNOWN', message: 'compose 파일을 읽지 못했어요. 내용을 직접 확인하고, 확실하지 않으면 거부해주세요.' }],
+      hostRisk: false,
+      unreadable: true,
+      shown: maskText(cut(content, MAX_FILE)),
+    }
+  }
+
+  const params: Record<string, string> = {}
+  const reasons: RiskReason[] = []
+  const images: string[] = []
+  const ports: string[] = []
+  const mounts: string[] = []
+  const hostSources: string[] = []
+  const elevated: string[] = []
+  const shared: string[] = []
+  const commands: string[] = []
+  const env: string[] = []
+
+  for (const name of names) {
+    const svc = objectArg(services[name])
+    images.push(`${name} (${str(svc.image) ?? (svc.build ? '직접 빌드' : '이미지 없음')})`)
+    for (const p of Array.isArray(svc.ports) ? svc.ports : []) {
+      if (typeof p === 'string' || typeof p === 'number') {
+        ports.push(`${p} (${name})`)
+        continue
+      }
+      const { published, target, host_ip: ip } = objectArg(p)
+      ports.push(`${ip ? `${String(ip)}:` : ''}${String(published ?? '?')} → ${String(target ?? '?')} (${name})`)
+    }
+    for (const v of Array.isArray(svc.volumes) ? svc.volumes : []) {
+      const long = objectArg(v)
+      const source = typeof v === 'string' ? bindSource(v) : str(long.source)
+      const type = typeof v === 'string' ? undefined : str(long.type)
+      mounts.push(`${typeof v === 'string' ? v : `${source ?? '(익명)'} → ${str(long.target) ?? '?'}`} (${name})`)
+      // `./data`, `/srv`, `~/x`, `C:\data`처럼 경로로 시작하면 호스트 경로다. 이름만 있으면 Docker 볼륨이다.
+      if (source && (type === 'bind' || /^(\.{0,2}\/|~|[A-Za-z]:[\\/])/.test(source))) hostSources.push(source)
+    }
+    if (svc.privileged === true) elevated.push(`privileged (${name})`)
+    const caps = strings(svc.cap_add)
+    if (caps.length) elevated.push(`추가 권한 ${caps.join(', ')} (${name})`)
+    if (Array.isArray(svc.devices) && svc.devices.length) elevated.push(`호스트 장치 (${name})`)
+    for (const k of ['network_mode', 'pid', 'ipc', 'userns_mode'] as const) if (svc[k] === 'host') shared.push(`${k}=host (${name})`)
+    const command = [...strings(svc.entrypoint), ...strings(svc.command)].join(' ')
+    if (command) commands.push(`${name}: ${cut(command, 300)}`)
+    env.push(...envNames(svc.environment))
+  }
+
+  params.서비스 = images.join(', ')
+  if (ports.length) params.포트 = ports.join(', ')
+  if (mounts.length) params.마운트 = mounts.join(', ')
+  if (commands.length) {
+    params.명령 = maskText(commands.join('\n'))
+    reasons.push({
+      code: 'COMMAND',
+      message: '컨테이너가 시작될 때 이 명령이 실행돼요. 보통은 이미지에 정해진 기본 명령이에요. 모르는 명령이 보이면 거부해주세요.',
+    })
+  }
+  if (hostSources.some((src) => src.includes('docker.sock') || src === '/' || /^[A-Za-z]:[\\/]?$/.test(src))) {
+    reasons.push({ code: 'HOST_TAKEOVER', message: '호스트 루트나 Docker 소켓을 연결하면 호스트 전체를 제어할 수 있어요.' })
+  } else if (hostSources.length) {
+    reasons.push({ code: 'HOST_MOUNT', message: `호스트 경로를 컨테이너에 연결해요: ${[...new Set(hostSources)].join(', ')}` })
+  }
+  if (elevated.length) {
+    params.권한 = elevated.join(', ')
+    reasons.push({ code: 'PRIVILEGED', message: '컨테이너가 호스트에 가까운 권한을 가져요.' })
+  }
+  if (shared.length) {
+    params.공유 = shared.join(', ')
+    reasons.push({ code: 'HOST_NAMESPACE', message: '컨테이너가 호스트의 네트워크·프로세스를 같이 써요.' })
+  }
+  if (env.length) params.환경변수 = `${[...new Set(env)].join(', ')} (값은 숨김)`
+
+  // 화면용 compose: 환경변수 값을 가리고 다시 쓴다.
+  const copy = structuredClone(doc) as { services: Record<string, unknown> }
+  for (const svc of Object.values(copy.services)) {
+    if (svc && typeof svc === 'object' && 'environment' in svc) {
+      const s = svc as Record<string, unknown>
+      s.environment = hideEnv(s.environment)
+    }
+  }
+  const hostRisk = reasons.some((r) => ['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE'].includes(r.code))
+  return { services: names, params, reasons, hostRisk, unreadable: false, shown: maskText(cut(stringifyYaml(copy), MAX_FILE)) }
+}
+
+// 스택 단위 환경변수(Env: [{name, value}]). compose의 ${VAR} 자리에 들어간다. 값은 비밀일 수 있어 이름만 보여준다.
+function stackEnvNames(args: Record<string, unknown>): string[] {
+  const env = argOf(args, 'Env')
+  return Array.isArray(env) ? env.map((e) => str(objectArg(e).name)).filter((n): n is string => Boolean(n)) : []
+}
+
+function composeRisk(compose: ComposeDetails | undefined, safe: RiskLevel): RiskLevel {
+  if (!compose || compose.unreadable) return UNKNOWN_RISK
+  return compose.hostRisk ? { level: 'high', label: '호스트까지 영향' } : safe
+}
+
+const STACK_READS: Record<string, string> = {
+  StackList: '스택 목록 조회',
+  StackInspect: '스택 조회',
+  StackFileInspect: '스택 파일 조회',
+}
+
+function stackAction(tool: string, args: Record<string, unknown>, stacks: ReadonlyMap<string, StackInfo>): ToolAction | undefined {
+  if (STACK_READS[tool]) return { label: STACK_READS[tool], summary: STACK_READS[tool], risk: { level: 'low', label: '조회' } }
+
+  const id = numericId(argOf(args, 'id'))
+  const known = id ? stacks.get(id)?.name : undefined
+  const name = known ?? (id ? `ID ${id}` : undefined)
+  const target = id ? (known ? `${known} (스택 ID ${id})` : `스택 ID ${id}`) : undefined
+  const envList = stackEnvNames(args)
+  const withEnv = (params: Record<string, string>) =>
+    envList.length ? { ...params, '스택 환경변수': `${envList.join(', ')} (값은 숨김)` } : params
+
+  if (tool === 'StackCreateDockerStandaloneString') {
+    const stackName = str(argOf(args, 'Name'))
+    const content = str(argOf(args, 'StackFileContent'))
+    const compose = content ? composeDetails(content) : undefined
+    return {
+      label: '스택 배포',
+      summary: titled('스택', stackName, '배포'),
+      target: stackName,
+      params: withEnv({ ...compose?.params, ...(compose ? { 'compose 파일': compose.shown } : {}) }),
+      reasons: [
+        effect('compose 파일대로 컨테이너를 만들고 바로 실행해요. 없는 이미지는 받아 와요.'),
+        ...(compose?.reasons ?? [{ code: 'UNKNOWN', message: 'compose 파일이 비어 있어요. 확실하지 않으면 거부해주세요.' }]),
+      ],
+      risk: composeRisk(compose, { level: 'low', label: '새로 만듦' }),
+    }
+  }
+
+  if (tool === 'StackUpdate') {
+    const content = str(argOf(args, 'StackFileContent'))
+    const compose = content ? composeDetails(content) : undefined
+    const reasons: RiskReason[] = []
+    const params: Record<string, string> = { ...compose?.params }
+    if (compose) {
+      reasons.push(effect('새 compose 파일로 스택을 다시 배포해요. 설정이 바뀐 서비스는 컨테이너를 새로 만들어서 잠깐 끊겨요.'))
+      const before = id ? stacks.get(id)?.services : undefined
+      if (before && !compose.unreadable) {
+        const removed = before.filter((x) => !compose.services.includes(x))
+        const added = compose.services.filter((x) => !before.includes(x))
+        if (added.length) params['새 서비스'] = added.join(', ')
+        // Standalone 스택은 compose에서 뺀 서비스를 지우지 않는다(2026-11-05 Portainer 2.45 실측, Prune은 Swarm 전용).
+        if (removed.length) {
+          params['빠지는 서비스'] = removed.join(', ')
+          reasons.push({
+            code: 'ORPHANS',
+            message: `compose에서 빠진 서비스(${removed.join(', ')})의 컨테이너는 지워지지 않고 계속 실행돼요. 멈추거나 지우려면 따로 요청해야 해요.`,
+          })
+        }
+      } else if (!compose.unreadable) {
+        reasons.push({ code: 'ORPHANS_HINT', message: 'compose에서 뺀 서비스가 있으면 그 컨테이너는 지워지지 않고 계속 실행돼요.' })
+      }
+      reasons.push(...compose.reasons)
+      params['compose 파일'] = compose.shown
+    } else {
+      reasons.push(effect('compose 파일은 그대로 두고 스택을 다시 배포해요.'))
+    }
+    if (truthy(argOf(args, 'RepullImageAndRedeploy')) || truthy(argOf(args, 'PullImage'))) {
+      reasons.push(effect('이미지를 다시 받아서 모든 서비스의 컨테이너를 새로 만들어요.'))
+    }
+    if (argOf(args, 'RollbackTo') !== undefined) reasons.push(effect('바로 전 compose 파일로 되돌려요.'))
+    return {
+      label: '스택 수정',
+      summary: titled('스택', name, '수정'),
+      target,
+      params: withEnv(params),
+      reasons,
+      risk: compose ? composeRisk(compose, { level: 'medium', label: '다시 배포' }) : { level: 'medium', label: '다시 배포' },
+    }
+  }
+
+  if (tool === 'StackStart') {
+    return {
+      label: '스택 시작',
+      summary: titled('스택', name, '시작'),
+      target,
+      reasons: [effect('멈춰 있던 스택의 컨테이너를 모두 실행해요.')],
+      risk: { level: 'low', label: '실행' },
+    }
+  }
+  if (tool === 'StackStop') {
+    return {
+      label: '스택 중지',
+      summary: titled('스택', name, '중지'),
+      target,
+      reasons: [effect('스택의 컨테이너가 모두 멈춰요. 지워지지는 않고 나중에 다시 시작할 수 있어요.')],
+      risk: { level: 'medium', label: '서비스 멈춤' },
+    }
+  }
+  if (tool === 'StackDelete') {
+    const services = id ? stacks.get(id)?.services : undefined
+    const volumes = truthy(argOf(args, 'removeVolumes'))
+    return {
+      label: '스택 삭제',
+      summary: titled('스택', name, '삭제'),
+      target,
+      ...(services?.length ? { params: { 서비스: services.join(', ') } } : {}),
+      reasons: [
+        effect(volumes ? '스택과 소속 컨테이너가 지워져요.' : '스택과 소속 컨테이너가 지워져요. 볼륨은 남아요.'),
+        ...(volumes ? [{ code: 'VOLUMES', message: 'compose에 적힌 볼륨과 그 안의 데이터도 같이 지워져요.' }] : []),
+        DESTRUCTIVE,
+      ],
+      risk: IRREVERSIBLE,
+    }
+  }
+  // 그 밖의 스택 도구(마이그레이션, Git 배포 등)는 문구 표가 없다. "확인할 수 없는 작업" 카드로 띄운다.
+  return undefined
+}
+
+// 같은 스택을 바꾸는 요청끼리 비교하는 키. 만들기는 이름으로, 나머지는 ID(아는 이름도 같이)로 본다.
+function stackKeys(tool: string, args: Record<string, unknown>, stacks: ReadonlyMap<string, StackInfo>): string[] {
+  if (STACK_READS[tool]) return []
+  if (tool === 'StackCreateDockerStandaloneString') {
+    const name = str(argOf(args, 'Name'))
+    return name ? [`stacks/name:${name.toLowerCase()}`] : []
+  }
+  const id = numericId(argOf(args, 'id'))
+  if (!id) return []
+  const name = stacks.get(id)?.name
+  return [`stacks/${id}`, ...(name ? [`stacks/name:${name.toLowerCase()}`] : [])]
+}
+
+function rememberStack(stacks: Map<string, StackInfo>, id: string, info: StackInfo): void {
+  if (!stacks.has(id) && stacks.size >= MAX_STACKS) stacks.delete(stacks.keys().next().value!)
+  stacks.set(id, { ...stacks.get(id), ...info })
+}
+
+function servicesOf(content: string | undefined): string[] | undefined {
+  if (!content) return undefined
+  const services = Object.keys(objectArg(objectArg(parseCompose(content)).services))
+  return services.length ? services : undefined
+}
+
+// 스택 조회·변경 결과에서 ID ↔ 이름과 서비스 목록을 알아 둔다. 모델이 select로 필드 이름을 바꾸므로 대소문자를 무시한다.
+function learnStacks(stacks: Map<string, StackInfo>, tool: string, args: Record<string, unknown>, output: string): void {
+  const id = numericId(argOf(args, 'id'))
+  if (tool === 'StackDelete') {
+    if (id) stacks.delete(id)
+    return
+  }
+  let data: unknown
+  try {
+    data = output ? JSON.parse(output) : undefined
+  } catch {
+    data = undefined
+  }
+  if (tool === 'StackFileInspect') {
+    const services = servicesOf(str(argOf(objectArg(data), 'StackFileContent')))
+    if (id && services) rememberStack(stacks, id, { services })
+    return
+  }
+  for (const item of (Array.isArray(data) ? data : [data]).slice(0, 1000)) {
+    const obj = objectArg(item)
+    const itemId = numericId(argOf(obj, 'id'))
+    const name = str(argOf(obj, 'name'))
+    if (itemId && name) rememberStack(stacks, itemId, { name })
+  }
+  // 만들기·고치기가 성공하면 그때 쓴 compose가 지금 compose다.
+  const services = servicesOf(str(argOf(args, 'StackFileContent')))
+  const created = numericId(argOf(objectArg(data), 'id'))
+  if (tool === 'StackCreateDockerStandaloneString' && created) {
+    const name = str(argOf(args, 'Name'))
+    rememberStack(stacks, created, { ...(name ? { name } : {}), ...(services ? { services } : {}) })
+  }
+  if (tool === 'StackUpdate' && id && services) rememberStack(stacks, id, { services })
 }

@@ -3,7 +3,7 @@
 // API 키는 Docker Agent env 파일(AGENT_ENV_FILE)에 쓴다. 키 값은 화면으로 돌려주지 않는다.
 
 import { chmodSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import type { Settings } from '../src/lib/agentProtocol.ts'
+import type { ApprovalMode, Settings } from '../src/lib/agentProtocol.ts'
 import { config } from './config.ts'
 import { getSetting, setSetting } from './store.ts'
 
@@ -33,8 +33,25 @@ export function getSettings(): Settings {
     models: allModels(),
     customModels: customModels().filter((m) => !config.agentModels.includes(m)),
     apiKey: { editable: config.agentEnvFile !== '', set: apiKeySet() },
+    approvalMode: approvalMode(),
     ...(config.portainerUrl ? { portainerUrl: config.portainerUrl } : {}),
   }
+}
+
+// ---- 승인 방식(YOLO, 10-28 회의 3번) ----
+// ask: 매번 묻는다(기본). risky: 되돌릴 수 없거나 WEB이 모르는 작업만 묻고 나머지는 WEB이 대신 승인한다.
+// never: 묻지 않고 모두 WEB이 대신 승인한다. 정책 훅·permissions.deny는 승인보다 먼저 돌아서 어느 방식에서도 그대로 막는다.
+export const APPROVAL_MODES: readonly ApprovalMode[] = ['ask', 'risky', 'never']
+
+export function approvalMode(): ApprovalMode {
+  const saved = getSetting('approval_mode')
+  return APPROVAL_MODES.includes(saved as ApprovalMode) ? (saved as ApprovalMode) : 'ask'
+}
+
+export function saveApprovalMode(mode: unknown): boolean {
+  if (!APPROVAL_MODES.includes(mode as ApprovalMode)) return false
+  setSetting('approval_mode', mode as string)
+  return true
 }
 
 // 목록에 없는 모델이면 false.

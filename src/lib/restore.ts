@@ -3,7 +3,7 @@
 
 import type { ChatMessage, ProcessStep } from '../types'
 import type { ApprovalStatus, RestoredCard, RestoredMessage } from './agentProtocol'
-import { addDetail, APPROVED_LABEL, BLOCKED_LABEL, CANCELLED_LABEL, markTargetChanged, withSummary } from './processSteps'
+import { addDetail, APPROVED_LABEL, AUTO_APPROVED_LABEL, BLOCKED_LABEL, CANCELLED_LABEL, markTargetChanged, withSummary } from './processSteps'
 
 const APPROVAL_STEP: Record<Exclude<ApprovalStatus, 'pending'>, Pick<ProcessStep, 'label' | 'state'>> = {
   approved: { label: APPROVED_LABEL, state: 'done' },
@@ -16,6 +16,7 @@ function stepFor(card: RestoredCard): ProcessStep | undefined {
   const id = crypto.randomUUID()
   if (card.kind === 'rejected') return { id, label: withSummary(BLOCKED_LABEL, card.detail), state: 'failed' }
   if (card.status === 'pending') return undefined
+  if (card.auto) return { id, label: withSummary(AUTO_APPROVED_LABEL, card.summary), state: 'done', detail: card.action.tool }
   const { label, state } = APPROVAL_STEP[card.status]
   return { id, label: withSummary(label, card.summary), state, detail: card.action.tool }
 }

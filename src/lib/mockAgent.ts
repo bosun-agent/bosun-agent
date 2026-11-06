@@ -260,6 +260,8 @@ const mockSettings = () => ({
   models: [...MOCK_MODELS, ...customModels],
   customModels: [...customModels],
   apiKey: { editable: true, set: mockKeySet },
+  // 목업은 카드를 대신 승인하지 않는다. 승인 방식은 WEB 백엔드에 붙여야 바꿀 수 있다.
+  approvalMode: 'ask' as const,
   portainerUrl: 'https://localhost:9443',
 })
 

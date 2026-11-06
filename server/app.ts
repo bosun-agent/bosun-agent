@@ -8,6 +8,7 @@ import { secureHeaders } from 'hono/secure-headers'
 import { streamSSE } from 'hono/streaming'
 import type {
   ApprovalDecision,
+  ApprovalMode,
   AuditRecord,
   RestoredCard,
   RestoredMessage,
@@ -21,7 +22,17 @@ import { listBackups } from './backups.ts'
 import { config } from './config.ts'
 import { LOCAL_USER, localOnly } from './guard.ts'
 import { maskText } from './mask.ts'
-import { addModel, getSettings, removeModel, saveApiKey, saveModel, validApiKey, validModelRef } from './settings.ts'
+import {
+  addModel,
+  APPROVAL_MODES,
+  getSettings,
+  removeModel,
+  saveApiKey,
+  saveApprovalMode,
+  saveModel,
+  validApiKey,
+  validModelRef,
+} from './settings.ts'
 import { cardSummaries, cardsFor, copyCards, deleteCards, pinnedSessions, recentDecisions, setPinned, usageSince } from './store.ts'
 import { systemInfo } from './system.ts'
 import {
@@ -257,6 +268,7 @@ app.get('/api/sessions/:id/export', async (c) => {
     lines.push('## BOSUN', '')
     for (const card of m.cards ?? []) {
       if (card.kind === 'rejected') lines.push(`> 정책 차단: ${card.reason}${card.detail ? ` (${card.detail})` : ''}`, '')
+      else if (card.auto) lines.push(`> 자동 승인: ${card.summary}`, '')
       else lines.push(`> 승인 요청: ${card.summary} — ${DECISION_LABEL[card.status] ?? card.status}`, '')
     }
     if (m.content) lines.push(m.content, '')
@@ -323,10 +335,21 @@ app.post('/api/sessions/:id/approvals/:approvalId', async (c) => {
 // 설정 화면. 모델 선택과 API 키.
 app.get('/api/settings', (c) => c.json(getSettings()))
 
+// 모델과 승인 방식. 둘 중 보낸 것만 바꾼다.
 app.put('/api/settings', async (c) => {
-  const body = await jsonBody<{ model: unknown }>(c)
-  if (typeof body.model !== 'string' || !saveModel(body.model)) {
+  const body = await jsonBody<{ model: unknown; approvalMode: unknown }>(c)
+  if (body.model === undefined && body.approvalMode === undefined) {
+    throw new HttpError(400, 'BAD_REQUEST', '바꿀 설정이 없어요.')
+  }
+  if (body.approvalMode !== undefined && !APPROVAL_MODES.includes(body.approvalMode as ApprovalMode)) {
+    throw new HttpError(400, 'BAD_REQUEST', '승인 방식은 ask, risky, never 중 하나예요.')
+  }
+  if (body.model !== undefined && (typeof body.model !== 'string' || !saveModel(body.model))) {
     throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 모델이에요.')
+  }
+  if (body.approvalMode !== undefined) {
+    saveApprovalMode(body.approvalMode)
+    console.info(`[settings] approval mode: ${body.approvalMode}`)
   }
   return c.json(getSettings())
 })

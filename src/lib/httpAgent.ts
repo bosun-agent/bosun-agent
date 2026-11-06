@@ -105,6 +105,8 @@ export const httpAgent: AgentClient = {
 
   saveModel: (model) => json<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ model }) }),
 
+  saveApprovalMode: (approvalMode) => json<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ approvalMode }) }),
+
   addModel: (model) => json<Settings>('/api/settings/models', { method: 'POST', body: JSON.stringify({ model }) }),
 
   removeModel: (model) => json<Settings>(`/api/settings/models?model=${encodeURIComponent(model)}`, { method: 'DELETE' }),

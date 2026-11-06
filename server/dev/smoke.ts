@@ -282,7 +282,7 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   check(
     '모르는 도구 카드: 확인할 수 없다고 하고 인자는 이름만',
     ap?.summary === '어떤 작업인지 확인할 수 없어요.' && ap.risk?.level === 'unknown' && ap.reasons.some((x) => x.code === 'UNKNOWN') &&
-      String(ap.action.params?.인자).includes('StackFileContent') && !JSON.stringify(ap).includes('super-secret-value'),
+      String(ap.action.params?.인자).includes('encryptionKey') && !JSON.stringify(ap).includes('super-secret-value'),
     ap,
   )
   await post(`/api/sessions/${sx}/approvals/${ap!.approvalId}`, { decision: 'deny' })
@@ -619,6 +619,115 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   )
 }
 
+// ---- 스택 카드(Secure 정책표: 생성은 스택으로만) ----
+{
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '스택 배포해줘' })
+  const ap = approvalOf(r.events)
+  const p = ap?.action.params ?? {}
+  check(
+    '스택 배포 카드: 서비스·포트·호스트 경로와 새로 만듦',
+    ap?.summary === '스택 shop 배포' && ap.risk?.level === 'low' &&
+      String(p.서비스).includes('web (nginx:alpine)') && String(p.서비스).includes('db (postgres:16)') &&
+      String(p.포트).includes('8081:80 (web)') && ap.reasons.some((x) => x.code === 'HOST_MOUNT' && x.message.includes('./html')),
+    ap,
+  )
+  check(
+    '스택 배포 카드에 환경변수 값이 없다(compose·스택 Env 모두)',
+    !JSON.stringify(ap).includes('super-secret') && String(p.환경변수).includes('POSTGRES_PASSWORD') && String(p['스택 환경변수']).includes('API_TOKEN') &&
+      String(p['compose 파일']).includes('POSTGRES_PASSWORD: ••••'),
+    p,
+  )
+  await post(`/api/sessions/${s}/approvals/${ap!.approvalId}`, { decision: 'approve' })
+
+  const u = await post(`/api/sessions/${s}/messages`, { text: '스택 수정해줘' })
+  const up = approvalOf(u.events)
+  check(
+    '스택 수정 카드: 이름, 빠지는 서비스 경고, 새 서비스, 명령',
+    up?.summary === '스택 shop 수정' && up.action.target === 'shop (스택 ID 7)' && up.risk?.level === 'medium' &&
+      up.action.params?.['빠지는 서비스'] === 'cache' && up.action.params?.['새 서비스'] === 'worker' &&
+      up.reasons.some((x) => x.code === 'ORPHANS' && x.message.includes('cache')) && up.reasons.some((x) => x.code === 'COMMAND'),
+    up,
+  )
+  await post(`/api/sessions/${s}/approvals/${up!.approvalId}`, { decision: 'deny' })
+
+  const st = await post(`/api/sessions/${s}/messages`, { text: '스택 중지해줘' })
+  const sp = approvalOf(st.events)
+  check('스택 중지 카드: 서비스 멈춤', sp?.summary === '스택 shop 중지' && sp.risk?.label === '서비스 멈춤', sp)
+  await post(`/api/sessions/${s}/approvals/${sp!.approvalId}`, { decision: 'deny' })
+
+  const d = await post(`/api/sessions/${s}/messages`, { text: '스택 삭제해줘' })
+  const dp = approvalOf(d.events)
+  check(
+    '스택 삭제 카드: 되돌릴 수 없음, 볼륨 데이터 경고, 서비스 목록',
+    dp?.summary === '스택 shop 삭제' && dp.risk?.level === 'high' && dp.reasons.some((x) => x.code === 'VOLUMES') &&
+      String(dp.action.params?.서비스).includes('cache'),
+    dp,
+  )
+  await post(`/api/sessions/${s}/approvals/${dp!.approvalId}`, { decision: 'deny' })
+
+  const k = await post(`/api/sessions/${s}/messages`, { text: '소켓 스택 만들어줘' })
+  const kp = approvalOf(k.events)
+  check('Docker 소켓을 연결하는 스택은 호스트까지 영향', kp?.risk?.level === 'high' && kp.reasons.some((x) => x.code === 'HOST_TAKEOVER'), kp)
+  await post(`/api/sessions/${s}/approvals/${kp!.approvalId}`, { decision: 'deny' })
+}
+
+// ---- 승인 방식(YOLO) ----
+{
+  const mode = (approvalMode: string) =>
+    fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approvalMode }) })
+  const bad = await mode('sometimes')
+  const initial = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { approvalMode: string }
+  check('승인 방식 기본은 ask, 모르는 값은 400', bad.status === 400 && initial.approvalMode === 'ask', [bad.status, initial.approvalMode])
+
+  const ok = await mode('never')
+  check('승인 방식 저장', ok.status === 200 && ((await ok.json()) as { approvalMode: string }).approvalMode === 'never', ok.status)
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '삭제해줘' })
+  const auto = r.events.find((e) => e.type === 'auto_approved')
+  check(
+    '묻지 않기: 카드 없이 auto_approved → 실행 → done',
+    auto?.type === 'auto_approved' && auto.summary === '컨테이너 nginx-web 삭제' && !types(r.events).includes('approval_required') &&
+      text(r.events).includes('삭제했어요') && last(r.events) === 'done',
+    types(r.events),
+  )
+  const restored = (await fetch(`${BASE}/api/sessions/${s}/messages`).then((res) => res.json())) as {
+    messages: { cards?: { kind: string; status?: string; auto?: boolean }[] }[]
+  }
+  const card = restored.messages.flatMap((m) => m.cards ?? [])[0]
+  check('대신 승인한 카드는 approved + auto로 복원', card?.status === 'approved' && card.auto === true, card)
+  const audit = (await fetch(`${BASE}/api/audit?sessionId=${s}`).then((res) => res.json())) as { records: { user: string; decision: string }[] }
+  check('승인 기록에 user auto', audit.records[0]?.user === 'auto' && audit.records[0].decision === 'approved', audit.records)
+  const hooked = await post(`/api/sessions/${s}/messages`, { text: '명령 실행해줘' })
+  check('묻지 않기에서도 permissions.deny는 막힌다', types(hooked.events).includes('rejected') && !types(hooked.events).includes('auto_approved'), types(hooked.events))
+
+  await mode('risky')
+  const s2 = await newSession()
+  const restart = await post(`/api/sessions/${s2}/messages`, { text: 'web 재시작해줘' })
+  check('위험한 작업만 묻기: 재시작(잠깐 끊김)은 대신 승인', types(restart.events).includes('auto_approved') && last(restart.events) === 'done', types(restart.events))
+  const del = await post(`/api/sessions/${s2}/messages`, { text: '삭제해줘' })
+  check('위험한 작업만 묻기: 삭제는 카드', last(del.events) === 'approval_required' && !types(del.events).includes('auto_approved'), types(del.events))
+  await post(`/api/sessions/${s2}/approvals/${approvalOf(del.events)!.approvalId}`, { decision: 'deny' })
+  const unknown = await post(`/api/sessions/${s2}/messages`, { text: '모르는 도구 써줘' })
+  check('위험한 작업만 묻기: 모르는 도구는 카드', last(unknown.events) === 'approval_required', types(unknown.events))
+  await post(`/api/sessions/${s2}/approvals/${approvalOf(unknown.events)!.approvalId}`, { decision: 'deny' })
+
+  // 다른 대화가 같은 대상의 결정을 기다리면 대신 승인하지 않고 묻는다.
+  await mode('ask')
+  const [a, b] = [await newSession(), await newSession()]
+  const ra = await post(`/api/sessions/${a}/messages`, { text: '삭제해줘' })
+  await mode('never')
+  const rb = await post(`/api/sessions/${b}/messages`, { text: '삭제해줘' })
+  check(
+    '같은 대상을 다른 대화가 기다리면 묻지 않기여도 카드(CONCURRENT)',
+    last(rb.events) === 'approval_required' && approvalOf(rb.events)?.reasons.some((x) => x.code === 'CONCURRENT') === true,
+    types(rb.events),
+  )
+  await mode('ask')
+  await post(`/api/sessions/${a}/approvals/${approvalOf(ra.events)!.approvalId}`, { decision: 'deny' })
+  await post(`/api/sessions/${b}/approvals/${approvalOf(rb.events)!.approvalId}`, { decision: 'deny' })
+}
+
 // ---- 모델 관리 ----
 {
   const add = (model: string) => post('/api/settings/models', { model })
@@ -639,7 +748,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   if (db && db !== ':memory:') {
     const { DatabaseSync } = await import('node:sqlite')
     const users = new DatabaseSync(db).prepare("SELECT DISTINCT user FROM approval_audit WHERE user != 'system'").all()
-    check('승인 감사 기록의 user는 local', users.every((u) => u.user === 'local'), users)
+    check('승인 감사 기록의 user는 local 또는 auto(대신 승인)', users.every((u) => u.user === 'local' || u.user === 'auto'), users)
   }
 }
 

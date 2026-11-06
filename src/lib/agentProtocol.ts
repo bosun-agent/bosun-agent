@@ -41,6 +41,8 @@ export type AgentEvent =
       risk?: RiskLevel
       expiresAt: string
     }
+  // 승인 방식(ApprovalMode)에 따라 WEB이 카드 없이 대신 승인했다. 처리 과정에 한 줄로 남긴다.
+  | { type: 'auto_approved'; approvalId: string; tool: string; summary: string; risk?: RiskLevel }
   // detail: 무엇이 왜 막혔는지 한 줄(훅이 준 사유의 첫 문장). 사유가 없는 차단에는 없다.
   | { type: 'rejected'; code: string; reason: string; detail?: string }
   // 다시 붙기(GET .../stream)에서만 온다. 앞에 보낸 approval_required가 이미 결정됐다.
@@ -64,6 +66,8 @@ export type RestoredCard =
       reasons: RiskReason[]
       risk?: RiskLevel
       expiresAt: string
+      // WEB이 승인 방식에 따라 대신 승인한 카드(status approved). 화면에 카드로 띄운 적은 없다.
+      auto?: true
     }
   | { kind: 'rejected'; code: string; reason: string; detail?: string }
 
@@ -92,11 +96,17 @@ export interface Settings {
   // models 중 관리자가 화면에서 더한 것. 이것만 지울 수 있다.
   customModels: string[]
   apiKey: { editable: boolean; set: boolean }
+  // 승인 방식. 카드를 띄울지 WEB이 대신 승인할지 정한다.
+  approvalMode: ApprovalMode
   // 정책 차단 안내의 "Portainer 열기" 링크. WEB 백엔드에 PORTAINER_URL이 없으면 빠진다.
   portainerUrl?: string
   // PUT /api/settings/api-key 응답에만 있다. 새 키를 적용하려고 Agent를 다시 시작했는지(AgentRestart).
   agentRestart?: AgentRestart
 }
+
+// ask: 매번 묻기(기본), risky: 위험한 작업만 묻기(위험도 high·unknown만 카드), never: 묻지 않기(YOLO).
+// 정책 훅과 permissions.deny는 승인보다 먼저 돌아서 어느 방식이든 그대로 막는다.
+export type ApprovalMode = 'ask' | 'risky' | 'never'
 
 // Agent 다시 시작 요청 결과. started: 지금 다시 시작함, waiting: 처리 중인 대화가 끝나면 다시 시작함,
 // manual: WEB이 띄운 Agent가 아니라서 사람이 다시 띄워야 함.
@@ -143,6 +153,7 @@ export interface SystemInfo {
 // 승인 기록 한 줄(GET /api/audit). 대화를 지웠으면 summary가 없다.
 export interface AuditRecord {
   at: string
+  // local: 화면에서 누른 결정, system: 승인 시간이 지나 자동 거부, auto: 승인 방식에 따라 WEB이 대신 승인
   user: string
   sessionId: string
   approvalId: string
@@ -200,6 +211,7 @@ export interface AgentClient {
   stop?(sessionId: string): Promise<void>
   getSettings?(): Promise<Settings>
   saveModel?(model: string): Promise<Settings>
+  saveApprovalMode?(mode: ApprovalMode): Promise<Settings>
   addModel?(model: string): Promise<Settings>
   removeModel?(model: string): Promise<Settings>
   // 저장해도 Docker Agent를 다시 시작해야 적용된다.

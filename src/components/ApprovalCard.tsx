@@ -16,7 +16,7 @@ const URGENT_MS = 60_000
 // 호스트까지 영향이 가는 사유와 설명할 수 없는 도구는 빨간색으로 보여준다.
 const DANGER_CODES = new Set(['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE', 'UNKNOWN'])
 // 다른 대화가 같은 대상을 기다리는 경우처럼 결정 전에 꼭 봐야 하는 안내
-const WARN_CODES = new Set(['CONCURRENT'])
+const WARN_CODES = new Set(['CONCURRENT', 'ORPHANS'])
 
 // 카드 맨 위 위험도 표시. 문장을 읽기 전에 재시작(곧 돌아옴)과 삭제(되돌릴 수 없음)를 구분하게 한다.
 const RISK_STYLE: Record<RiskLevel['level'], string> = {
@@ -135,7 +135,7 @@ export function ApprovalCard({
 }
 
 // 요청 원문(Docker Engine API). 처음 보는 사람에게는 어려워서 "기술 정보"로 접어 둔다.
-const TECH_KEYS = new Set(['요청', '옵션', '본문'])
+const TECH_KEYS = new Set(['요청', '옵션', '본문', 'compose 파일'])
 
 // Docker Engine API 쿼리 옵션 → 뜻. 표에 없는 옵션은 원문만 보여준다.
 const OPTION_HELP: Record<string, string> = {
@@ -172,16 +172,19 @@ function OptionList({ value }: { value: string }) {
   )
 }
 
+// 이름 칸은 가장 긴 이름에 맞춘다(dl이 두 칸 grid). "빠지는 서비스"처럼 긴 이름도 한 줄로 둔다.
 function ParamRow({ name, value }: { name: string; value: unknown }) {
   return (
-    <div className="flex gap-2">
-      <dt className="w-14 shrink-0 text-neutral-500">{name}</dt>
-      <dd className="max-h-32 min-w-0 flex-1 overflow-y-auto font-mono break-all whitespace-pre-wrap text-neutral-800">
+    <>
+      <dt className="whitespace-nowrap text-neutral-500">{name}</dt>
+      <dd className="max-h-32 min-w-0 overflow-y-auto font-mono break-all whitespace-pre-wrap text-neutral-800">
         {name === '옵션' ? <OptionList value={String(value)} /> : String(value)}
       </dd>
-    </div>
+    </>
   )
 }
+
+const PARAM_GRID = 'grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1'
 
 // 서버가 고른 요청 값(이미지, 명령, 마운트 등). 명령은 길 수 있어서 높이를 제한하고 스크롤한다.
 // 옵션은 동작을 바꾸므로(force 등) 접지 않고 위에 보여준다. 요청 원문과 본문만 접는다.
@@ -192,7 +195,7 @@ function ParamList({ params }: { params: Record<string, unknown> }) {
   return (
     <div className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs">
       {main.length > 0 && (
-        <dl className="space-y-1">
+        <dl className={PARAM_GRID}>
           {main.map(([name, value]) => (
             <ParamRow key={name} name={name} value={value} />
           ))}
@@ -200,8 +203,10 @@ function ParamList({ params }: { params: Record<string, unknown> }) {
       )}
       {tech.length > 0 && (
         <details className={main.length > 0 ? 'mt-1.5' : ''}>
-          <summary className="cursor-pointer text-neutral-500">기술 정보 (Docker에 보낼 요청)</summary>
-          <dl className="mt-1 space-y-1">
+          <summary className="cursor-pointer text-neutral-500">
+            {tech.some(([k]) => k === 'compose 파일') ? 'compose 파일 보기' : '기술 정보 (Docker에 보낼 요청)'}
+          </summary>
+          <dl className={`mt-1 ${PARAM_GRID}`}>
             {tech.map(([name, value]) => (
               <ParamRow key={name} name={name} value={value} />
             ))}

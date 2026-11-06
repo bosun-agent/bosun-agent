@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { Settings } from '../lib/agentProtocol'
+import type { ApprovalMode, Settings } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 import { AuditSection, BackupSection, InfoSection, NotifySection, PolicySection } from './SettingsSections'
 
@@ -20,9 +20,11 @@ export function SettingsModal({
   activeServerId,
   onClose,
   onDraft,
+  onApprovalModeChange,
 }: {
   activeServerId?: string
   onClose: () => void
+  onApprovalModeChange?: (mode: ApprovalMode) => void
   // 입력창에 글을 채우고 설정을 닫는다(백업 복원 요청).
   onDraft?: (text: string) => void
 }) {
@@ -75,7 +77,7 @@ export function SettingsModal({
           </div>
           {sectionId === 'model' && <ModelSection />}
           {sectionId === 'api-key' && <ApiKeySection />}
-          {sectionId === 'policy' && <PolicySection />}
+          {sectionId === 'policy' && <PolicySection onApprovalModeChange={onApprovalModeChange} />}
           {sectionId === 'audit' && <AuditSection />}
           {sectionId === 'backup' && <BackupSection onDraft={onDraft} />}
           {sectionId === 'about' && <InfoSection activeServerId={activeServerId} />}

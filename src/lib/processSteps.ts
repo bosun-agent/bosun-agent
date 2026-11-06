@@ -63,6 +63,8 @@ export function addDetail(details: string[] | undefined, detail: string | undefi
 }
 
 export const APPROVED_LABEL = '승인함'
+// 승인 방식에 따라 WEB이 카드 없이 대신 승인했다(auto_approved).
+export const AUTO_APPROVED_LABEL = '자동 승인함'
 export const CANCELLED_LABEL = '취소됨'
 export const BLOCKED_LABEL = '정책에 따라 차단됨'
 export const CHANGED_LABEL = '대상이 바뀌어 실행 안 함'
@@ -83,7 +85,9 @@ export function markTargetChanged(steps: ProcessStep[], summary: string | undefi
 export function blockResolved(steps: ProcessStep[]): boolean {
   const lastBlock = steps.findLastIndex((s) => s.state === 'failed' && s.label.startsWith(BLOCKED_LABEL))
   if (lastBlock < 0) return false
-  return steps.slice(lastBlock + 1).some((s) => s.state === 'done' && s.label.startsWith(APPROVED_LABEL))
+  return steps
+    .slice(lastBlock + 1)
+    .some((s) => s.state === 'done' && (s.label.startsWith(APPROVED_LABEL) || s.label.startsWith(AUTO_APPROVED_LABEL)))
 }
 
 // 연달아 같은 결과가 나온 단계(정책에 따라 차단됨 ×4 등)를 한 줄로 묶는다. 진행 중인 단계는 묶지 않는다.

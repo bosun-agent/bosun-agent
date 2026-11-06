@@ -11,3 +11,29 @@ html, body, #root {
 body {
   margin: 0;
 }
+
+/* Tailwind v4는 버튼 커서를 기본(화살표)으로 둔다. 누를 수 있는 것은 손가락, 못 누르는 것은 금지 표시로 맞춘다(10-28 회의 "커서 오류"). */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  select:not(:disabled),
+  label:has(> input:not(:disabled)),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
+
+  /* 키보드로 옮겨 다닐 때 어디에 있는지 보이게 한다. 마우스로 누를 때는 그리지 않는다. */
+  :focus-visible {
+    outline: 2px solid var(--color-neutral-500);
+    outline-offset: 2px;
+  }
+}

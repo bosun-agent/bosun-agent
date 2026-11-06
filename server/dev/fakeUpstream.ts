@@ -131,20 +131,111 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
-    // WEB이 문구 표를 갖고 있지 않은 도구(스택 도구, 새 MCP). 인자에는 비밀값이 들어 있을 수 있다.
+    // WEB이 문구 표를 갖고 있지 않은 도구(새 MCP 등). 인자에는 비밀값이 들어 있을 수 있다.
     match: /모르는 도구/,
+    run: async (r) => {
+      const res = await r.tool(
+        'VolumeBackupCreate',
+        { endpointId: 1, volume: 'db-data', encryptionKey: 'super-secret-value' },
+        { ask: true, output: '{"ok":true}' },
+      )
+      await r.say(res.isError ? '승인되지 않아서 백업하지 않았어요.' : '백업했어요.')
+    },
+  },
+  {
+    // 스택 배포(Secure 정책표: 생성은 스택으로만). mcp-portainer는 본문 필드를 인자로 펼친다(Name, StackFileContent, Env).
+    match: /스택 배포/,
     run: async (r) => {
       const res = await r.tool(
         'StackCreateDockerStandaloneString',
         {
           endpointId: 1,
-          Name: 'web',
-          StackFileContent: 'services:\n  web:\n    image: nginx:alpine',
-          Env: [{ name: 'DB_PASSWORD', value: 'super-secret-value' }],
+          Name: 'shop',
+          StackFileContent: [
+            'services:',
+            '  web:',
+            '    image: nginx:alpine',
+            '    ports:',
+            '      - "8081:80"',
+            '    volumes:',
+            '      - ./html:/usr/share/nginx/html:ro',
+            '  db:',
+            '    image: postgres:16',
+            '    environment:',
+            '      POSTGRES_PASSWORD: super-secret-value',
+            '    volumes:',
+            '      - db-data:/var/lib/postgresql/data',
+            '  cache:',
+            '    image: redis:7',
+            'volumes:',
+            '  db-data: {}',
+          ].join('\n'),
+          Env: [{ name: 'API_TOKEN', value: 'super-secret-env' }],
         },
-        { ask: true, output: '{"Id":3}' },
+        { ask: true, output: '{"Id":7,"Name":"shop"}' },
       )
-      await r.say(res.isError ? '승인되지 않아서 스택을 만들지 않았어요.' : '스택을 만들었어요.')
+      await r.say(res.isError ? '승인되지 않아서 스택을 만들지 않았어요.' : 'shop 스택을 배포했어요.')
+    },
+  },
+  {
+    // 스택 수정. 조회로 ID·이름과 지금 compose를 본 뒤 cache를 빼고 worker를 더한다.
+    match: /스택 수정/,
+    run: async (r) => {
+      await r.tool('StackList', { select: '[].{Id:Id,Name:Name}' }, { output: JSON.stringify([{ Id: 7, Name: 'shop' }]) })
+      await r.tool('StackFileInspect', { id: 7 }, {
+        output: JSON.stringify({ StackFileContent: ['services:', '  web:', '    image: nginx:alpine', '  db:', '    image: postgres:16', '  cache:', '    image: redis:7'].join('\n') }),
+      })
+      const res = await r.tool(
+        'StackUpdate',
+        {
+          id: 7,
+          endpointId: 1,
+          StackFileContent: [
+            'services:',
+            '  web:',
+            '    image: nginx:1.27-alpine',
+            '  db:',
+            '    image: postgres:16',
+            '  worker:',
+            '    image: busybox',
+            '    command: ["sh", "-c", "sleep 3600"]',
+          ].join('\n'),
+        },
+        { ask: true, output: '{"Id":7,"Name":"shop"}' },
+      )
+      await r.say(res.isError ? '승인되지 않아서 고치지 않았어요.' : 'shop 스택을 고쳤어요.')
+    },
+  },
+  {
+    // 스택 중지. 이름은 앞서 조회한 결과로 WEB이 안다.
+    match: /스택 중지/,
+    run: async (r) => {
+      const res = await r.tool('StackStop', { id: 7, endpointId: 1 }, { ask: true, output: '{"Id":7}' })
+      await r.say(res.isError ? '중지하지 않았어요.' : '중지했어요.')
+    },
+  },
+  {
+    // 스택 삭제(지금 정책은 DENY지만 ASK로 바뀔 수 있다). removeVolumes면 데이터도 지워진다.
+    match: /스택 삭제/,
+    run: async (r) => {
+      const res = await r.tool('StackDelete', { id: 7, endpointId: 1, removeVolumes: true }, { ask: true, output: '' })
+      await r.say(res.isError ? '지우지 않았어요.' : '지웠어요.')
+    },
+  },
+  {
+    // 호스트를 넘보는 compose. 카드 위험도가 high여야 하고, 위험한 작업만 묻기에서도 물어야 한다.
+    match: /소켓 스택/,
+    run: async (r) => {
+      const res = await r.tool(
+        'StackCreateDockerStandaloneString',
+        {
+          endpointId: 1,
+          Name: 'agent',
+          StackFileContent: ['services:', '  a:', '    image: alpine', '    volumes:', '      - /var/run/docker.sock:/var/run/docker.sock'].join('\n'),
+        },
+        { ask: true, output: '{"Id":8,"Name":"agent"}' },
+      )
+      await r.say(res.isError ? '만들지 않았어요.' : '만들었어요.')
     },
   },
   {
@@ -459,7 +550,7 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
       }
       const scenario = SCENARIOS.find((sc) => sc.match.test(text))
       if (scenario) await scenario.run(r)
-      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 삭제, 강제, 만료, 웹사이트, 재시작, 명령, 차단, 금지, 없는 도구, 모르는 도구, 도구 표기, 빈 답, 되풀이, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
+      else await r.say(`"${text}"에 대한 가짜 Agent 응답이에요. 키워드: 스택 배포, 스택 수정, 스택 중지, 스택 삭제, 소켓 스택, 삭제, 강제, 만료, 웹사이트, 재시작, 명령, 차단, 금지, 없는 도구, 모르는 도구, 도구 표기, 빈 답, 되풀이, 목록, 훅, 오류, 반복, 키 없음, 키 오류`)
       await r.stop()
     } finally {
       if (runs.get(s.id) === r) runs.delete(s.id)

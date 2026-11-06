@@ -6,11 +6,11 @@ import { HelpPanel } from './components/HelpPanel'
 import { MessageList } from './components/MessageList'
 import { SessionSidebar, SidebarToggle } from './components/SessionSidebar'
 import { SettingsModal } from './components/SettingsModal'
-import type { AgentEvent, ApprovalDecision, ApprovalStatus, ProgressStep, SessionSummary } from './lib/agentProtocol'
+import type { AgentEvent, ApprovalDecision, ApprovalMode, ApprovalStatus, ProgressStep, SessionSummary } from './lib/agentProtocol'
 import { agent, showScenarios } from './lib/agent'
 import { EXAMPLE_PROMPTS } from './lib/examples'
 import { notifyApproval } from './lib/notify'
-import { addDetail, APPROVED_LABEL, BLOCKED_LABEL, finishActive, finishToolStep, hasActive, markTargetChanged, startStep, startToolStep, withSummary } from './lib/processSteps'
+import { addDetail, APPROVED_LABEL, AUTO_APPROVED_LABEL, BLOCKED_LABEL, finishActive, finishToolStep, hasActive, markTargetChanged, startStep, startToolStep, withSummary } from './lib/processSteps'
 import { toChatMessages } from './lib/restore'
 import type { ChatMessage, ChatSession, ProcessStep, StepState } from './types'
 
@@ -31,8 +31,9 @@ const TITLE_MAX = 30
 // 서버 대화 목록을 다시 받는 간격. 다른 탭이나 새로고침 전 화면이 돌린 작업이 끝났는지 본다.
 const REFRESH_MS = 15_000
 
-// Home의 "Go to Portainer" 버튼이 여는 주소. 정하지 않으면 버튼을 비활성으로 둔다.
-const PORTAINER_URL: string | undefined = import.meta.env.VITE_PORTAINER_URL
+// Home의 "Go to Portainer" 버튼이 여는 주소. WEB 백엔드 설정(PORTAINER_URL)이 먼저이고, 목업처럼 백엔드가 없으면
+// 빌드 값(VITE_PORTAINER_URL)을 쓴다. 둘 다 없으면 버튼을 비활성으로 둔다.
+const BUILD_PORTAINER_URL: string | undefined = import.meta.env.VITE_PORTAINER_URL
 
 // 좁은 화면에서는 사이드바가 채팅 위에 겹치므로, 대화를 고르면 닫는다. Tailwind md 기준과 같다.
 const isNarrowScreen = () => !window.matchMedia('(min-width: 768px)').matches
@@ -80,8 +81,16 @@ function App() {
   const [draft, setDraft] = useState<{ text: string; key: number } | null>(null)
   // 정책 차단 안내의 "Portainer 열기" 링크. 못 받으면 링크 없이 문구만 보여준다.
   const [portainerUrl, setPortainerUrl] = useState<string>()
+  // 승인 방식. 묻지 않는 방식이면 입력창 위에 늘 보여준다(모르고 켜 둔 채 쓰지 않게).
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>('ask')
   useEffect(() => {
-    agent.getSettings?.().then((s) => setPortainerUrl(s.portainerUrl), () => undefined)
+    agent.getSettings?.().then(
+      (s) => {
+        setPortainerUrl(s.portainerUrl)
+        setApprovalMode(s.approvalMode)
+      },
+      () => undefined,
+    )
   }, [])
   // 지금 이벤트를 받고 있는 대화
   const live = useRef(new Set<string>())
@@ -261,6 +270,13 @@ function App() {
             }))
             break
           }
+          case 'auto_approved':
+            // 승인 방식에 따라 WEB이 대신 승인했다. 카드 없이 처리 과정에 한 줄 남기고, 실행 줄은 tool_status로 이어 붙는다.
+            updateSteps(id, (steps) => [
+              ...finishActive(steps, 'done'),
+              { id: crypto.randomUUID(), label: withSummary(AUTO_APPROVED_LABEL, event.summary), detail: event.tool, state: 'done' },
+            ])
+            break
           case 'approval_resolved': {
             // 다시 붙었을 때만 온다. 앞 카드는 이미 결정됐으니 처리 과정 한 줄로 남기고 이어서 받는다.
             awaitingApproval = false
@@ -590,6 +606,19 @@ function App() {
 
   const composer = (
     <div className="w-full max-w-2xl px-4">
+      {approvalMode !== 'ask' && (
+        <p className="pb-2 text-center text-xs">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className={`rounded-full px-2.5 py-0.5 font-medium ${
+              approvalMode === 'never' ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+            }`}
+          >
+            {approvalMode === 'never' ? '묻지 않기(YOLO) 켜짐: 삭제도 승인 없이 실행돼요' : '위험한 작업만 물어요: 나머지는 승인 없이 실행돼요'}
+          </button>
+        </p>
+      )}
       {activeBusy && (
         <p className="pb-2 text-center text-xs text-neutral-500">
           이 대화에서 작업을 처리하고 있어요. 다른 대화는 그대로 쓸 수 있어요.
@@ -659,9 +688,9 @@ function App() {
                 </button>
               ))}
             </div>
-            {PORTAINER_URL ? (
+            {portainerUrl || BUILD_PORTAINER_URL ? (
               <a
-                href={PORTAINER_URL}
+                href={portainerUrl || BUILD_PORTAINER_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="rounded-full bg-neutral-100 px-8 py-1 text-xs text-neutral-600 hover:bg-neutral-200"
@@ -670,7 +699,7 @@ function App() {
               </a>
             ) : (
               <span
-                title="VITE_PORTAINER_URL을 정하면 열린다"
+                title="WEB 백엔드에 PORTAINER_URL을 정하면 열려요"
                 className="cursor-not-allowed rounded-full bg-neutral-100 px-8 py-1 text-xs text-neutral-400"
               >
                 Go to Portainer
@@ -712,6 +741,7 @@ function App() {
         <SettingsModal
           activeServerId={active.serverId}
           onClose={() => setSettingsOpen(false)}
+          onApprovalModeChange={setApprovalMode}
           onDraft={(text) => {
             // 백업 복원 요청은 새 대화에서 쓴다. 지금 대화가 처리 중이어도 보낼 수 있게.
             setSettingsOpen(false)

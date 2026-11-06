@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { groupSteps } from '../lib/processSteps'
+import { AUTO_APPROVED_LABEL, groupSteps } from '../lib/processSteps'
 import type { ProcessStep, StepState } from '../types'
 
 const STATE_STYLE: Record<StepState, string> = {
@@ -28,6 +28,9 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
   if (steps.length === 0) return null
   const groups = groupSteps(steps)
 
+  // 승인 없이 실행한 작업은 접혀 있어도 보이게 한다(승인 방식이 묻지 않는 경우).
+  const autoCount = steps.filter((s) => s.label.startsWith(AUTO_APPROVED_LABEL)).length
+
   if (!live && !expanded) {
     return (
       <button
@@ -36,6 +39,7 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
         className="mb-1 text-xs text-neutral-400 hover:text-neutral-600"
       >
         처리 과정 보기 · {groups.length}단계
+        {autoCount > 0 && <span className="ml-1 font-medium text-amber-700">· 자동 승인 {autoCount}건</span>}
       </button>
     )
   }

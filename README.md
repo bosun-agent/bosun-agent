@@ -16,8 +16,8 @@ WEB 백엔드까지 같이 돌리려면 터미널 3개를 띄운다. 실제 Agen
 npm run server:fake  # 가짜 Docker Agent(8080)
 npm run server       # WEB 백엔드(3001). 코드를 고치면 다시 뜬다
 npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
-npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트(95항목)
-npm run test:ui      # (선택) 브라우저 화면 테스트(43항목). 설치된 Chrome을 쓴다(CHROME_PATH)
+npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트(111항목)
+npm run test:ui      # (선택) 브라우저 화면 테스트(52항목). 설치된 Chrome을 쓴다(CHROME_PATH)
 npm run test:agent   # (선택) 백엔드가 Agent를 띄우고 다시 시작하는 흐름(9항목). 백엔드를 직접 띄우므로 따로 켤 것이 없다
 ```
 
@@ -25,7 +25,11 @@ npm run test:agent   # (선택) 백엔드가 Agent를 띄우고 다시 시작하
 
 `test:ui`는 대화 이름·고정을 확인하므로 깨끗한 상태(가짜 Agent와 백엔드를 새로 띄우고 `WEB_DB_PATH`도 새 파일)에서 돌린다. 캡처를 남기려면 `SHOTS=<폴더>`를 준다.
 
-가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·강제·웹사이트·재시작(승인 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 모르는 도구(문구 표에 없는 도구의 승인 카드), 도구 표기(모델이 도구 호출을 글로 씀), 빈 답(모델이 아무것도 안 냄), 되풀이(Agent 반복 감지), 목록, 천천히(3초 걸리는 답, 멈추기·다시 붙기 확인용), 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·강제·웹사이트·재시작(승인 카드), 스택 배포·스택 수정·스택 중지·스택 삭제·소켓 스택(스택 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 모르는 도구(문구 표에 없는 도구의 승인 카드), 도구 표기(모델이 도구 호출을 글로 씀), 빈 답(모델이 아무것도 안 냄), 되풀이(Agent 반복 감지), 목록, 천천히(3초 걸리는 답, 멈추기·다시 붙기 확인용), 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+
+### 승인 방식(YOLO)
+
+설정 > 정책 맨 위에서 고른다. **매번 묻기**(기본), **위험한 작업만 묻기**(삭제, 호스트까지 영향, BOSUN이 설명할 수 없는 작업만 카드), **묻지 않기**(YOLO, 모두 바로 실행). 묻지 않는 작업은 WEB 백엔드가 Agent에 바로 승인을 보내고, 처리 과정에 "자동 승인함" 줄과 승인 기록에 "자동 승인"으로 남긴다. Agent 정책 훅과 항상 거부 규칙은 승인보다 먼저 돌아서 어느 방식이든 그대로 막는다. 다른 대화가 같은 대상의 결정을 기다리고 있으면 묻지 않기여도 카드를 띄운다.
 
 ### 로그인 없음
 
@@ -77,7 +81,7 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 | `system.ts` | 정보·정책 화면 값: Docker Agent 상태와 agent.yaml에서 고른 필드 |
 | `backups.ts` | 백업 화면: Agent 백업 훅의 SQLite를 읽기만 한다. inspect에서 고른 값만 보낸다 |
 | `translate.ts` | Docker Agent 이벤트 → 화면 이벤트, 정책 차단 판별 |
-| `tools.ts` | 도구 호출(`docker_proxy` method·path, `EndpointList`) → 화면 문구, 승인 카드 템플릿 |
+| `tools.ts` | 도구 호출(`docker_proxy` method·path, `EndpointList`, 스택 도구) → 화면 문구, 승인 카드 템플릿. 스택은 compose를 읽어 서비스·포트·마운트·권한을 보여준다 |
 | `agentClient.ts` | Docker Agent API 클라이언트 |
 | `mask.ts` | 알려진 비밀값 형식 가리기 |
 | `store.ts` | 승인·차단 카드, 승인 감사 기록, 고정한 대화, 설정 값, 턴별 사용량(SQLite, `server/data/web.db`. 커밋하지 않는다) |

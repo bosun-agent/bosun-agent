@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { AgentConfigSummary, AuditRecord, BackupRecord, SessionUsage, SystemInfo, UsageTotals } from '../lib/agentProtocol'
+import type { AgentConfigSummary, ApprovalMode, AuditRecord, BackupRecord, SessionUsage, Settings, SystemInfo, UsageTotals } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 import { agentStateText, restartAgent, useAgentStatus } from '../lib/agentStatus'
 import { notifyEnabled, setNotifyEnabled } from '../lib/notify'
@@ -96,20 +96,108 @@ function RuleList({ title, tone, rules, empty }: { title: string; tone: string; 
   )
 }
 
-export function PolicySection() {
+export function PolicySection({ onApprovalModeChange }: { onApprovalModeChange?: (mode: ApprovalMode) => void }) {
   const { data, failed } = useLoad<SystemInfo>(agent.getSystem)
-  if (!data) return <Unavailable failed={failed} />
-  const cfg = data.config
-  if (!cfg) return <p className="px-1 text-sm text-red-600">AI Agent 설정을 읽지 못했어요. Agent가 켜져 있는지 확인해주세요.</p>
-  return <PolicyView cfg={cfg} approvalTimeoutSec={data.web.approvalTimeoutSec} />
+  return (
+    <div className="space-y-2">
+      <ApprovalModeBox onChange={onApprovalModeChange} />
+      {!data ? (
+        <Unavailable failed={failed} />
+      ) : !data.config ? (
+        <p className="px-1 text-sm text-red-600">AI Agent 설정을 읽지 못했어요. Agent가 켜져 있는지 확인해주세요.</p>
+      ) : (
+        <PolicyView cfg={data.config} approvalTimeoutSec={data.web.approvalTimeoutSec} />
+      )}
+    </div>
+  )
+}
+
+// 승인 방식(YOLO). WEB이 카드를 띄울지, 대신 승인할지 정한다. 정책 훅과 항상 거부 규칙은 승인보다 먼저 돌아서 그대로 막는다.
+const APPROVAL_MODE_TEXT: Record<ApprovalMode, { label: string; help: string }> = {
+  ask: { label: '매번 묻기', help: '바꾸는 작업마다 승인 카드를 띄워요. 처음 쓰거나 중요한 서버라면 이걸 권해요.' },
+  risky: {
+    label: '위험한 작업만 묻기',
+    help: '시작·재시작·중지·생성·스택 배포처럼 되돌릴 수 있는 작업은 바로 실행해요. 삭제, 호스트까지 영향이 가는 작업, BOSUN이 설명할 수 없는 작업은 물어요.',
+  },
+  never: {
+    label: '묻지 않기 (YOLO)',
+    help: '승인 카드 없이 모두 바로 실행해요. 삭제도 묻지 않아요. 테스트 서버에서만 쓰세요.',
+  },
+}
+
+function ApprovalModeBox({ onChange }: { onChange?: (mode: ApprovalMode) => void }) {
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    agent.getSettings?.().then(setSettings, () => setFailed(true))
+  }, [])
+
+  async function choose(mode: ApprovalMode) {
+    if (!agent.saveApprovalMode || saving || settings?.approvalMode === mode) return
+    if (mode === 'never' && !window.confirm('승인 카드 없이 삭제까지 바로 실행해요. 묻지 않기로 바꿀까요?')) return
+    // 고른 것을 바로 보여주고, 저장하지 못하면 되돌린다.
+    const before = settings
+    setSettings((s) => (s ? { ...s, approvalMode: mode } : s))
+    setSaving(true)
+    setFailed(false)
+    try {
+      const next = await agent.saveApprovalMode(mode)
+      setSettings(next)
+      onChange?.(next.approvalMode)
+    } catch {
+      setSettings(before)
+      setFailed(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!agent.saveApprovalMode) {
+    return (
+      <Box title="승인 방식">
+        <p className="text-xs text-neutral-500">목업 모드에서는 매번 물어요. WEB 백엔드에 붙여야 바꿀 수 있어요.</p>
+      </Box>
+    )
+  }
+  return (
+    <Box title="승인 방식">
+      {!settings && !failed && <p className="text-xs text-neutral-500">불러오는 중…</p>}
+      {settings && (
+        <div className="space-y-1" role="radiogroup" aria-label="승인 방식">
+          {(Object.keys(APPROVAL_MODE_TEXT) as ApprovalMode[]).map((mode) => {
+            const { label, help } = APPROVAL_MODE_TEXT[mode]
+            const checked = settings.approvalMode === mode
+            return (
+              <label
+                key={mode}
+                className={`flex cursor-pointer gap-2 rounded-md px-2 py-1.5 ${checked ? 'bg-neutral-100' : 'hover:bg-neutral-50'}`}
+              >
+                <input type="radio" name="approval-mode" className="mt-1" checked={checked} disabled={saving} onChange={() => void choose(mode)} />
+                <span>
+                  <span className={`block text-sm ${mode === 'never' ? 'text-red-700' : 'text-neutral-900'}`}>{label}</span>
+                  <span className="block text-xs text-neutral-500">{help}</span>
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      )}
+      <p className="mt-1.5 text-xs text-neutral-500">
+        어느 방식이든 아래 "항상 거부"와 정책 훅이 막는 작업은 실행되지 않아요. 바꾸면 다음 승인부터 적용돼요. 대신 승인한 작업도 승인 기록에
+        "자동 승인"으로 남아요.
+      </p>
+      {failed && <p className="mt-1 text-sm text-red-600">승인 방식을 불러오거나 저장하지 못했어요.</p>}
+    </Box>
+  )
 }
 
 function PolicyView({ cfg, approvalTimeoutSec }: { cfg: AgentConfigSummary; approvalTimeoutSec: number }) {
   return (
     <div className="space-y-2">
       <Note>
-        AI Agent 설정(agent.yaml)에 적힌 정책이에요. 실제로 막고 허용하는 건 Agent 정책이고, WEB은 그 결과를 승인 카드와 차단 안내로
-        보여줘요. 정책은 지금 Agent 설정 파일에서만 바꿀 수 있어요.
+        아래는 AI Agent 설정(agent.yaml)에 적힌 정책이에요. 실제로 막고 허용하는 건 Agent 정책이고, WEB은 그 결과를 승인 카드와 차단
+        안내로 보여줘요. 이 부분은 지금 Agent 설정 파일에서만 바꿀 수 있어요.
       </Note>
       {cfg.agents.map((a) => (
         <Box key={a.name} title={`안전 모드: ${a.safety ?? '지정 안 함'}`}>
@@ -172,7 +260,7 @@ export function AuditSection() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{r.summary ?? '(지운 대화의 카드)'}</span>
                 <span className="block text-[11px] text-neutral-500">
-                  {new Date(r.at).toLocaleString()} · {r.user === 'system' ? '자동(만료)' : '사용자'} · <code>{r.tool}</code>
+                  {new Date(r.at).toLocaleString()} · {r.user === 'system' ? '자동(만료)' : r.user === 'auto' ? '자동 승인' : '사용자'} · <code>{r.tool}</code>
                   {r.target && ` · ${r.target}`}
                 </span>
               </span>

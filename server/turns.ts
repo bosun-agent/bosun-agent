@@ -13,9 +13,9 @@ import type { AgentEvent, ApprovalDecision } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import type { DAEvent } from './agentClient.ts'
 import { config } from './config.ts'
-import { currentModel } from './settings.ts'
+import { approvalMode, currentModel } from './settings.ts'
 import { addCard, logDecision, logUsage, updateApprovalCard, type ApprovalStatus } from './store.ts'
-import { approvalCard, learnNames, targetKeys } from './tools.ts'
+import { approvalCard, learnNames, targetKeys, type ApprovalCard, type StackInfo } from './tools.ts'
 import { Translator } from './translate.ts'
 
 export interface Sink {
@@ -69,6 +69,8 @@ const MAX_LOG = 5000
 const approvals = new Map<string, Approval>()
 // 조회 결과로 알아 둔 컨테이너·이미지 ID(앞 12자리) → 이름. 승인 카드에 이름을 보여줄 때 쓴다.
 const names = new Map<string, string>()
+// 스택 ID → 이름·서비스 목록. 스택 카드에 이름을 보여주고, 수정 때 빠지는 서비스를 알려준다.
+const stacks = new Map<string, StackInfo>()
 // 대상 키 → 마지막으로 승인한 변경. 먼저 뜬 카드를 승인할 때 그 사이 다른 대화가 같은 대상을 바꿨는지 본다.
 // 카드는 승인 시간이 지나면 만료되므로 그보다 오래된 기록은 지운다.
 const changes = new Map<string, { at: number; sessionId: string; target: string }>()
@@ -280,7 +282,8 @@ async function pump(t: Turn, upstream: AsyncGenerator<DAEvent>): Promise<void> {
       if (t.finished) break
       track(t, ev)
       if (ev.type === 'tool_call_confirmation') {
-        ask(t, ev as Extract<DAEvent, { type: 'tool_call_confirmation' }>)
+        // 대신 승인할 때는 /resume을 보내는 동안 다음 이벤트를 읽지 않는다. Agent도 결정을 받기 전에는 보내지 않는다.
+        await ask(t, ev as Extract<DAEvent, { type: 'tool_call_confirmation' }>)
         continue
       }
       if (ev.type === 'max_iterations_reached') {
@@ -317,7 +320,7 @@ function track(t: Turn, ev: DAEvent): void {
   if (t.waiting?.status === 'pending' && t.waiting.toolCallId === res.tool_call_id) resolve(t.waiting, 'cancelled')
   const call = t.calls.get(res.tool_call_id)
   t.calls.delete(res.tool_call_id)
-  if (call && !res.result?.isError) learnNames(names, call.name, call.args, res.response)
+  if (call && !res.result?.isError) learnNames(names, call.name, call.args, res.response, stacks)
 }
 
 function parseArgs(raw: string | undefined): Record<string, unknown> {
@@ -335,7 +338,7 @@ const EXPIRED_REASON = 'The approval request expired without a decision.'
 const TARGET_CHANGED_REASON =
   'Another session changed the same target after this approval was requested, so the call was not run. Look up the current state of the target again before retrying.'
 
-function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>): void {
+async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>): Promise<void> {
   const call = ev.tool_call
   const tool = call.function.name ?? ev.tool_definition?.name ?? ''
   let args: Record<string, unknown> = {}
@@ -348,8 +351,8 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
   if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
 
   const expiresAt = Date.now() + config.approvalTimeoutMs
-  const card = approvalCard(tool, args, names)
-  const keys = targetKeys(tool, args, names)
+  const card = approvalCard(tool, args, names, stacks)
+  const keys = targetKeys(tool, args, names, stacks)
   const busyWith = sameTargetWaiting(t, keys)
   if (busyWith) {
     card.reasons = [
@@ -372,6 +375,8 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
     event: { type: 'approval_required', approvalId: '', ...card, expiresAt: new Date(expiresAt).toISOString() },
   }
   ap.event.approvalId = ap.id
+  // 다른 대화가 같은 대상의 결정을 기다리고 있으면 대신 승인하지 않고 묻는다. 어느 쪽을 먼저 할지는 사람이 정한다.
+  if (!busyWith && autoApproves(card) && (await autoApprove(t, ap, card))) return
   approvals.set(ap.id, ap)
   ap.timer = setTimeout(() => void expire(ap), config.approvalTimeoutMs + config.expiryGraceMs)
   addCard(t.sessionId, t.index, { kind: 'approval', approvalId: ap.id, status: 'pending', ...card, expiresAt: ap.event.expiresAt })
@@ -380,6 +385,37 @@ function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation' }>):
   t.shown = false
   record(t, ap.event)
   show(t)
+}
+
+// ---- 대신 승인(승인 방식, settings.ts approvalMode) ----
+
+// 감사 기록의 user. 화면에서 누른 결정은 local, 만료 자동 거부는 system이다.
+export const AUTO_USER = 'auto'
+
+// risky는 되돌릴 수 없거나 호스트까지 영향이 가는 작업(high)과 WEB이 설명할 수 없는 작업(unknown·위험도 없음)만 묻는다.
+function autoApproves(card: ApprovalCard): boolean {
+  const mode = approvalMode()
+  if (mode === 'never') return true
+  if (mode === 'risky') return card.risk?.level === 'low' || card.risk?.level === 'medium'
+  return false
+}
+
+// Agent에 승인을 보내고 카드·감사 기록을 승인으로 남긴다. 보내지 못하면 false를 돌려주고 평소처럼 카드를 띄운다.
+async function autoApprove(t: Turn, ap: Approval, card: ApprovalCard): Promise<boolean> {
+  try {
+    await agent.resume(t.sessionId, 'approve')
+  } catch (err) {
+    console.error('[agent] auto approve failed', err)
+    return false
+  }
+  ap.status = 'approved'
+  addCard(t.sessionId, t.index, { kind: 'approval', approvalId: ap.id, status: 'approved', ...card, expiresAt: new Date().toISOString(), auto: true })
+  noteChange(ap)
+  logDecision({ user: AUTO_USER, sessionId: ap.sessionId, approvalId: ap.id, toolCallId: ap.toolCallId, tool: ap.tool, decision: 'approved' })
+  if (!t.finished) {
+    emit(t, { type: 'auto_approved', approvalId: ap.id, tool: ap.tool, summary: card.summary, ...(card.risk ? { risk: card.risk } : {}) })
+  }
+  return true
 }
 
 // 다른 대화가 같은 대상의 승인을 기다리고 있으면 그 카드의 대상을 돌려준다. 두 대화가 같은 컨테이너를 동시에 바꾸려는 경우를 알린다.
