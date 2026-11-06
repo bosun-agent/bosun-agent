@@ -1,7 +1,7 @@
 # BOSUN — WEB
 
 BOSUN 프로젝트의 WEB 파트. 사용자가 자연어로 컨테이너를 관리하는 채팅 인터페이스.
-이 문서는 실행·설정 안내다. 무엇을 왜 이렇게 만들었는지는 [설계서](docs/architecture-web.md), 주고받는 형식은 [인터페이스 계약](docs/interface-web-agent.md)에 있다.
+이 문서는 실행·설정 안내다.
 
 ## 실행
 
@@ -29,7 +29,7 @@ npm run test:agent   # (선택) 백엔드가 Agent를 띄우고 다시 시작하
 
 ### 로그인 없음
 
-이 PC에서만 쓰므로 로그인이 없다(10-28 회의). 대신 백엔드는 `127.0.0.1`에서만 뜨고(`HOST`를 다른 주소로 주면 시작하지 않는다), Host·Origin이 localhost·127.0.0.1·[::1]이 아닌 요청과 `X-Bosun` 헤더가 없는 변경 요청은 403이다(`server/guard.ts`).
+이 PC에서만 쓰므로 로그인이 없다. 대신 백엔드는 `127.0.0.1`에서만 뜨고(`HOST`를 다른 주소로 주면 시작하지 않는다), Host·Origin이 localhost·127.0.0.1·[::1]이 아닌 요청과 `X-Bosun` 헤더가 없는 변경 요청은 403이다(`server/guard.ts`).
 
 ### 진짜 Agent로 띄우기
 
@@ -57,8 +57,6 @@ AGENT_MODELS=openrouter/deepseek/deepseek-v4.1-flash
 
 `PORTAINER_URL`의 Portainer가 자체 서명 인증서를 쓰면 링크를 처음 열 때 브라우저가 경고를 띄운다. 주소가 맞으면 계속 진행하면 된다.
 
-예전 `real.env`에 남은 `ADMIN_USERNAME`·`ADMIN_PASSWORD_HASH`·`JWT_SECRET`·`COOKIE_SECURE`는 더 이상 읽지 않으니 지워도 된다.
-
 ### 배포
 
 ```bash
@@ -75,7 +73,7 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 |---|---|
 | `main.ts` | 진입점. 시작할 때 대기 중이던 카드를 취소로 바꾼다 |
 | `app.ts` | 브라우저용 `/api/*`, 보안 헤더, 화면 파일(`STATIC_DIR`) |
-| `turns.ts` | 대화마다 한 턴의 Agent 스트림과 승인 요청 관리(계약 6장): `tool_call_confirmation` → 카드, `/resume`으로 결정 전달, 만료, 스트림 이어붙이기, 멈추기, 다시 붙기(이 턴의 이벤트 기록) |
+| `turns.ts` | 대화마다 한 턴의 Agent 스트림과 승인 요청 관리: `tool_call_confirmation` → 카드, `/resume`으로 결정 전달, 만료, 스트림 이어붙이기, 멈추기, 다시 붙기(이 턴의 이벤트 기록) |
 | `system.ts` | 정보·정책 화면 값: Docker Agent 상태와 agent.yaml에서 고른 필드 |
 | `backups.ts` | 백업 화면: Agent 백업 훅의 SQLite를 읽기만 한다. inspect에서 고른 값만 보낸다 |
 | `translate.ts` | Docker Agent 이벤트 → 화면 이벤트, 정책 차단 판별 |
@@ -107,12 +105,3 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 | 연결 끊김 | `/disconnect` | 스트림 도중 연결이 끊김 |
 
 "nginx 삭제해줘"(승인 대기), "전체 삭제해줘"(하드 차단), "컨테이너 목록 보여줘"(조회, 승인 없이 도구 호출)처럼 키워드로도 분기된다.
-
-## 문서
-
-| 원본 | 팀 공유용 이름 | 내용 |
-|---|---|---|
-| [docs/architecture-web.md](docs/architecture-web.md) | `WEB_아키텍처_설계서.md` | WEB 범위·경계, 화면 상태, 기술 선택, WEB 백엔드 역할, 구현 현황 |
-| [docs/interface-web-agent.md](docs/interface-web-agent.md) | `WEB_인터페이스_계약.md` | 브라우저 ↔ WEB 백엔드 형식, WEB 백엔드 ↔ Agent 승인 흐름, 정할 것·남은 일(7장) |
-
-원본은 이 저장소에서 고치고, 팀에 공유할 때 공유용 이름으로 복사한다. 설계서 본문은 공유용 이름으로 서로를 가리킨다.
