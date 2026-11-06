@@ -3,29 +3,94 @@
 BOSUN 프로젝트의 WEB 파트. 사용자가 자연어로 컨테이너를 관리하는 채팅 인터페이스.
 이 문서는 실행·설정 안내다.
 
+## 준비물
+
+| 무엇 | 왜 |
+|---|---|
+| Node.js **22.18 이상** | 백엔드 `.ts`를 Node가 바로 실행한다. 낮으면 `npm start`부터 실패한다(`node -v`로 확인) |
+| Docker Desktop + Portainer 컨테이너(`bosun-portainer`) | Agent가 Portainer를 거쳐 Docker를 다룬다. Portainer API 키도 여기서 만든다 |
+| docker-agent 실행 파일 **v1.148.0 이상** | Docker Desktop에 든 `docker agent` 플러그인은 버전이 낮아 agent.yaml을 못 읽을 수 있다 |
+| Python 3 + uv(`uvx`) | agent.yaml이 정책·백업 훅(Python)과 `mcp-portainer`(uvx)를 실행한다 |
+| Agent 폴더(`agent.yaml` + `hooks/`) | Agent 담당 쪽 설정. WEB 저장소에는 없다 |
+| OpenRouter API 키 | 모델 호출. 화면 설정에서 나중에 바꿀 수도 있다 |
+
+화면만 볼 거면 Node만 있으면 된다(아래 "Agent 없이 화면만 보기").
+
 ## 실행
 
+### 처음 한 번
+
+**1. 받고 설치**
+
 ```bash
+git clone <저장소 주소>
+cd <폴더>
 npm install
-npm run dev          # 목업으로 화면만
 ```
 
-WEB 백엔드까지 같이 돌리려면 터미널 3개를 띄운다. 실제 Agent가 없을 때는 가짜 서버를 쓴다.
+**2. Agent 폴더 준비.** 아무 곳에 폴더를 하나 만들고(예: `C:/bosun/agent`) Agent 담당에게 받은 `agent.direct.yaml`과 `hooks/`를 넣는다. agent.yaml 안의 `python`·`uvx`·훅·`SSL_CERT_FILE`(Portainer 자체 서명 인증서를 넣은 CA 묶음) 경로는 받은 사람 PC 기준이니 **내 PC의 절대경로로 고친다**(Windows는 `python3` 대신 `python`일 수 있다. `where python`, `where uvx`로 확인).
+
+**3. 같은 폴더에 `agent.env` 만들기.** Agent에게 넘기는 비밀값이다. 커밋하지 않는다.
 
 ```bash
-npm run server:fake  # 가짜 Docker Agent(8080)
-npm run server       # WEB 백엔드(3001). 코드를 고치면 다시 뜬다
-npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
-npm run server:smoke # (선택) 백엔드 흐름 스모크 테스트(111항목)
-npm run test:ui      # (선택) 브라우저 화면 테스트(52항목). 설치된 Chrome을 쓴다(CHROME_PATH)
-npm run test:agent   # (선택) 백엔드가 Agent를 띄우고 다시 시작하는 흐름(9항목). 백엔드를 직접 띄우므로 따로 켤 것이 없다
+OPENROUTER_API_KEY=sk-or-...
+PORTAINER_URL=https://localhost:9443     # Agent가 붙을 Portainer 주소
+PORTAINER_API_KEY=ptr_...                # Portainer > My account > Access tokens
 ```
 
-화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`).
+Agent가 대화를 저장하는 `session.db`와 백업 훅의 `backups.sqlite3`도 이 폴더에 생긴다.
 
-`test:ui`는 대화 이름·고정을 확인하므로 깨끗한 상태(가짜 Agent와 백엔드를 새로 띄우고 `WEB_DB_PATH`도 새 파일)에서 돌린다. 캡처를 남기려면 `SHOTS=<폴더>`를 준다.
+**4. `server/real.env` 만들기.** 예시를 복사해서 경로를 채운다. 이 파일도 커밋되지 않는다(`.gitignore`).
 
-가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·강제·웹사이트·재시작(승인 카드), 스택 배포·스택 수정·스택 중지·스택 삭제·소켓 스택(스택 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 모르는 도구(문구 표에 없는 도구의 승인 카드), 도구 표기(모델이 도구 호출을 글로 씀), 빈 답(모델이 아무것도 안 냄), 되풀이(Agent 반복 감지), 목록, 천천히(3초 걸리는 답, 멈추기·다시 붙기 확인용), 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다. 실제 연동 때는 받은 값으로 별도 env 파일을 만들고 커밋하지 않는다.
+```bash
+cp server/real.env.example server/real.env
+```
+
+| 값 | 넣을 것 |
+|---|---|
+| `AGENT_BIN` | docker-agent 실행 파일 절대경로. Windows는 `C:/.../docker-agent.exe`처럼 `/`로 써도 된다 |
+| `AGENT_ENV_FILE` | 3에서 만든 `agent.env` 절대경로. agent.yaml도 이 폴더에서 찾는다 |
+| `AGENT_NAME` | agent.yaml 파일 이름(확장자 빼고). `agent.direct.yaml`이면 `agent.direct` |
+| `AGENT_TOKEN` | 아무 긴 값. `node -e "console.log(crypto.randomUUID())"`로 만들면 된다 |
+| `AGENT_MODELS` | 설정 화면에서 고를 모델. 쉼표로 여러 개 |
+| `PORTAINER_URL` | (선택) 정책에 막혔을 때 보여줄 "Portainer 열기" 링크. 브라우저에서 여는 주소 |
+
+### 띄우기
+
+Docker Desktop과 `bosun-portainer`를 켠 뒤 터미널 2개를 띄운다. PowerShell이든 Git Bash든 같다.
+
+```bash
+npm start          # 터미널 1: WEB 백엔드(3001) + Docker Agent(8080)
+npm run dev:http   # 터미널 2: 화면
+```
+
+브라우저에서 **http://localhost:5173** 을 연다. 처음 메시지는 Agent가 `mcp-portainer`를 받느라 조금 걸릴 수 있다.
+
+- 끌 때: 두 터미널에서 Ctrl+C. Agent도 같이 꺼진다.
+- 코드를 받아 왔으면(`git pull`): `npm install` 후 두 터미널을 다시 띄운다.
+- `bosun-portainer`는 끄지 않는다(Agent가 Portainer에 붙지 못한다).
+
+### 잘 안 될 때
+
+Agent 상태는 화면 위쪽 안내와 **설정 > 정보**에 나온다. 무엇이 문제인지 문장으로 보여준다.
+
+| 증상 | 확인할 것 |
+|---|---|
+| `server/real.env: not found` | 4단계 파일이 없다 |
+| `Agent 설정 파일이 없어요` | `AGENT_ENV_FILE` 폴더에 `<AGENT_NAME>.yaml`이 있는지 |
+| `...를 실행하지 못했어요` | `AGENT_BIN` 경로, 실행 파일 버전(`docker-agent version`) |
+| 모든 도구 호출이 막힘(조회까지) | 훅이 실패하면 안전하게 다 막는다. agent.yaml의 `python` 경로와 훅 경로 |
+| Portainer 연결 오류 | `bosun-portainer`가 켜져 있는지, `agent.env`의 `PORTAINER_URL`·`PORTAINER_API_KEY` |
+| 모델 오류·키 오류 | 설정 화면에서 API 키를 다시 넣는다(저장하면 Agent가 다시 시작된다) |
+| 8080·3001 포트가 이미 사용 중 | 전에 띄운 Agent나 백엔드가 남아 있다. 남은 Agent는 다음 `npm start`가 정리한다 |
+
+### 더 알아둘 것
+
+`npm start`는 `server/real.env`를 읽고, `npm run dev:http`는 화면의 `/api`를 백엔드(3001)로 넘기기만 한다. `AGENT_BIN`이 있으면 `npm start`가 Docker Agent를 같이 띄우고 관리한다(`server/agentProcess.ts`). Agent가 죽으면 다시 띄우고, 설정 화면에서 API 키를 바꾸면 다시 시작한다(처리 중인 대화가 있으면 끝난 뒤). 백엔드가 강제로 꺼져 Agent가 남았으면 다음 `npm start`가 그 Agent를 끝내고 새로 띄운다. `npm run agent`는 Agent 로그만 따로 보고 싶을 때 쓴다. 그렇게 띄운 Agent가 먼저 떠 있으면 `npm start`는 그것을 쓰고, API 키를 바꿔도 다시 시작하지 못한다.
+
+(선택) `real.env`에 더 넣을 수 있는 값: `MAX_TURNS`(동시에 처리할 대화 수, 기본 3), `BACKUP_DB`(백업 훅 DB가 다른 곳에 있을 때), `AGENT_CONFIG`·`AGENT_SESSION_DB`(agent.yaml·session.db를 다른 폴더에 둘 때), `AGENT_KEY_NAME`(OpenRouter가 아닌 모델을 쓸 때 API 키 이름).
+
+`PORTAINER_URL`의 Portainer가 자체 서명 인증서를 쓰면 링크를 처음 열 때 브라우저가 경고를 띄운다. 주소가 맞으면 계속 진행하면 된다.
 
 ### 승인 방식(YOLO)
 
@@ -33,35 +98,44 @@ npm run test:agent   # (선택) 백엔드가 Agent를 띄우고 다시 시작하
 
 ### 로그인 없음
 
-이 PC에서만 쓰므로 로그인이 없다. 대신 백엔드는 `127.0.0.1`에서만 뜨고(`HOST`를 다른 주소로 주면 시작하지 않는다), Host·Origin이 localhost·127.0.0.1·[::1]이 아닌 요청과 `X-Bosun` 헤더가 없는 변경 요청은 403이다(`server/guard.ts`).
+이 PC에서만 쓰므로 로그인이 없다. 대신 백엔드는 `127.0.0.1`에서만 뜨고(`HOST`를 다른 주소로 주면 시작하지 않는다), Host·Origin이 localhost·127.0.0.1·[::1]이 아닌 요청과 `X-Bosun` 헤더가 없는 변경 요청은 403이다(`server/guard.ts`). 다른 PC에서 접속하게 열지 않는다.
 
-### 진짜 Agent로 띄우기
+## Agent 없이 화면만 보기
 
-Docker Desktop과 Portainer 컨테이너(`bosun-portainer`)를 켠 뒤 터미널 2개를 띄운다. PowerShell이든 Git Bash든 같다.
-
-```bash
-npm start          # WEB 백엔드(3001) + Docker Agent(8080). 코드를 바꿨으면 다시 띄운다
-npm run dev:http   # 화면 → http://localhost:5173
-```
-
-둘 다 `server/real.env`(커밋하지 않는다)를 읽는다. `AGENT_BIN`이 있으면 `npm start`가 Docker Agent를 같이 띄우고 관리한다(`server/agentProcess.ts`). Agent가 죽으면 다시 띄우고, 설정 화면에서 API 키를 바꾸면 다시 시작한다(처리 중인 대화가 있으면 끝난 뒤). 상태는 화면 위쪽 안내와 설정 > 정보에 나온다. 끌 때는 각 터미널에서 Ctrl+C를 누르면 Agent도 같이 꺼진다. 백엔드가 강제로 꺼져 Agent가 남았으면 다음 `npm start`가 그 Agent를 끝내고 새로 띄운다. `npm run agent`는 Agent 로그만 따로 보고 싶을 때 쓴다. 그렇게 띄운 Agent가 먼저 떠 있으면 `npm start`는 그것을 쓰고, API 키를 바꿔도 다시 시작하지 못한다. `bosun-portainer`는 끄지 않는다(Agent가 Portainer에 붙지 못한다).
-
-다른 PC에서 처음 할 때는 `server/real.env`를 이렇게 만든다.
+준비물 없이(Node만) 화면을 확인할 때.
 
 ```bash
-AGENT_BIN=/절대경로/docker-agent        # v1.148.0 이상 실행 파일. Docker Desktop의 docker agent 플러그인은 버전이 낮을 수 있다
-AGENT_URL=http://127.0.0.1:8080
-AGENT_NAME=agent.direct                 # agent.yaml 파일 이름
-AGENT_ENV_FILE=/절대경로/agent.env      # Agent의 API 키·Portainer 키. agent.yaml과 session.db도 이 폴더에 둔다
-AGENT_TOKEN=...                         # 아무 긴 값. Agent와 WEB 백엔드가 같이 쓴다
-AGENT_MODELS=openrouter/deepseek/deepseek-v4.1-flash
-# (선택) MAX_TURNS=3 동시에 처리할 대화 수, BACKUP_DB=Agent 백업 훅 DB, AGENT_CONFIG·AGENT_SESSION_DB=다른 폴더에 둘 때
-# (선택) PORTAINER_URL=https://localhost:9443  정책 차단 안내의 "Portainer 열기" 링크. 브라우저에서 여는 주소
+npm install
+npm run dev          # http://localhost:5173, 목업 Agent로 동작
 ```
 
-`PORTAINER_URL`의 Portainer가 자체 서명 인증서를 쓰면 링크를 처음 열 때 브라우저가 경고를 띄운다. 주소가 맞으면 계속 진행하면 된다.
+화면 맨 아래 DEV 시나리오 버튼으로 승인 카드·차단·오류 같은 상태를 재현한다(아래 "목업으로 화면 상태 테스트하기").
 
-### 배포
+## 개발용: 가짜 Agent와 테스트
+
+WEB 코드를 고칠 때 쓴다. Docker·API 키 없이 백엔드까지 돌리고, 고친 뒤 깨진 곳이 없는지 확인한다. 터미널 3개:
+
+```bash
+npm run server:fake  # 가짜 Docker Agent(8080)
+npm run server       # WEB 백엔드(3001). 코드를 고치면 다시 뜬다
+npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
+```
+
+진짜 Agent(`npm start`)와 포트가 같으니 동시에 띄우지 않는다.
+
+```bash
+npm run server:smoke # 백엔드 흐름 스모크 테스트(111항목). 위의 가짜 Agent와 백엔드가 떠 있어야 한다
+npm run test:ui      # 브라우저 화면 테스트(52항목). 설치된 Chrome을 쓴다(CHROME_PATH)
+npm run test:agent   # 백엔드가 Agent를 띄우고 다시 시작하는 흐름(9항목). 백엔드를 직접 띄우므로 따로 켤 것이 없다
+```
+
+화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`).
+
+`test:ui`는 대화 이름·고정을 확인하므로 깨끗한 상태(가짜 Agent와 백엔드를 새로 띄우고 `WEB_DB_PATH`도 새 파일)에서 돌린다. 캡처를 남기려면 `SHOTS=<폴더>`를 준다.
+
+가짜 Agent는 메시지 키워드로 시나리오를 고른다: 삭제·강제·웹사이트·재시작(승인 카드), 스택 배포·스택 수정·스택 중지·스택 삭제·소켓 스택(스택 카드), 명령·금지(permissions.deny), 차단(훅 거부), 없는 도구, 모르는 도구(문구 표에 없는 도구의 승인 카드), 도구 표기(모델이 도구 호출을 글로 씀), 빈 답(모델이 아무것도 안 냄), 되풀이(Agent 반복 감지), 목록, 천천히(3초 걸리는 답, 멈추기·다시 붙기 확인용), 훅, 오류, 반복(max_iterations), 키 없음, 키 오류. 만료를 보려면 백엔드를 `APPROVAL_TIMEOUT_MS=10000`으로 띄운다. 개발용 설정값은 `server/dev/dev.env`에 있다(가짜 값이라 커밋한다).
+
+## 배포
 
 ```bash
 npm run build:web                        # 실제 백엔드에 붙는 화면 빌드 → dist/
