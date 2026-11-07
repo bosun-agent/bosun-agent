@@ -1,4 +1,4 @@
-// WEB 백엔드가 Docker Agent를 자식 프로세스로 띄우고 관리한다(10-28 회의 9번).
+// WEB 백엔드가 Docker Agent를 자식 프로세스로 띄우고 관리한다.
 // - AGENT_BIN이 있을 때만 관리한다. 없으면(개발용 가짜 Agent, 다른 PC의 Agent) AGENT_URL에 붙기만 한다.
 // - 이미 AGENT_URL에서 Agent가 응답하면 새로 띄우지 않고 그 Agent를 쓴다(`npm run agent`로 따로 띄운 경우 등).
 //   그 Agent는 WEB이 다시 시작할 수 없다(external). 다만 지난번에 WEB이 띄운 Agent가 남아 있던 것이면

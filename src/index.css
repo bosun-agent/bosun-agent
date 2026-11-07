@@ -12,7 +12,7 @@ body {
   margin: 0;
 }
 
-/* Tailwind v4는 버튼 커서를 기본(화살표)으로 둔다. 누를 수 있는 것은 손가락, 못 누르는 것은 금지 표시로 맞춘다(10-28 회의 "커서 오류"). */
+/* Tailwind v4는 버튼 커서를 기본(화살표)으로 둔다. 누를 수 있는 것은 손가락, 못 누르는 것은 금지 표시로 맞춘다. */
 @layer base {
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
