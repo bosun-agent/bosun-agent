@@ -104,9 +104,9 @@ export interface Settings {
   agentRestart?: AgentRestart
 }
 
-// ask: 매번 묻기(기본), risky: 위험한 작업만 묻기(위험도 high·unknown만 카드), never: 묻지 않기(YOLO).
+// ask: 매번 묻기(기본), never: 묻지 않기(YOLO, 삭제까지 모두 바로 실행).
 // 정책 훅과 permissions.deny는 승인보다 먼저 돌아서 어느 방식이든 그대로 막는다.
-export type ApprovalMode = 'ask' | 'risky' | 'never'
+export type ApprovalMode = 'ask' | 'never'
 
 // Agent 다시 시작 요청 결과. started: 지금 다시 시작함, waiting: 처리 중인 대화가 끝나면 다시 시작함,
 // manual: WEB이 띄운 Agent가 아니라서 사람이 다시 띄워야 함.

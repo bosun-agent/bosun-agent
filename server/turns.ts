@@ -376,7 +376,7 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
   }
   ap.event.approvalId = ap.id
   // 다른 대화가 같은 대상의 결정을 기다리고 있으면 대신 승인하지 않고 묻는다. 어느 쪽을 먼저 할지는 사람이 정한다.
-  if (!busyWith && autoApproves(card) && (await autoApprove(t, ap, card))) return
+  if (!busyWith && autoApproves() && (await autoApprove(t, ap, card))) return
   approvals.set(ap.id, ap)
   ap.timer = setTimeout(() => void expire(ap), config.approvalTimeoutMs + config.expiryGraceMs)
   addCard(t.sessionId, t.index, { kind: 'approval', approvalId: ap.id, status: 'pending', ...card, expiresAt: ap.event.expiresAt })
@@ -392,12 +392,9 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
 // 감사 기록의 user. 화면에서 누른 결정은 local, 만료 자동 거부는 system이다.
 export const AUTO_USER = 'auto'
 
-// risky는 되돌릴 수 없거나 호스트까지 영향이 가는 작업(high)과 WEB이 설명할 수 없는 작업(unknown·위험도 없음)만 묻는다.
-function autoApproves(card: ApprovalCard): boolean {
-  const mode = approvalMode()
-  if (mode === 'never') return true
-  if (mode === 'risky') return card.risk?.level === 'low' || card.risk?.level === 'medium'
-  return false
+// never(YOLO)면 위험도와 상관없이 삭제까지 모두 대신 승인한다.
+function autoApproves(): boolean {
+  return approvalMode() === 'never'
 }
 
 // Agent에 승인을 보내고 카드·감사 기록을 승인으로 남긴다. 보내지 못하면 false를 돌려주고 평소처럼 카드를 띄운다.

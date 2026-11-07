@@ -39,9 +39,8 @@ export function getSettings(): Settings {
 }
 
 // ---- 승인 방식(YOLO) ----
-// ask: 매번 묻는다(기본). risky: 되돌릴 수 없거나 WEB이 모르는 작업만 묻고 나머지는 WEB이 대신 승인한다.
-// never: 묻지 않고 모두 WEB이 대신 승인한다. 정책 훅·permissions.deny는 승인보다 먼저 돌아서 어느 방식에서도 그대로 막는다.
-export const APPROVAL_MODES: readonly ApprovalMode[] = ['ask', 'risky', 'never']
+// ask: 매번 묻는다(기본). never: 묻지 않고 삭제까지 모두 WEB이 대신 승인한다(YOLO). 정책 훅·permissions.deny는 승인보다 먼저 돌아서 어느 방식에서도 그대로 막는다.
+export const APPROVAL_MODES: readonly ApprovalMode[] = ['ask', 'never']
 
 export function approvalMode(): ApprovalMode {
   const saved = getSetting('approval_mode')

@@ -606,16 +606,14 @@ function App() {
 
   const composer = (
     <div className="w-full max-w-2xl px-4">
-      {approvalMode !== 'ask' && (
+      {approvalMode === 'never' && (
         <p className="pb-2 text-center text-xs">
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className={`rounded-full px-2.5 py-0.5 font-medium ${
-              approvalMode === 'never' ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-            }`}
+            className="rounded-full bg-red-50 px-2.5 py-0.5 font-medium text-red-700 hover:bg-red-100"
           >
-            {approvalMode === 'never' ? '묻지 않기(YOLO) 켜짐: 삭제도 승인 없이 실행돼요' : '위험한 작업만 물어요: 나머지는 승인 없이 실행돼요'}
+            묻지 않기(YOLO) 켜짐: 삭제도 승인 없이 실행돼요
           </button>
         </p>
       )}

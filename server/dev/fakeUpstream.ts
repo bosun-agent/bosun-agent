@@ -223,7 +223,7 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
-    // 호스트를 넘보는 compose. 카드 위험도가 high여야 하고, 위험한 작업만 묻기에서도 물어야 한다.
+    // 호스트를 넘보는 compose. 카드 위험도가 high여야 한다.
     match: /소켓 스택/,
     run: async (r) => {
       const res = await r.tool(

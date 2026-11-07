@@ -701,16 +701,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const hooked = await post(`/api/sessions/${s}/messages`, { text: '명령 실행해줘' })
   check('묻지 않기에서도 permissions.deny는 막힌다', types(hooked.events).includes('rejected') && !types(hooked.events).includes('auto_approved'), types(hooked.events))
 
-  await mode('risky')
-  const s2 = await newSession()
-  const restart = await post(`/api/sessions/${s2}/messages`, { text: 'web 재시작해줘' })
-  check('위험한 작업만 묻기: 재시작(잠깐 끊김)은 대신 승인', types(restart.events).includes('auto_approved') && last(restart.events) === 'done', types(restart.events))
-  const del = await post(`/api/sessions/${s2}/messages`, { text: '삭제해줘' })
-  check('위험한 작업만 묻기: 삭제는 카드', last(del.events) === 'approval_required' && !types(del.events).includes('auto_approved'), types(del.events))
-  await post(`/api/sessions/${s2}/approvals/${approvalOf(del.events)!.approvalId}`, { decision: 'deny' })
-  const unknown = await post(`/api/sessions/${s2}/messages`, { text: '모르는 도구 써줘' })
-  check('위험한 작업만 묻기: 모르는 도구는 카드', last(unknown.events) === 'approval_required', types(unknown.events))
-  await post(`/api/sessions/${s2}/approvals/${approvalOf(unknown.events)!.approvalId}`, { decision: 'deny' })
+  const removed = await fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approvalMode: 'risky' }) })
+  check('없앤 승인 방식(risky)은 400', removed.status === 400, removed.status)
 
   // 다른 대화가 같은 대상의 결정을 기다리면 대신 승인하지 않고 묻는다.
   await mode('ask')

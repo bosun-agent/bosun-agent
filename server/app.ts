@@ -342,7 +342,7 @@ app.put('/api/settings', async (c) => {
     throw new HttpError(400, 'BAD_REQUEST', '바꿀 설정이 없어요.')
   }
   if (body.approvalMode !== undefined && !APPROVAL_MODES.includes(body.approvalMode as ApprovalMode)) {
-    throw new HttpError(400, 'BAD_REQUEST', '승인 방식은 ask, risky, never 중 하나예요.')
+    throw new HttpError(400, 'BAD_REQUEST', '승인 방식은 ask, never 중 하나예요.')
   }
   if (body.model !== undefined && (typeof body.model !== 'string' || !saveModel(body.model))) {
     throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 모델이에요.')

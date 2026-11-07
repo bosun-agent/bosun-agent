@@ -115,10 +115,6 @@ export function PolicySection({ onApprovalModeChange }: { onApprovalModeChange?:
 // 승인 방식(YOLO). WEB이 카드를 띄울지, 대신 승인할지 정한다. 정책 훅과 항상 거부 규칙은 승인보다 먼저 돌아서 그대로 막는다.
 const APPROVAL_MODE_TEXT: Record<ApprovalMode, { label: string; help: string }> = {
   ask: { label: '매번 묻기', help: '바꾸는 작업마다 승인 카드를 띄워요. 처음 쓰거나 중요한 서버라면 이걸 권해요.' },
-  risky: {
-    label: '위험한 작업만 묻기',
-    help: '시작·재시작·중지·생성·스택 배포처럼 되돌릴 수 있는 작업은 바로 실행해요. 삭제, 호스트까지 영향이 가는 작업, BOSUN이 설명할 수 없는 작업은 물어요.',
-  },
   never: {
     label: '묻지 않기 (YOLO)',
     help: '승인 카드 없이 모두 바로 실행해요. 삭제도 묻지 않아요. 테스트 서버에서만 쓰세요.',
