@@ -68,10 +68,17 @@ const A = 13011
 const backends: ChildProcess[] = []
 try {
   // 1. 띄우기
-  let web = startBackend(A, 18090)
+  // 진짜 docker-agent처럼 /health 버전을 비운다. 정보 화면은 실행 파일의 `version` 답을 써야 한다.
+  let web = startBackend(A, 18090, { FAKE_HEALTH_VERSION: '' })
   backends.push(web)
   let s = await waitFor(A, (x) => x.state === 'running')
   check('AGENT_BIN이 있으면 백엔드가 Agent를 띄운다', s?.managed === true && s.state === 'running' && s.reachable === true, s)
+  let version: string | undefined
+  for (let i = 0; i < 25 && !version; i++) {
+    version = ((await (await fetch(`http://127.0.0.1:${A}/api/system`)).json()) as { agent: { version?: string } }).agent.version
+    if (!version) await sleep(200)
+  }
+  check('/health 버전이 비면 실행 파일 version으로 보여준다', version === 'v0.0.0-fake', version)
 
   // 2. API 키를 바꾸면 다시 시작한다. 켜는 동안 새 메시지는 503
   const { sessionId } = (await (await fetch(`http://127.0.0.1:${A}/api/sessions`, { method: 'POST', headers: H })).json()) as { sessionId: string }

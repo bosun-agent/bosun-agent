@@ -8,7 +8,7 @@
 //   처리 중인 대화가 있으면 끝난 뒤에 한다. 다시 시작하면 Docker Agent가 기다리던 승인과 실행을 취소한다.
 // - 띄우는 명령은 `npm run agent`(server/runAgent.ts)와 같다.
 
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { AgentProcessStatus } from '../src/lib/agentProtocol.ts'
@@ -113,6 +113,23 @@ export function agentStatus(): AgentProcessStatus {
   }
 }
 
+// 실제 docker-agent의 /health는 version을 빈 값으로 준다. 그래서 WEB이 띄우는 실행 파일에 `version`을 한 번 물어 둔다.
+// 따로 띄운 Agent(external)는 다른 실행 파일일 수 있어서 이 값을 쓰지 않는다.
+let binVersion: string | undefined
+
+export function agentBinVersion(): string | undefined {
+  return state === 'external' || state === 'off' ? undefined : binVersion
+}
+
+function readBinVersion(cmd: AgentCommand): void {
+  if (binVersion) return
+  const script = cmd.bin === process.execPath ? [cmd.args[0]] : []
+  execFile(cmd.bin, [...script, 'version'], { timeout: 10_000, windowsHide: true }, (err, out) => {
+    const found = /v?\d+\.\d+\.\d+[\w.-]*/.exec(String(out))
+    if (!err && found) binVersion = found[0]
+  })
+}
+
 // 다시 시작하는 동안에는 새 메시지를 받지 않는다(app.ts가 503으로 돌려준다).
 export function agentStarting(): boolean {
   return state === 'starting' || state === 'restarting'
@@ -163,6 +180,7 @@ async function spawnAgent(): Promise<void> {
     return
   }
   console.info(`[agent] ${cmd.describe}`)
+  readBinVersion(cmd)
   const proc = spawn(cmd.bin, cmd.args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
   child = proc
   savePid(proc.pid)

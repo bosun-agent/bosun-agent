@@ -3,14 +3,17 @@ import { restartAgent, useAgentStatus } from '../lib/agentStatus'
 
 // 채팅 화면 위쪽 안내. Agent가 정상이면 아무것도 그리지 않는다.
 export function AgentStatusBanner() {
-  const [status, setStatus] = useAgentStatus()
+  const [status, setStatus, backendDown] = useAgentStatus()
   const [busy, setBusy] = useState(false)
-  if (!status) return null
+  if (!status && !backendDown) return null
 
   let tone: 'info' | 'error' | null = null
   let text = ''
   let canRestart = false
-  if (status.state === 'starting') {
+  if (backendDown || !status) {
+    tone = 'error'
+    text = 'WEB 백엔드에 연결할 수 없어요. npm start를 켠 터미널이 아직 켜져 있는지 확인해주세요.'
+  } else if (status.state === 'starting') {
     tone = 'info'
     text = 'AI Agent를 켜는 중이에요…'
   } else if (status.state === 'restarting') {

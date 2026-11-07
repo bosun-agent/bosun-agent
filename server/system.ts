@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs'
 import type { AgentConfigSummary, SystemInfo } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
+import { agentBinVersion } from './agentProcess.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
 
@@ -110,7 +111,8 @@ export async function systemInfo(running: number): Promise<SystemInfo> {
   try {
     const health = await agent.health()
     info.agent.reachable = health.status === 'ok'
-    if (health.version) info.agent.version = health.version
+    const version = health.version || agentBinVersion()
+    if (version) info.agent.version = version
     const ready = await agent.ready()
     info.agent.ready = ready.ready
     if (ready.latest_error) info.agent.error = maskText(ready.latest_error)

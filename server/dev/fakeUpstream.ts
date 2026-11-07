@@ -432,7 +432,8 @@ agentApp.post('/api/sessions/:id/fork', async (c) => {
   sessions.set(fork.id, fork)
   return c.json(fork)
 })
-agentApp.get('/health', (c) => c.json({ status: 'ok', version: 'v1.148.0-fake' }))
+// FAKE_HEALTH_VERSION=''이면 진짜 docker-agent처럼 빈 버전을 준다.
+agentApp.get('/health', (c) => c.json({ status: 'ok', version: process.env.FAKE_HEALTH_VERSION ?? 'v1.148.0-fake' }))
 agentApp.get('/ready', (c) => c.json({ ready: true, active_sessions: sessions.size, store_connected: true }))
 // agent.yaml JSON 모양(pkg/config/latest). 이름 필드는 JSON 태그가 없어서 Name이다.
 agentApp.get('/api/agents/:id', (c) =>

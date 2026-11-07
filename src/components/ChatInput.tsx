@@ -97,9 +97,9 @@ export function ChatInput({ disabled, initialText, onSend, onStop, onHelp }: Cha
           onClick={() => setAttachOpen((open) => !open)}
           aria-label="첨부"
           aria-expanded={attachOpen}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg text-neutral-700 hover:bg-neutral-100"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-700 hover:bg-neutral-100"
         >
-          +
+          <PlusIcon />
         </button>
         {attachOpen && (
           <AttachMenu
@@ -133,7 +133,7 @@ export function ChatInput({ disabled, initialText, onSend, onStop, onHelp }: Cha
           disabled={disabled}
           rows={1}
           placeholder="What's on your mind?"
-          className="max-h-40 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] outline-none placeholder:text-neutral-400 disabled:opacity-50"
+          className="max-h-40 flex-1 resize-none bg-transparent px-1 py-[5px] text-[15px] leading-[22px] outline-none placeholder:text-neutral-400 disabled:opacity-50"
         />
         {disabled && onStop ? (
           <button
@@ -206,6 +206,15 @@ function MenuItem({ icon, label, hint, onClick }: { icon: string; label: string;
         <span className="block text-[11px] text-neutral-500">{hint}</span>
       </span>
     </button>
+  )
+}
+
+// 글자 "+"는 글꼴 기준선 때문에 아래로 처져 보여서 그림으로 그린다. 한 줄일 때 입력란 높이(32px)와 버튼 높이를 맞춘다.
+function PlusIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
   )
 }
 

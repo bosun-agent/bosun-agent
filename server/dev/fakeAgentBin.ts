@@ -4,6 +4,11 @@
 // FAKE_AGENT_EXIT_MS를 주면 그 시간 뒤에 스스로 끝난다(죽었을 때 다시 띄우는지 확인용).
 
 const args = process.argv.slice(2)
+// 진짜 docker-agent처럼 `version`에 답한다(WEB이 /health 대신 이 값으로 버전을 보여준다).
+if (args[0] === 'version') {
+  console.info('docker-agent version v0.0.0-fake')
+  process.exit(0)
+}
 const listen = args[args.indexOf('-l') + 1]
 if (args[0] !== 'serve' || args[1] !== 'api' || !listen) {
   console.error('usage: fakeAgentBin serve api <agent.yaml> ... -l <host:port>')

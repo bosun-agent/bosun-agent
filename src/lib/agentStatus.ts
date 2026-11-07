@@ -4,16 +4,29 @@ import { agent } from './agent'
 
 // WEB 백엔드가 띄운 Docker Agent 상태(GET /api/agent). 몇 초마다 다시 읽는다. 목업에는 없다.
 const POLL_MS = 3_000
+// 이만큼 연달아 못 읽으면 WEB 백엔드 자체가 꺼진 것으로 본다(한 번은 잠깐 끊김일 수 있다).
+const DOWN_AFTER = 2
 
-export function useAgentStatus(): [AgentProcessStatus | null, (s: AgentProcessStatus) => void] {
+// 셋째 값: WEB 백엔드에 연결이 안 되는지. 이때는 Agent 상태도 알 수 없다.
+export function useAgentStatus(): [AgentProcessStatus | null, (s: AgentProcessStatus) => void, boolean] {
   const [status, setStatus] = useState<AgentProcessStatus | null>(null)
+  const [backendDown, setBackendDown] = useState(false)
   useEffect(() => {
     if (!agent.getAgentStatus) return
     let alive = true
+    let failures = 0
     const load = () =>
       agent.getAgentStatus!().then(
-        (s) => alive && setStatus(s),
-        () => undefined,
+        (s) => {
+          failures = 0
+          if (!alive) return
+          setStatus(s)
+          setBackendDown(false)
+        },
+        () => {
+          failures++
+          if (alive && failures >= DOWN_AFTER) setBackendDown(true)
+        },
       )
     void load()
     const timer = setInterval(load, POLL_MS)
@@ -22,7 +35,7 @@ export function useAgentStatus(): [AgentProcessStatus | null, (s: AgentProcessSt
       clearInterval(timer)
     }
   }, [])
-  return [status, setStatus]
+  return [status, setStatus, backendDown]
 }
 
 // 설정의 정보 화면에도 같은 문장을 쓴다.
