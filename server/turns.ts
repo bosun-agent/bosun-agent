@@ -40,6 +40,11 @@ interface Approval {
   event: ApprovalEvent
 }
 
+// 감사 기록에 카드 요약·대상을 같이 남긴다. 대화를 지워도 무엇을 결정했는지와 백업의 삭제 여부를 알 수 있게.
+function auditCard(ap: Approval): { summary: string; target?: string } {
+  return { summary: ap.event.summary, ...(ap.event.action.target ? { target: ap.event.action.target } : {}) }
+}
+
 interface Turn {
   sessionId: string
   // 이 세션에서 몇 번째 사용자 메시지인지(0부터). 카드를 대화 복원 위치에 붙일 때 쓴다.
@@ -408,7 +413,7 @@ async function autoApprove(t: Turn, ap: Approval, card: ApprovalCard): Promise<b
   ap.status = 'approved'
   addCard(t.sessionId, t.index, { kind: 'approval', approvalId: ap.id, status: 'approved', ...card, expiresAt: new Date().toISOString(), auto: true })
   noteChange(ap)
-  logDecision({ user: AUTO_USER, sessionId: ap.sessionId, approvalId: ap.id, toolCallId: ap.toolCallId, tool: ap.tool, decision: 'approved' })
+  logDecision({ user: AUTO_USER, sessionId: ap.sessionId, approvalId: ap.id, toolCallId: ap.toolCallId, tool: ap.tool, decision: 'approved', ...auditCard(ap) })
   if (!t.finished) {
     emit(t, { type: 'auto_approved', approvalId: ap.id, tool: ap.tool, summary: card.summary, ...(card.risk ? { risk: card.risk } : {}) })
   }
@@ -469,7 +474,7 @@ async function expire(ap: Approval): Promise<void> {
   ap.sending = false
   if (ap.status !== 'pending') return
   resolve(ap, 'expired')
-  logDecision({ user: 'system', sessionId: ap.sessionId, approvalId: ap.id, toolCallId: ap.toolCallId, tool: ap.tool, decision: 'expired' })
+  logDecision({ user: 'system', sessionId: ap.sessionId, approvalId: ap.id, toolCallId: ap.toolCallId, tool: ap.tool, decision: 'expired', ...auditCard(ap) })
 }
 
 // ---- 사용자 결정 ----
@@ -530,6 +535,6 @@ export async function decide(
       detail: ap.event.summary,
     })
   }
-  logDecision({ user, sessionId, approvalId, toolCallId: ap.toolCallId, tool: ap.tool, decision: status })
+  logDecision({ user, sessionId, approvalId, toolCallId: ap.toolCallId, tool: ap.tool, decision: status, ...auditCard(ap) })
   return (sink) => attach(t, sink)
 }

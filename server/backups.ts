@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { BackupRecord } from '../src/lib/agentProtocol.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
-import { approvalCardsBetween } from './store.ts'
+import { approvalCardsBetween, decisionsBetween } from './store.ts'
 
 type Obj = Record<string, unknown>
 const obj = (v: unknown): Obj => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : {})
@@ -84,7 +84,10 @@ export function backupDbPath(): string {
 
 // 백업 훅은 승인을 묻기 직전(tool_input_transform)에 돌아서, 사용자가 거부한 삭제도 백업이 남는다(2026-10-28 실측).
 // 같은 대화에서 백업 직후에 뜬 삭제 카드를 찾아 그 결정으로 실제 삭제 여부를 정한다.
+// 대화를 지우면 카드도 지워지므로, 그때는 승인 기록(결정 때 남긴 요약·대상)에서 백업 뒤 첫 삭제 결정을 찾는다.
+// 결정은 카드가 뜬 뒤 승인 시간(APPROVAL_TIMEOUT_MS)까지 걸릴 수 있다.
 const MATCH_WINDOW_MS = 60_000
+const DECISION_WINDOW_MS = MATCH_WINDOW_MS + config.approvalTimeoutMs + 30_000
 
 function outcomeOf(sessionId: string, atMs: number, target: string): BackupRecord['outcome'] {
   if (!sessionId || !target) return 'unknown'
@@ -98,10 +101,12 @@ function outcomeOf(sessionId: string, atMs: number, target: string): BackupRecor
   const match = cards.find(
     ({ card }) => card.kind === 'approval' && card.summary.endsWith(' 삭제') && keysOf(card.action.target ?? '').includes(key),
   )
-  if (!match) return 'unknown'
-  if (match.status === 'approved') return 'deleted'
-  if (match.status === 'pending') return 'pending'
-  return 'kept'
+  if (match) return match.status === 'approved' ? 'deleted' : match.status === 'pending' ? 'pending' : 'kept'
+  const decided = decisionsBetween(sessionId, new Date(atMs - 5_000).toISOString(), new Date(atMs + DECISION_WINDOW_MS).toISOString()).find(
+    (d) => d.summary?.endsWith(' 삭제') && keysOf(d.target ?? '').includes(key),
+  )
+  if (!decided) return 'unknown'
+  return decided.decision === 'approved' ? 'deleted' : 'kept'
 }
 
 // 파일이 없거나 표가 없으면 빈 목록이다(아직 삭제한 적이 없음).

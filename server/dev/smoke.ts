@@ -601,10 +601,26 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
     const rows = (await fetch(`${BASE}/api/backups`).then((res) => res.json())) as { records: { sessionId: string; outcome: string }[] }
     const outcome = rows.records.find((x) => x.sessionId === s)?.outcome
     if (!decision) await post(`/api/sessions/${s}/approvals/${approvalOf(r.events)!.approvalId}`, { decision: 'deny' })
-    return outcome
+    return { s, outcome }
   }
   const [pending, kept, deleted] = [await backupFor(null), await backupFor('deny'), await backupFor('approve')]
-  check('백업 목록에 삭제 여부: 대기·거부·승인', pending === 'pending' && kept === 'kept' && deleted === 'deleted', [pending, kept, deleted])
+  check(
+    '백업 목록에 삭제 여부: 대기·거부·승인',
+    pending.outcome === 'pending' && kept.outcome === 'kept' && deleted.outcome === 'deleted',
+    [pending.outcome, kept.outcome, deleted.outcome],
+  )
+
+  // 대화를 지우면 카드도 지워진다. 승인 기록에 남긴 요약·대상으로 삭제 여부와 기록 설명이 그대로 보여야 한다.
+  for (const { s } of [kept, deleted]) await fetch(`${BASE}/api/sessions/${s}`, { method: 'DELETE' })
+  const after = (await fetch(`${BASE}/api/backups`).then((res) => res.json())) as { records: { sessionId: string; outcome: string }[] }
+  const outcomeAfter = (s: string) => after.records.find((x) => x.sessionId === s)?.outcome
+  check('대화를 지워도 백업 삭제 여부가 남는다', outcomeAfter(kept.s) === 'kept' && outcomeAfter(deleted.s) === 'deleted', [outcomeAfter(kept.s), outcomeAfter(deleted.s)])
+  const auditAfter = (await fetch(`${BASE}/api/audit?sessionId=${deleted.s}`).then((res) => res.json())) as { records: { summary?: string; target?: string }[] }
+  check(
+    '대화를 지워도 승인 기록에 요약·대상이 남는다',
+    auditAfter.records[0]?.summary === '컨테이너 nginx-web 삭제' && auditAfter.records[0]?.target === 'nginx-web',
+    auditAfter.records,
+  )
   const older = list.records.find((x) => x.kind === 'container')
   check('짝지을 카드가 없는 백업은 unknown', (older as { outcome?: string } | undefined)?.outcome === 'unknown', older)
 }

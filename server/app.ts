@@ -424,6 +424,7 @@ app.get('/api/audit', (c) => {
   const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 100) || 100, 1), 500)
   const entries = recentDecisions(limit, c.req.query('sessionId') || undefined)
   const cards = cardSummaries(entries.map((e) => e.approvalId))
+  // 결정 때 남긴 요약·대상을 먼저 쓴다. WEB 0.7.0까지의 기록은 비어 있어서 카드가 남아 있으면 카드에서 찾는다.
   const records: AuditRecord[] = entries.map((e) => ({
     at: e.at,
     user: e.user,
@@ -431,7 +432,7 @@ app.get('/api/audit', (c) => {
     approvalId: e.approvalId,
     tool: e.tool,
     decision: e.decision,
-    ...cards.get(e.approvalId),
+    ...(e.summary ? { summary: e.summary, ...(e.target ? { target: e.target } : {}) } : cards.get(e.approvalId)),
   }))
   return c.json({ records })
 })

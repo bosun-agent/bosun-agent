@@ -27,6 +27,9 @@ export interface AuditEntry {
   toolCallId: string
   tool: string
   decision: ApprovalStatus
+  // 결정할 때의 카드 요약·대상. 대화를 지우면 카드가 없어지므로 감사 기록에 같이 둔다.
+  summary?: string
+  target?: string
 }
 
 if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true })
@@ -52,7 +55,9 @@ db.exec(`
     approval_id TEXT NOT NULL,
     tool_call_id TEXT NOT NULL,
     tool        TEXT NOT NULL,
-    decision    TEXT NOT NULL
+    decision    TEXT NOT NULL,
+    summary     TEXT,
+    target      TEXT
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -81,6 +86,10 @@ db.exec(`
 // v0.2.x(Airlock) 때 만든 파일은 열 이름만 바꾼다.
 const auditColumns = db.prepare('PRAGMA table_info(approval_audit)').all().map((c) => c.name)
 if (auditColumns.includes('airlock_id')) db.exec('ALTER TABLE approval_audit RENAME COLUMN airlock_id TO tool_call_id')
+// WEB 0.7.0까지 만든 파일에는 요약·대상 열이 없다. 그때 기록은 비어 있고, 카드가 남아 있으면 카드에서 찾는다.
+for (const column of ['summary', 'target']) {
+  if (!auditColumns.includes(column)) db.exec(`ALTER TABLE approval_audit ADD COLUMN ${column} TEXT`)
+}
 
 const insertCard = db.prepare(
   'INSERT INTO cards (session_id, turn, approval_id, status, body, created_at) VALUES (?, ?, ?, ?, ?, ?)',
@@ -89,7 +98,7 @@ const updateStatus = db.prepare('UPDATE cards SET status = ? WHERE approval_id =
 const deleteCardsStmt = db.prepare('DELETE FROM cards WHERE session_id = ?')
 const selectCards = db.prepare('SELECT turn, status, body FROM cards WHERE session_id = ? ORDER BY id')
 const insertAudit = db.prepare(
-  'INSERT INTO approval_audit (at, user, session_id, approval_id, tool_call_id, tool, decision) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  'INSERT INTO approval_audit (at, user, session_id, approval_id, tool_call_id, tool, decision, summary, target) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 )
 
 // 상태는 status 열이 기준이다. body에는 카드의 나머지 내용을 JSON으로 둔다.
@@ -139,7 +148,11 @@ export function recentDecisions(limit: number, sessionId?: string): AuditEntry[]
   const rows = sessionId
     ? db.prepare('SELECT * FROM approval_audit WHERE session_id = ? ORDER BY id DESC LIMIT ?').all(sessionId, limit)
     : db.prepare('SELECT * FROM approval_audit ORDER BY id DESC LIMIT ?').all(limit)
-  return rows.map((r) => ({
+  return rows.map(toAuditEntry)
+}
+
+function toAuditEntry(r: Record<string, unknown>): AuditEntry {
+  return {
     at: r.at as string,
     user: r.user as string,
     sessionId: r.session_id as string,
@@ -147,7 +160,17 @@ export function recentDecisions(limit: number, sessionId?: string): AuditEntry[]
     toolCallId: r.tool_call_id as string,
     tool: r.tool as string,
     decision: r.decision as ApprovalStatus,
-  }))
+    ...(r.summary ? { summary: r.summary as string } : {}),
+    ...(r.target ? { target: r.target as string } : {}),
+  }
+}
+
+// 한 대화에서 from~to 사이에 내린 결정(요약이 있는 것만). 카드가 지워진 뒤 백업의 삭제 여부를 짝지을 때 쓴다(server/backups.ts).
+export function decisionsBetween(sessionId: string, from: string, to: string): AuditEntry[] {
+  return db
+    .prepare('SELECT * FROM approval_audit WHERE session_id = ? AND summary IS NOT NULL AND at >= ? AND at <= ? ORDER BY id')
+    .all(sessionId, from, to)
+    .map(toAuditEntry)
 }
 
 // 감사 기록의 approvalId로 카드 내용(요약·대상)을 찾는다. 대화를 지웠으면 없다.
@@ -219,7 +242,7 @@ export function cancelPendingCards(): number {
 
 export function logDecision(entry: Omit<AuditEntry, 'at'>): void {
   const row = { at: new Date().toISOString(), ...entry }
-  insertAudit.run(row.at, row.user, row.sessionId, row.approvalId, row.toolCallId, row.tool, row.decision)
+  insertAudit.run(row.at, row.user, row.sessionId, row.approvalId, row.toolCallId, row.tool, row.decision, row.summary ?? null, row.target ?? null)
   console.info('[audit]', JSON.stringify(row))
 }
 

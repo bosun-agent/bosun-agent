@@ -126,7 +126,7 @@ npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
 진짜 Agent(`npm start`)와 포트가 같으니 동시에 띄우지 않는다.
 
 ```bash
-npm run server:smoke # 백엔드 흐름 스모크 테스트(109항목). 위의 가짜 Agent와 백엔드가 떠 있어야 한다
+npm run server:smoke # 백엔드 흐름 스모크 테스트(111항목). 위의 가짜 Agent와 백엔드가 떠 있어야 한다
 npm run test:ui      # 브라우저 화면 테스트(54항목). 설치된 Chrome을 쓴다(CHROME_PATH)
 npm run test:agent   # 백엔드가 Agent를 띄우고 다시 시작하는 흐름(10항목). 백엔드를 직접 띄우므로 따로 켤 것이 없다
 ```
