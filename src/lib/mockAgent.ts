@@ -1,5 +1,5 @@
 // AI Agent 파트가 준비되기 전까지 쓰는 목업.
-// docs/interface-web-agent.md의 이벤트 스트림을 그대로 흉내낸다. 실제 연동 시에는
+// agentProtocol.ts의 이벤트 스트림을 그대로 흉내낸다. 실제 연동 시에는
 // 같은 AgentClient 인터페이스를 SSE로 구현한 클라이언트로 교체하면 된다.
 
 import type { AgentClient, AgentEvent } from './agentProtocol'

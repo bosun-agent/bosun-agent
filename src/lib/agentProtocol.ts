@@ -1,4 +1,4 @@
-// WEB ↔ AI Agent 인터페이스 타입. docs/interface-web-agent.md(v0.5.1)의 3·4장과 1:1로 맞춘다.
+// WEB ↔ AI Agent 인터페이스 타입. 브라우저 ↔ WEB 백엔드 엔드포인트와 이벤트 모양이다.
 // 목업(mockAgent.ts)과 실제 클라이언트가 모두 이 타입의 이벤트 스트림을 내보낸다.
 
 export interface ProposedAction {
