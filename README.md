@@ -23,8 +23,8 @@ BOSUN 프로젝트의 WEB 파트. 사용자가 자연어로 컨테이너를 관�
 **1. 받고 설치**
 
 ```bash
-git clone -b web https://github.com/seoulorigin/bosun_agent.git
-cd bosun_agent
+git clone -b web https://github.com/bosun-agent/bosun-agent.git
+cd bosun-agent
 npm install
 ```
 
