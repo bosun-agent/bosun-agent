@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import logoUrl from './assets/bosun-logo.png'
 import { AgentStatusBanner } from './components/AgentStatusBanner'
 import { ChatInput } from './components/ChatInput'
 import { DevScenarioBar } from './components/DevScenarioBar'
@@ -669,10 +670,7 @@ function App() {
 
         {isEmpty ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto py-12">
-            {/* 로고 이미지를 받으면 이 자리를 <img>로 바꾼다. */}
-            <div className="flex h-36 w-56 items-end justify-center rounded-md border border-dashed border-neutral-300 pb-3 text-4xl font-black tracking-tight">
-              BOSUN
-            </div>
+            <img src={logoUrl} alt="BOSUN" width={216} height={300} className="h-36 w-auto select-none" draggable={false} />
             {composer}
             <div className="flex max-w-2xl flex-wrap justify-center gap-1.5 px-4">
               {EXAMPLE_PROMPTS.slice(0, 4).map((p) => (

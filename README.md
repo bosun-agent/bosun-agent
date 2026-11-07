@@ -1,7 +1,7 @@
 # BOSUN — WEB
 
 BOSUN 프로젝트의 WEB 파트. 사용자가 자연어로 컨테이너를 관리하는 채팅 인터페이스.
-이 문서는 실행·설정 안내다.
+팀 저장소의 `web` 브랜치에 있다. 이 문서는 실행·설정 안내다.
 
 ## 준비물
 
@@ -23,10 +23,12 @@ BOSUN 프로젝트의 WEB 파트. 사용자가 자연어로 컨테이너를 관�
 **1. 받고 설치**
 
 ```bash
-git clone <저장소 주소>
-cd <폴더>
+git clone -b web https://github.com/seoulorigin/bosun_agent.git
+cd bosun_agent
 npm install
 ```
+
+`-b web`을 빼면 기본 브랜치(main)를 받는데, 거기에는 WEB 코드가 없다.
 
 **2. Agent 폴더 준비.** 아무 곳에 폴더를 하나 만들고(예: `C:/bosun/agent`) Agent 담당에게 받은 `agent.direct.yaml`과 `hooks/`를 넣는다. agent.yaml 안의 `python`·`uvx`·훅·`SSL_CERT_FILE`(Portainer 자체 서명 인증서를 넣은 CA 묶음) 경로는 받은 사람 PC 기준이니 **내 PC의 절대경로로 고친다**(Windows는 `python3` 대신 `python`일 수 있다. `where python`, `where uvx`로 확인).
 
@@ -124,9 +126,9 @@ npm run dev:http     # 화면. /api를 WEB 백엔드로 넘긴다
 진짜 Agent(`npm start`)와 포트가 같으니 동시에 띄우지 않는다.
 
 ```bash
-npm run server:smoke # 백엔드 흐름 스모크 테스트(111항목). 위의 가짜 Agent와 백엔드가 떠 있어야 한다
-npm run test:ui      # 브라우저 화면 테스트(52항목). 설치된 Chrome을 쓴다(CHROME_PATH)
-npm run test:agent   # 백엔드가 Agent를 띄우고 다시 시작하는 흐름(9항목). 백엔드를 직접 띄우므로 따로 켤 것이 없다
+npm run server:smoke # 백엔드 흐름 스모크 테스트(109항목). 위의 가짜 Agent와 백엔드가 떠 있어야 한다
+npm run test:ui      # 브라우저 화면 테스트(54항목). 설치된 Chrome을 쓴다(CHROME_PATH)
+npm run test:agent   # 백엔드가 Agent를 띄우고 다시 시작하는 흐름(10항목). 백엔드를 직접 띄우므로 따로 켤 것이 없다
 ```
 
 화면은 `AgentClient` 인터페이스(`src/lib/agentProtocol.ts`)만 본다. 목업(`mockAgent.ts`)과 WEB 백엔드 클라이언트(`httpAgent.ts`) 중 하나를 `src/lib/agent.ts`가 고른다(`VITE_AGENT=http`).
@@ -164,7 +166,7 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 | `config.ts` | 환경변수 읽기 |
 | `agentProcess.ts` | Docker Agent를 자식 프로세스로 띄우고 관리: 죽으면 다시 띄우기, API 키를 바꾸면 다시 시작, 남은 Agent 정리(PID 파일) |
 | `runAgent.ts` | `npm run agent`: Agent만 따로 띄운다(로그를 따로 볼 때) |
-| `dev/` | 개발용 값(`dev.env`), 가짜 Docker Agent(`fakeUpstream.ts`), 백엔드 스모크 테스트(`smoke.ts`), 화면 테스트(`uiSmoke.ts`), 연동 확인용 `agent.yaml` |
+| `dev/` | 개발용 값(`dev.env`), 가짜 Docker Agent(`fakeUpstream.ts`), 백엔드 스모크 테스트(`smoke.ts`), 화면 테스트(`uiSmoke.ts`), Agent 관리 테스트(`agentSmoke.ts`, 가짜 실행 파일 `fakeAgentBin.ts`), 연동 확인용 `agent.yaml` |
 
 ## 목업으로 화면 상태 테스트하기
 

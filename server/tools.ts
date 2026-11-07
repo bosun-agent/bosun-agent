@@ -1,5 +1,6 @@
 // 도구 호출 → 화면 문구. 처리 과정 줄과 승인 카드를 코드 템플릿으로 만든다(LLM 재요약 금지).
-// 도구는 Portainer MCP(mcp-portainer)의 docker_proxy와 EndpointList다(Agent 담당 agent.direct.yaml).
+// 도구는 Portainer MCP(mcp-portainer)의 docker_proxy, EndpointList, 스택 도구(Stack*)다(Agent 담당 agent.direct.yaml).
+// 표에 없는 도구는 "확인할 수 없는 작업" 카드로 띄운다.
 // docker_proxy는 Docker Engine API 요청 하나라서 method와 path로 작업을 고른다.
 // 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다.
 

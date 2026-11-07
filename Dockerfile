@@ -4,7 +4,7 @@
 #   docker build -t bosun-web .
 #   docker run --env-file web.env -p 127.0.0.1:3001:3001 -v bosun_web_data:/data bosun-web
 #
-# web.env에 넣을 값은 README의 "진짜 Agent로 띄우기"와 같다. 로그인이 없으므로 -p는 꼭 127.0.0.1로 연다
+# web.env에 넣을 값은 README "실행 > 처음 한 번" 4단계의 server/real.env와 같다. 로그인이 없으므로 -p는 꼭 127.0.0.1로 연다
 # (컨테이너 안은 0.0.0.0이라 HOST_IN_CONTAINER=1로 루프백 검사를 넘긴다).
 # AGENT_URL은 컨테이너 밖 Docker Agent 주소다(같은 compose면 서비스 이름, 예: http://agent:8080).
 

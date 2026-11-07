@@ -124,7 +124,7 @@ export const httpAgent: AgentClient = {
   forkSession: (sessionId, turn) =>
     json<{ sessionId: string; title: string }>(`${sessionPath(sessionId)}/fork`, { method: 'POST', body: JSON.stringify({ turn }) }),
 
-  // 쿠키(path /api)로 인증하므로 링크로 바로 내려받는다.
+  // GET이라 X-Bosun 헤더 없이도 받으므로(server/guard.ts) 링크로 바로 내려받는다.
   exportUrl: (sessionId) => `${sessionPath(sessionId)}/export`,
 
   getUsage: (sessionId) => json<SessionUsage>(`${sessionPath(sessionId)}/usage`),

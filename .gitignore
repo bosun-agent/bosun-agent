@@ -33,5 +33,5 @@ server/*.env
 # WEB 백엔드 SQLite(승인·차단 카드, 승인 감사 기록)
 server/data/
 
-# 설계서·계약 등 팀 내부 문서(로컬에만 둔다)
+# 로컬 문서
 docs/

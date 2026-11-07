@@ -38,7 +38,9 @@ async function newChat() {
 // 로그인 없이 바로 Home
 await page.goto(URL)
 await input().waitFor()
-check('로그인 없이 바로 Home', await page.getByText('BOSUN', { exact: true }).first().isVisible() && !(await page.getByText('로그인').count()))
+const logo = page.getByRole('img', { name: 'BOSUN' })
+check('로그인 없이 바로 Home', (await logo.isVisible()) && !(await page.getByText('로그인').count()))
+check('첫 화면 로고 이미지가 실제로 불러와진다', await logo.evaluate((el) => (el as HTMLImageElement).complete && (el as HTMLImageElement).naturalWidth > 0))
 
 // 예시 버튼 → 입력창 채우기
 await page.getByRole('button', { name: '실행 중인 컨테이너 목록 보여줘' }).click()

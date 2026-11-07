@@ -1,6 +1,6 @@
-// AI Agent 파트가 준비되기 전까지 쓰는 목업.
-// agentProtocol.ts의 이벤트 스트림을 그대로 흉내낸다. 실제 연동 시에는
-// 같은 AgentClient 인터페이스를 SSE로 구현한 클라이언트로 교체하면 된다.
+// Agent·백엔드 없이 화면만 볼 때 쓰는 목업(npm run dev, 공개 데모 npm run build:demo).
+// agentProtocol.ts의 이벤트 스트림을 그대로 흉내낸다. 실제 백엔드에 붙는 클라이언트는 httpAgent.ts이고,
+// 둘 중 무엇을 쓸지는 agent.ts가 고른다.
 
 import type { AgentClient, AgentEvent } from './agentProtocol'
 

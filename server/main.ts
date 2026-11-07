@@ -1,4 +1,4 @@
-// WEB 백엔드(BFF) 진입점. 실행: npm run server (개발용 값은 server/dev/dev.env)
+// WEB 백엔드(BFF) 진입점. 실행: npm start(진짜 Agent, server/real.env) 또는 npm run server(가짜 Agent, server/dev/dev.env)
 
 import { serve } from '@hono/node-server'
 import { startAgent, stopAgent } from './agentProcess.ts'
