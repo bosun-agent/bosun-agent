@@ -95,7 +95,7 @@ TELEMETRY_ENABLED=false
 | 승인 카드에 Agent 훅의 쉬운 설명·영향 표시 | 웹 변경 필요. Agent는 `tool_call_confirmation`의 `metadata.reason`(설명), `metadata.blast_radius`(low·medium·high)로 보낸다 |
 | 초보자용/숙련자용 선택 | 웹 변경 필요. Agent는 둘 다 떠 있으니 요청 주소의 Agent 이름(`beginner`/`expert`)만 바꾸면 된다 |
 | 새 대화를 고정 제목(`{"title": "새 대화"}`)으로 만들기 | 웹 변경 필요. 제목이 빈 대화는 docker-agent가 사용자 입력으로 제목을 지으며, 이 호출엔 보안 훅이 걸리지 않는다 |
-| 차단 안내의 "Portainer에서 직접 할 수 있어요" 문구·링크 제거 | 웹 변경 필요 |
+| 차단 안내의 "Portainer에서 직접 할 수 있어요" 문구·링크 제거 | 웹 변경 필요 | 
 
 ## 6. 볼륨 백업
 
@@ -106,7 +106,7 @@ TELEMETRY_ENABLED=false
 
 ## 7. (원할 때만) 훅 단위 테스트
 
-팀원은 실행하지 않아도 된다. 웹에서 대화로 확인하면 된다.
+ 실행하지 않아도 된다. 웹에서 대화로 확인하면 된다.
 **훅·설정을 고쳤을 때** 막아야 할 것이 그대로 막히는지 확인하려면 아래를 실행한다. AI·실제 Portainer 없이(가짜 Portainer) 1~2분, 비용 0원이다.
 
 ```bash
