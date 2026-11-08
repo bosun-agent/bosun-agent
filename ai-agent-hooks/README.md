@@ -4,7 +4,7 @@ AI Agent(docker-agent) 설정의 원본과 훅을 두는 곳이다. 팀원에게
 
 | 파일 | 용도 |
 | --- | --- |
-| agent.yaml.example | 설정 원본. 경로는 자리표시자(/절대경로/, /실행폴더/). 10월 31일판(agent-run/agent.yaml과 경로 외 동일) |
+| agent.yaml.example | 설정 원본(기준 설정). 경로는 자리표시자(/절대경로/, /실행폴더/). 초보자용·숙련자용은 tools/make_agents.py로 이 파일에서 만든다 |
 | tool_input_transform_direct_policy_guard.py | 정책 훅(허용 목록. 10/31부터 컨테이너 직접 생성·이미지·네트워크 삭제 거부. 11/1부터 이미지 받기 출처 제한, 상세 조회는 안전한 필드만. 11/6부터 정책표대로 일시정지·재개·이미지 검색·네트워크 생성·연결·해제 거부, 시스템 정보·네트워크·이미지 이력도 안전한 필드만) |
 | tool_input_transform_direct_backup_guard.py | 삭제 전 백업 훅(10/31부터 컨테이너만 백업) |
 | tool_input_transform_stack_guard.py | 스택(Compose) 검사 훅. PyYAML 필요. 11/1부터 restart 제한, 공개 포트 1024~65535(9443·8000 제외), 서비스당 메모리 2GB·CPU 2개 상한(안 적으면 512MB·CPU 1개로 채움). 11/6부터 같은 이름 생성 거부, 스택 수정(StackUpdate)·파일 보기(StackFileInspect) 검사, 켜기·끄기 대상 확인, 관리 스택(bosun-backup) 보호. 훅 env에 AGENT_ENV_FILE 필요 |
@@ -34,7 +34,6 @@ AI Agent(docker-agent) 설정의 원본과 훅을 두는 곳이다. 팀원에게
 
 실행할 때: docker-agent 사용 통계를 끈다(TELEMETRY_ENABLED=false). 기본으로 켜져 있고 명령 인자·오류 문구가 Docker 서버로 간다(공식 문서 docs/community/telemetry).
 공유하지 않는 것: injection_log.sqlite3, *.bak-*, *.fix-*, __pycache__
-실행은 이 폴더에서 하지 않는다. agent-run/ 에서 한다.
-Airlock 시절 파일은 ../_보관_airlock포함버전/ 에 있다.
+실행은 이 폴더에서 하지 않는다. 설정 파일을 둔 실행 폴더에서 한다(저장소 맨 위 README 3절).
 
-보안 정책표 예외(반드시 유지, 11/6): bosun-backup 컨테이너의 backup 명령 exec 하나만 허용("지금 백업"). 정책표 4절은 exec를 모두 막지만, 즉시 백업 방법이 이것뿐이라 예외로 둔다. 상세는 Claude outputs/AI_Agent_보안정책_반영_결과_10-31.md.
+보안 정책표 예외(반드시 유지, 11/6): bosun-backup 컨테이너의 backup 명령 exec 하나만 허용("지금 백업"). 정책표 4절은 exec를 모두 막지만, 즉시 백업 방법이 이것뿐이라 예외로 둔다. 상세는 docs/동작기준_테스트목록_11-07.md.

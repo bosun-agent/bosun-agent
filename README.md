@@ -83,9 +83,19 @@ AGENT_TOKEN=<아무 긴 값>
 AGENT_MODELS=flash             # 설정에 정의된 모델 이름. 직접 모델 이름을 쓰면 max_tokens 설정이 빠진다
 TELEMETRY_ENABLED=false
 ```
-- `AGENT_CONFIG`를 `agents` 폴더로 주면 초보자용·숙련자용이 함께 뜬다(`/agent/beginner`, `/agent/expert`).
-- `PORTAINER_URL`(정책 차단 시 "Portainer 열기" 링크)은 넣지 않는다. Agent는 Portainer에서 직접 하라고 안내하지 않는다.
-- 웹에서 세션은 고정 제목(`{"title":"새 대화"}`)으로 만들고, 승인은 approve/reject만 쓰는 것을 권장한다(이유: `docs/`).
+- `AGENT_CONFIG`를 `agents` 폴더로 주면 초보자용·숙련자용이 함께 뜬다(`/agent/beginner`, `/agent/expert`). 웹은 `AGENT_NAME`에 적은 하나를 부른다.
+- `PORTAINER_URL`은 넣지 않는다. Agent는 막힌 작업을 Portainer에서 직접 하라고 안내하지 않는다(대신 "① 막힌 것 ② 이유 ③ 대신 할 수 있는 것"을 안내).
+- 웹 설정의 "묻지 않기(YOLO)"는 팀 합의로 둔 선택 모드다. 켜도 Agent의 훅과 항상 거부(deny) 규칙은 승인보다 먼저 돌아 그대로 막는다(빠지는 것은 사람 승인 단계뿐).
+
+### 웹 연동 현황 (11/8)
+
+| 항목 | 상태 |
+|---|---|
+| 조회, 계획 → 승인 → 스택 생성, 정책 차단 안내, "지금 백업"(정지 → 백업 → 시작) | ✅ 웹 화면에서 동작 확인 |
+| 승인 카드에 Agent 훅의 쉬운 설명·영향 표시 | 웹 작업 중. Agent는 `tool_call_confirmation`의 `metadata.reason`(설명), `metadata.blast_radius`(low·medium·high)로 보낸다 |
+| 초보자용/숙련자용 선택 | 웹 작업 중. Agent는 둘 다 떠 있으니 요청 주소의 Agent 이름(`beginner`/`expert`)만 바꾸면 된다 |
+| 새 대화를 고정 제목(`{"title": "새 대화"}`)으로 만들기 | 웹 작업 중. 제목이 빈 대화는 docker-agent가 사용자 입력으로 제목을 지으며, 이 호출엔 보안 훅이 걸리지 않는다 |
+| 차단 안내의 "Portainer에서 직접 할 수 있어요" 문구·링크 제거 | 웹 작업 중 |
 
 ## 6. 볼륨 백업
 
