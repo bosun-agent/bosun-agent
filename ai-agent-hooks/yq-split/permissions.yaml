@@ -1,0 +1,62 @@
+permissions:
+  allow:
+    # 민감하지 않은 조회만 승인 없이 실행(10/31). 여기 없는 GET은 strict라서 승인을 묻는다.
+    # 정책 훅이 /v1.43 같은 버전 접두어를 떼어 보내므로 경로는 접두어 없이 적는다.
+    - "docker_proxy:method=GET:path=/_ping"
+    - "docker_proxy:method=GET:path=/version"
+    - "docker_proxy:method=GET:path=/info"
+    - "docker_proxy:method=GET:path=/system/df"
+    - "docker_proxy:method=GET:path=/containers/json" # 컨테이너 목록
+    - "docker_proxy:method=GET:path=/containers/*/stats" # 사용량
+    - "docker_proxy:method=GET:path=/images/json" # 이미지 목록
+    - "docker_proxy:method=GET:path=/volumes" # 볼륨 목록
+    - "docker_proxy:method=GET:path=/networks" # 네트워크 목록
+    - "docker_proxy:method=GET:path=/networks/*" # 네트워크 상세
+    - "EndpointList" # 환경 목록 조회
+    - "StackList" # 스택 목록 조회
+    - "docker_proxy:method=POST:path=/exec/*/start" # 11/2: 백업 실행 2단계. 정책 훅이 Portainer에 물어 백업 명령일 때만 통과(승인은 1단계에서 한 번)
+  deny:
+    - "docker_proxy:method=POST:path=*/containers/create*" # 직접 생성 금지 — 스택으로 만든다(10/31)
+    - "docker_proxy:method=DELETE:path=*/images/*" # 이미지 삭제 금지(10/31)
+    - "docker_proxy:method=DELETE:path=*/networks/*" # 네트워크 삭제 금지(10/31)
+    # 11/6 보안 정책표 3절 DENY: 일시정지·재개, 이미지 검색, 네트워크 생성·연결·해제(10/18에 열었던 것). 정책 훅도 막는다
+    - "docker_proxy:path=*/containers/*/pause*"
+    - "docker_proxy:path=*/containers/*/unpause*"
+    - "docker_proxy:path=*/images/search*"
+    - "docker_proxy:path=*/networks/create*"
+    - "docker_proxy:path=*/networks/*/connect*"
+    - "docker_proxy:path=*/networks/*/disconnect*"
+    # 컨테이너 안 명령 실행(exec): bosun-backup(백업 컨테이너) 말고 모든 컨테이너를 막는다(11/2 백업 명령 예외).
+    #   패턴은 "이름이 bosun-backup과 한 글자라도 다르면 거부"를 글자 자리마다 적은 것. 정책 훅이 backup 명령만 통과시키고 경로를 이름으로 보낸다
+    - 'docker_proxy:path=*/containers/[^b]*/exec*'
+    - 'docker_proxy:path=*/containers/b[^o]*/exec*'
+    - 'docker_proxy:path=*/containers/bo[^s]*/exec*'
+    - 'docker_proxy:path=*/containers/bos[^u]*/exec*'
+    - 'docker_proxy:path=*/containers/bosu[^n]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun[^\-]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-[^b]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-b[^a]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-ba[^c]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-bac[^k]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-back[^u]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-backu[^p]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-backup[^/]*/exec*'
+    - 'docker_proxy:path=*/containers/b/exec*'
+    - 'docker_proxy:path=*/containers/bo/exec*'
+    - 'docker_proxy:path=*/containers/bos/exec*'
+    - 'docker_proxy:path=*/containers/bosu/exec*'
+    - 'docker_proxy:path=*/containers/bosun/exec*'
+    - 'docker_proxy:path=*/containers/bosun-/exec*'
+    - 'docker_proxy:path=*/containers/bosun-b/exec*'
+    - 'docker_proxy:path=*/containers/bosun-ba/exec*'
+    - 'docker_proxy:path=*/containers/bosun-bac/exec*'
+    - 'docker_proxy:path=*/containers/bosun-back/exec*'
+    - 'docker_proxy:path=*/containers/bosun-backu/exec*'
+    - "docker_proxy:path=*/archive*" # 컨테이너 안 파일 읽기/쓰기 — GET이라 deny가 아니면 승인 없이 실행됨
+    - "docker_proxy:path=*/export*" # 컨테이너 파일시스템 전체 내보내기(GET)
+    - "docker_proxy:path=*/prune*" # 컨테이너·이미지·볼륨·네트워크 일괄 삭제
+    - "docker_proxy:method=DELETE:path=*/volumes/*" # 볼륨 삭제 — 데이터 복구 수단이 없음
+    - "docker_proxy:path=*%*" # 인코딩된 경로(예: arch%69ve)로 deny를 피하는 것 방지
+    - "docker_proxy:path=*/images/get*" # 이미지 여러 개 내보내기(GET, tar)
+    - "docker_proxy:path=*/images/*/get" # 이미지 내보내기(GET, tar)
+  # deny는 글자 그대로 비교하는 보조 장치다. 실제 범위는 정책 훅(허용 목록)이 정한다.

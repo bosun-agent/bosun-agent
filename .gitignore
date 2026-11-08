@@ -1,0 +1,20 @@
+# 비밀값·기록 — 절대 올리지 않는다
+agent.env
+*.env
+!*.env.example
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+# 웹 연동 설정(토큰)
+real.env
+# 보관본·임시 파일
+*.bak
+*.bak-*
+*.fix-*
+__pycache__/
+.DS_Store
+.fuse_hidden*
+# 실제 실행 설정(경로가 PC마다 다름) — 예시(.example)만 올린다
+/agent.yaml
+/agents/*.yaml

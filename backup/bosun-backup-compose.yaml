@@ -1,0 +1,25 @@
+services:
+  backup:
+    image: offen/docker-volume-backup:v2.50.1
+    container_name: bosun-backup
+    restart: unless-stopped
+    environment:
+      BACKUP_CRON_EXPRESSION: "0 23 * * *"   # 11/6: 매일 밤 11시(한국 시간). 시원 님 결정(10시는 맥북 잠자기로 놓침)
+      TZ: "Asia/Seoul"                        # 11/6: 시간대. 없으면 세계 표준시로 계산된다
+      BACKUP_RETENTION_DAYS: "7"
+      BACKUP_FILENAME: "backup-%Y-%m-%dT%H-%M-%S.tar.gz"
+    mem_limit: 256m
+    cpus: 0.5
+    volumes:
+      - bosun-data-1102:/backup/bosun-data-1102:ro
+      - bosun-t16b-1102-redis:/backup/bosun-t16b-1102-redis:ro   # 11/6: redis 앱 데이터(이름 없는 볼륨), 읽기 전용
+      - bosun_backups:/archive
+volumes:
+  bosun-data-1102:
+    external: true
+    name: bosun-data-1102_data
+  bosun-t16b-1102-redis:
+    external: true
+    name: df3c0a741f319803b6980edc8cda368ece0e0d35d9fac35f35720dce6730186e   # bosun-t16b-1102-redis-1의 이름 없는 볼륨. 스택을 다시 만들면 바뀐다
+  bosun_backups:
+    name: bosun_backups
