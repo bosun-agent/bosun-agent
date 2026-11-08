@@ -4,7 +4,7 @@ services:
     container_name: bosun-backup
     restart: unless-stopped
     environment:
-      BACKUP_CRON_EXPRESSION: "0 23 * * *"   # 11/6: 매일 밤 11시(한국 시간). 시원 님 결정(10시는 맥북 잠자기로 놓침)
+      BACKUP_CRON_EXPRESSION: "0 12,18,23 * * *"   # 11/8: 매일 낮 12시·저녁 6시·밤 11시(한국 시간). 맥북이 잠든 시간은 건너뛰므로 하루 3번 시도
       TZ: "Asia/Seoul"                        # 11/6: 시간대. 없으면 세계 표준시로 계산된다
       BACKUP_RETENTION_DAYS: "7"
       BACKUP_FILENAME: "backup-%Y-%m-%dT%H-%M-%S.tar.gz"

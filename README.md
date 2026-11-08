@@ -90,7 +90,7 @@ TELEMETRY_ENABLED=false
 ## 6. 볼륨 백업
 
 - `backup/bosun-backup-compose.yaml`은 현재 쓰는 설정 예시다. 볼륨 이름은 실제 앱 볼륨으로 바꾸고, 모두 **읽기 전용(`:ro`)**으로 붙인다. Portainer에서 스택 `bosun-backup`으로 만든다.
-- 매일 밤 11시(한국 시간, `TZ=Asia/Seoul`) 자동 백업, 7일 보관. 그 시간에 서버가 꺼져 있으면 건너뛴다.
+- 매일 낮 12시·저녁 6시·밤 11시(한국 시간, `TZ=Asia/Seoul`) 자동 백업, 7일 보관. 그 시간에 서버가 꺼져 있으면 그 회차는 건너뛴다.
 - "지금 백업해줘" → Agent가 승인 1번 받고 `backup` 명령을 실행한다. **정책표 4절(exec 금지)의 유일한 예외**로, bosun-backup 컨테이너의 backup 명령 하나만 허용한다.
 - 복원은 관리자 작업: `docs/복원절차서_관리자용_11-07.md`
 
