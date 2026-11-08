@@ -61,7 +61,7 @@ from image_source import image_allowed, reject_text  # noqa: E402 — 이미지 
 from deny_guide import proxy_reason  # noqa: E402 — 거부 안내 ①②③(11/1)
 import portainer_api  # noqa: E402 — 컨테이너를 ID로 고정(11/1)
 
-REQ = {"method": "GET", "path": ""}  # 거부 안내를 고를 때 쓰는 현재 요청
+REQ = {"method": "GET", "path": "", "select": None}  # 거부 안내를 고를 때 쓰는 현재 요청
 
 SEG = r"[A-Za-z0-9][A-Za-z0-9_.\-]*"                 # 컨테이너·네트워크·볼륨 ID/이름
 IMG = r"[A-Za-z0-9][A-Za-z0-9_.\-/:@]*"              # 이미지 이름(레지스트리/경로:태그@digest)
@@ -138,6 +138,11 @@ class Reject(Exception):
 
 
 def out(obj):
+    # 11/8: 변경 요청(GET 아님)에는 select를 쓰지 않는다. mcp-portainer는 요청을 실행한 뒤에 응답에 select를 적용하므로,
+    #   select가 잘못되면 작업은 이미 실행됐는데 오류만 돌아와 AI가 "실패"로 알고 같은 변경을 다시 보낸다(11/8 웹 테스트에서 StackStart 2번).
+    if REQ["method"] != "GET" and REQ["select"] not in (None, "") and obj.get("decision") != "block":
+        hso = obj.setdefault("hook_specific_output", {})
+        hso.setdefault("updated_input", {})["select"] = None
     print(json.dumps(obj, ensure_ascii=False))
 
 
@@ -451,6 +456,7 @@ def main():
     method = str(args.get("method") or "GET").upper()
     path = args.get("path")
     REQ["method"], REQ["path"] = method, path if isinstance(path, str) else ""
+    REQ["select"] = args.get("select")
 
     if not isinstance(path, str) or not path.startswith("/"):
         block("path가 없거나 '/'로 시작하지 않습니다.")

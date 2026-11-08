@@ -14,6 +14,7 @@ AI Agent(docker-agent) 설정의 원본과 훅을 두는 곳이다. 팀원에게
 | session_start_app_summary.py | 이어서 하기(11/7). 대화 시작 때 지금 있는 앱(스택·컨테이너·공개 포트·데이터 볼륨·백업 연결) 요약을 AI에게 넣는다. 조회만, 비밀값 가림·인젝션 줄 제외, 실패하면 아무것도 넣지 않음. 훅 env에 AGENT_ENV_FILE 필요 |
 | tools/make_agents.py | 초보자용·숙련자용 Agent 설정을 기준 설정에서 만든다(11/6). 초보자용은 '계획 먼저 보여 주기' 규칙 |
 | tests/policy_1107_test.py | 11/7 이어서 하기 요약 훅 테스트 |
+| tests/policy_1108_test.py | 11/8 변경 요청에는 select를 빼고 보내기(잘못된 select로 '실행됐는데 오류' → 재요청 방지) |
 | user_prompt_submit_injection_guard.py | 사용자 입력 인젝션 차단 |
 | before_llm_call_injection_sanitizer.py | 모델 호출 직전 차단 입력 가림 |
 | tool_response_transform_injection_guard.py | 도구 응답 인젝션 가림 |

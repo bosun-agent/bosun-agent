@@ -555,7 +555,8 @@ def check_update(args):
     if "REDACTED" in content:
         cur = lookup(f"/api/stacks/{st['Id']}/file", "지금 Compose 읽기").get("StackFileContent", "")
         content = restore_masked(content, cur)
-    new = {k: v for k, v in args.items() if k in ("id", "endpointId", "Env", "select") and v not in (None, [])}
+    new = {k: v for k, v in args.items() if k in ("id", "endpointId", "Env") and v not in (None, [])}
+    new["select"] = None  # 11/8: 변경 도구에는 select를 쓰지 않는다(잘못되면 실행은 됐는데 오류만 돌아와 다시 보내게 됨)
     new["StackFileContent"] = check_compose(content)
     return new
 
@@ -575,7 +576,8 @@ def check_create(args):
     if args.get("Webhook"):
         raise Reject("Webhook(외부 호출로 재배포)은 허용되지 않습니다.")
     check_env_arg(args)
-    new = {k: v for k, v in args.items() if k in ("endpointId", "Name", "Env", "select") and v not in (None, [])}
+    new = {k: v for k, v in args.items() if k in ("endpointId", "Name", "Env") and v not in (None, [])}
+    new["select"] = None  # 11/8: 변경 도구에는 select를 쓰지 않는다
     new["StackFileContent"] = check_compose(args.get("StackFileContent"))
     check_name_conflicts(args["endpointId"], args["Name"], new["StackFileContent"])
     return new
@@ -600,7 +602,9 @@ def main():
         except Reject as r:
             block(str(r))
             return
-        out({})
+        # 11/8: select는 빼고 보낸다. mcp-portainer는 실행 뒤에 select를 적용해서, 잘못된 select면 켜기·끄기는 됐는데
+        #   오류가 돌아와 AI가 같은 요청을 다시 보낸다(11/8 웹 테스트: StackStart 첫 호출 select "{}" → 실제로는 켜짐 → 재요청 409)
+        out({"hook_specific_output": {"updated_input": {**args, "select": None}}} if raw_args.get("select") not in (None, "") else {})
         return
     if tool == "StackFileInspect":  # 11/6: 수정 전에 지금 Compose 읽기(승인)
         try:
