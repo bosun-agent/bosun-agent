@@ -4,7 +4,7 @@ BOSUN 프로젝트의 AI Agent 파트. 초보 사용자가 자연어로 컨테�
 위험한 작업은 **코드(훅·권한 규칙)와 사람의 승인**이 막는다. 팀 저장소의 `agent` 브랜치에 있다.
 
 - 실행기: docker-agent **v1.148.0** / MCP: mcp-portainer **2.45.1** / Portainer CE **2.45.1** / 모델: deepseek/deepseek-v4.1-flash(OpenRouter)
-- 기준 정책: Secure 담당 "MCP 기본 보안 정책 분류표". 정책표와의 차이·예외는 `docs/동작기준_테스트목록_11-07.md`
+- 기준 정책: Secure 담당 "MCP 기본 보안 정책 분류표". 정책표와의 차이·예외는 `docs/동작기준_테스트목록.md`
 - 웹(화면·백엔드)은 같은 저장소의 `web` 브랜치. 이 Agent를 웹에 붙이는 방법은 아래 5절
 
 ---
@@ -130,7 +130,7 @@ python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.examp
 | policy_1107_test | 대화 시작 앱 요약(이어서 하기) |
 | policy_1108_test | 변경 요청에는 select를 빼고 보내기 |
 
-실제 AI로 하는 시나리오 테스트(T01~T42)는 `docs/동작기준_테스트목록_11-07.md`.
+실제 AI로 하는 시나리오 테스트(T01~T42)는 `docs/동작기준_테스트목록.md`.
 
 ## 8. 규칙을 고칠 때
 
