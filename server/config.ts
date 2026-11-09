@@ -18,7 +18,8 @@ export const config = {
   port: num('PORT', 3001),
 
   // Docker Agent API 서버(`docker agent serve api`). 기본 주소는 Agent 담당 확인값.
-  agentUrl: process.env.AGENT_URL ?? 'http://127.0.0.1:8080',
+  // 8080은 사용자 앱이 흔히 쓰는 포트라 겹친다(2026-11-09 실측: nginx 스택과 공존하며 주소에 따라 다른 쪽이 응답).
+  agentUrl: process.env.AGENT_URL ?? 'http://127.0.0.1:17080',
   // POST /api/sessions/:id/agent/:agent의 :agent. Docker Agent의 GET /api/agents로 확인한다.
   agentName: process.env.AGENT_NAME ?? 'agent',
   // `serve api --auth-token`을 켰을 때만 넣는다.

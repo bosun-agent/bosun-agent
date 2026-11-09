@@ -114,7 +114,30 @@ class Run {
 // 세션 ID → 진행 중인 실행. resume이 여기로 결정을 넘긴다.
 const runs = new Map<string, Run>()
 
+const LEAK_TEXT =
+  'I\'ll first check the environments. <｜DSML｜ calls> <｜DSML｜ invoke name="EndpointList"> <｜DSML｜ parameter name="select" string="false">[].{id:Id}</｜DSML｜ parameter> </｜DSML｜ invoke> </｜DSML｜ calls>'
+// 재시도 문구를 받아도 또 표기를 쓰는 대화
+const alwaysLeak = new Set<string>()
+
 const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
+  {
+    // 훅의 거부 안내 형식(deny_guide.py)
+    match: /안내 형식/,
+    run: async (r) => {
+      await r.tool('StackCreateDockerStandaloneString', { Name: 'web8000' }, {
+        hookBlock: '스택 검사 훅이 이 요청을 거부했습니다. ① 막힌 것: 서비스 web: 호스트 포트 8000는 Portainer가 쓰는 포트라 쓸 수 없습니다. ② 이유: 관리 도구가 쓰는 포트입니다 ③ 대신 할 수 있는 것: 다른 포트를 쓰세요.',
+      })
+      await r.say('다른 포트를 골라 주세요.')
+    },
+  },
+  {
+    match: /파일 카드/,
+    run: async (r) => {
+      await r.tool('StackList', { select: '[].{Id:Id,Name:Name}' }, { output: JSON.stringify([{ Id: 7, Name: 'shop' }]) })
+      const res = await r.tool('StackFileInspect', { id: 7 }, { ask: true, output: '{}' })
+      await r.say(res.isError ? '보지 않았어요.' : '봤어요.')
+    },
+  },
   {
     // 승인 카드 설명 훅이 metadata를 붙인다(tool_guard_approval_explainer.py). 지금 백업은 WEB 표에 없는 요청이다.
     match: /지금 백업/,
@@ -161,9 +184,7 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     // say는 6글자씩 나눠 보내므로 표기가 조각으로 나뉘어 오는 경우도 같이 확인된다.
     match: /도구 표기/,
     run: async (r) => {
-      await r.say(
-        'I\'ll first check the environments. <｜DSML｜ calls> <｜DSML｜ invoke name="EndpointList"> <｜DSML｜ parameter name="select" string="false">[].{id:Id}</｜DSML｜ parameter> </｜DSML｜ invoke> </｜DSML｜ calls>',
-      )
+      await r.say(LEAK_TEXT)
     },
   },
   {
@@ -558,6 +579,15 @@ agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
     })
     try {
       await r.init()
+      if (text.startsWith('직전 답에서 도구 호출을')) {
+        await r.say(alwaysLeak.has(s.id) ? LEAK_TEXT : '환경을 다시 확인했어요.')
+        return await r.stop()
+      }
+      if (/늘 표기/.test(text)) {
+        alwaysLeak.add(s.id)
+        await r.say(LEAK_TEXT)
+        return await r.stop()
+      }
       if (/훅/.test(text)) {
         // 입력 훅이 턴을 멈춘 경우(loop.go emitHookDrivenShutdown)
         await r.send({ type: 'error', error: 'user_prompt_submit hook blocked the request', code: 'hook_blocked' })

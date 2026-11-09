@@ -5,7 +5,7 @@
 // - AGENT_ENV_FILE: Agent --env-from-file(API 키·Portainer 키). agent.yaml(<AGENT_NAME>.yaml)과 session.db는 이 파일과 같은 폴더에 둔다.
 //   다른 곳에 두면 AGENT_CONFIG, AGENT_SESSION_DB로 정한다.
 // - AGENT_TOKEN: --auth-token. WEB 백엔드가 같은 값으로 붙는다.
-// - AGENT_URL: 듣는 주소(기본 127.0.0.1:8080).
+// - AGENT_URL: 듣는 주소(기본 127.0.0.1:17080).
 
 import { spawn } from 'node:child_process'
 import { agentCommand } from './agentProcess.ts'

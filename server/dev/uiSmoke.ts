@@ -90,6 +90,7 @@ await newChat()
 await send('빈 답 테스트')
 await page.getByText('AI가 빈 답을 보냈어요', { exact: false }).waitFor()
 check('빈 답이면 오류와 다시 시도', await page.getByRole('button', { name: '다시 시도' }).last().isVisible())
+check('오류의 다시 시도는 마우스를 올리지 않아도 보인다', (await page.getByRole('button', { name: '다시 시도' }).last().evaluate((el) => getComputedStyle(el.parentElement!).opacity)) === '1')
 
 // 중간에 막힌 뒤 다시 만들어 승인하면 차단 안내가 회색으로 낮아진다(2026-10-28 리허설)
 await newChat()

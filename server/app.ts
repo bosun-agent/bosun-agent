@@ -1,3 +1,4 @@
+import { withoutLeakedToolCall } from './translate.ts'
 import type { ReadChoice } from '../src/lib/agentProtocol.ts'
 // 브라우저 ↔ WEB 백엔드 엔드포인트.
 
@@ -172,9 +173,12 @@ async function restoredMessages(sessionId: string): Promise<{ title: string; mes
   const turns: { user: string; reply: string[]; cards: RestoredCard[] }[] = []
   for (const item of session.messages ?? []) {
     const m = item.message
-    if (!m || item.implicit) continue
+    if (!m || agent.isHiddenMessage(item)) continue
     if (m.role === 'user') turns.push({ user: m.content ?? '', reply: [], cards: [] })
-    else if (m.role === 'assistant' && m.content && turns.length - 1 !== running) turns.at(-1)?.reply.push(maskText(m.content))
+    else if (m.role === 'assistant' && m.content && turns.length - 1 !== running) {
+      const shown = withoutLeakedToolCall(m.content)
+      if (shown) turns.at(-1)?.reply.push(maskText(shown))
+    }
   }
   for (const { turn, card } of cardsFor(sessionId)) if (turn !== running) turns[turn]?.cards.push(card)
 
@@ -235,7 +239,7 @@ app.post('/api/sessions/:id/fork', async (c) => {
   let found = false
   for (const item of session.messages ?? []) {
     if (item.message?.role !== 'user') continue
-    if (!item.implicit) {
+    if (!agent.isHiddenMessage(item)) {
       if (seen === turn) {
         found = true
         break

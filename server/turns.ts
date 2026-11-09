@@ -16,7 +16,7 @@ import { config } from './config.ts'
 import { approvalMode, autoReads, currentAgentName, currentModel } from './settings.ts'
 import { addCard, logDecision, logUsage, updateApprovalCard, type ApprovalStatus } from './store.ts'
 import { approvalCard, learnHookName, learnNames, readChoice, targetKeys, withHookExplanation, type ApprovalCard, type StackInfo } from './tools.ts'
-import { Translator } from './translate.ts'
+import { Translator, TOOL_CALL_AS_TEXT } from './translate.ts'
 
 export interface Sink {
   send(event: AgentEvent): void
@@ -250,7 +250,7 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
   let upstream: AsyncGenerator<DAEvent>
   try {
     const session = await agent.getSession(sessionId)
-    t.index = (session.messages ?? []).filter((m) => m.message?.role === 'user' && !m.implicit).length
+    t.index = (session.messages ?? []).filter((m) => m.message?.role === 'user' && !agent.isHiddenMessage(m)).length
     // 첫 메시지로 제목을 정한다. 화면과 같은 규칙이다. Docker Agent가 따로 만들면 LLM을 한 번 더 부르고,
     // 영어 프롬프트라서 영어 제목이나 빈 제목이 나왔다(2026-10-11 실측).
     if (t.index === 0 && (!session.title || session.title === agent.NEW_SESSION_TITLE)) {
@@ -280,28 +280,65 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
   return (sink) => attach(t, sink)
 }
 
-async function pump(t: Turn, upstream: AsyncGenerator<DAEvent>): Promise<void> {
+// 앞선 실행이 막 끝난 직후에는 Agent가 잠깐 409를 줄 수 있다.
+const RETRY_TRIES = 8
+const RETRY_WAIT_MS = 300
+
+async function retryStream(t: Turn): Promise<AsyncGenerator<DAEvent> | null> {
+  for (let i = 0; i < RETRY_TRIES && !t.finished; i++) {
+    try {
+      return await agent.runAgent(t.sessionId, agent.RETRY_NUDGE, t.abort.signal, currentModel(), currentAgentName())
+    } catch (err) {
+      if (!(err instanceof agent.AgentHttpError && err.status === 409)) {
+        console.warn('[agent] retry failed', err)
+        return null
+      }
+      await new Promise((r) => setTimeout(r, RETRY_WAIT_MS))
+    }
+  }
+  return null
+}
+
+async function pump(t: Turn, first: AsyncGenerator<DAEvent>): Promise<void> {
   const translator = new Translator()
+  let upstream: AsyncGenerator<DAEvent> | null = first
+  // 모델이 도구 호출을 글로 쓰면(DeepSeek, 가끔) 실행된 것이 없으므로 턴마다 한 번만 다시 시도한다.
+  let retried = false
   try {
-    for await (const ev of upstream) {
-      if (t.finished) break
-      track(t, ev)
-      if (ev.type === 'tool_call_confirmation') {
-        // 대신 승인할 때는 /resume을 보내는 동안 다음 이벤트를 읽지 않는다. Agent도 결정을 받기 전에는 보내지 않는다.
-        await ask(t, ev as Extract<DAEvent, { type: 'tool_call_confirmation' }>)
-        continue
-      }
-      if (ev.type === 'max_iterations_reached') {
-        // agent.yaml의 max_iterations에 닿으면 Docker Agent가 계속할지 묻고 기다린다. WEB에는 그 화면이 없으므로 멈춘다.
-        agent.resume(t.sessionId, 'reject').catch((err) => console.error('[agent] resume failed', err))
-        continue
-      }
-      const { events, abort } = translator.translate(ev)
-      for (const event of events) {
-        emit(t, event)
+    while (upstream) {
+      const current: AsyncGenerator<DAEvent> = upstream
+      upstream = null
+      let leakError: AgentEvent[] | null = null
+      for await (const ev of current) {
         if (t.finished) break
+        track(t, ev)
+        if (ev.type === 'tool_call_confirmation') {
+          // 대신 승인할 때는 /resume을 보내는 동안 다음 이벤트를 읽지 않는다. Agent도 결정을 받기 전에는 보내지 않는다.
+          await ask(t, ev as Extract<DAEvent, { type: 'tool_call_confirmation' }>)
+          continue
+        }
+        if (ev.type === 'max_iterations_reached') {
+          // agent.yaml의 max_iterations에 닿으면 Docker Agent가 계속할지 묻고 기다린다. WEB에는 그 화면이 없으므로 멈춘다.
+          agent.resume(t.sessionId, 'reject').catch((err) => console.error('[agent] resume failed', err))
+          continue
+        }
+        const { events, abort } = translator.translate(ev)
+        if (!retried && events.some((e) => e.type === 'error' && e.code === TOOL_CALL_AS_TEXT)) {
+          leakError = events
+          break
+        }
+        for (const event of events) {
+          emit(t, event)
+          if (t.finished) break
+        }
+        if (abort) finish(t)
       }
-      if (abort) finish(t)
+      if (leakError) {
+        retried = true
+        upstream = await retryStream(t)
+        if (upstream) translator.continueAfterLeak()
+        else for (const event of leakError) emit(t, event)
+      }
     }
   } catch (err) {
     if (!t.finished) console.error('[agent] stream failed', err)

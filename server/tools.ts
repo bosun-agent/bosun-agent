@@ -703,11 +703,12 @@ const STACK_READS: Record<string, string> = {
 }
 
 function stackAction(tool: string, args: Record<string, unknown>, stacks: ReadonlyMap<string, StackInfo>): ToolAction | undefined {
-  if (STACK_READS[tool]) return { label: STACK_READS[tool], summary: STACK_READS[tool], risk: { level: 'low', label: '조회' } }
-
   const id = numericId(argOf(args, 'id'))
   const known = id ? stacks.get(id)?.name : undefined
   const name = known ?? (id ? `ID ${id}` : undefined)
+  if (tool === 'StackFileInspect') return { label: STACK_READS[tool], summary: titled('스택', name, '파일 조회'), risk: { level: 'low', label: '조회' } }
+  if (STACK_READS[tool]) return { label: STACK_READS[tool], summary: STACK_READS[tool], risk: { level: 'low', label: '조회' } }
+
   const target = id ? (known ? `${known} (스택 ID ${id})` : `스택 ID ${id}`) : undefined
   const envList = stackEnvNames(args)
   const withEnv = (params: Record<string, string>) =>

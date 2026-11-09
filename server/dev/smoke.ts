@@ -268,13 +268,22 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
   const endLoop = loop.events.at(-1)
   check('같은 호출을 되풀이해 Agent가 끊으면 LOOP_DETECTED 안내', endLoop?.type === 'error' && endLoop.code === 'LOOP_DETECTED' && endLoop.message.includes('바꿔서'), loop.events)
   const leaked = await post(`/api/sessions/${sx}/messages`, { text: '도구 표기 테스트' })
-  const endLeak = leaked.events.at(-1)
   check(
-    '도구 호출 표기를 글로 보내면 표기는 숨기고 TOOL_CALL_AS_TEXT 오류',
+    '도구 호출을 글로 쓰면 표기는 숨기고 한 번 다시 시도해 이어서 답',
     text(leaked.events).includes("I'll first check") && !text(leaked.events).includes('DSML') && !text(leaked.events).includes('<') &&
-      endLeak?.type === 'error' && endLeak.code === 'TOOL_CALL_AS_TEXT',
+      text(leaked.events).includes('다시 확인했어요') && last(leaked.events) === 'done',
     leaked.events,
   )
+  const leakRestored = (await fetch(`${BASE}/api/sessions/${sx}/messages`).then((r) => r.json())) as { messages: { role: string; content: string }[] }
+  check(
+    '재시도 문구와 표기는 복원에 나오지 않는다',
+    !leakRestored.messages.some((m) => m.content.includes('직전 답에서') || m.content.includes('DSML')) && leakRestored.messages.some((m) => m.content === '도구 표기 테스트'),
+    leakRestored.messages.map((m) => m.content.slice(0, 40)),
+  )
+  const sLeak = await newSession()
+  const twice = await post(`/api/sessions/${sLeak}/messages`, { text: '늘 표기 테스트' })
+  const endTwice = twice.events.at(-1)
+  check('다시 시도해도 또 글로 쓰면 TOOL_CALL_AS_TEXT 오류로 끝난다', endTwice?.type === 'error' && endTwice.code === 'TOOL_CALL_AS_TEXT', twice.events)
   const lt = await post(`/api/sessions/${sx}/messages`, { text: '목록 보여줘' })
   check('표기 뒤 다음 턴은 정상', last(lt.events) === 'done' && text(lt.events).includes('web 하나'), types(lt.events))
   const unknown = await post(`/api/sessions/${sx}/messages`, { text: '모르는 도구 써줘' })
@@ -734,6 +743,22 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   await mode('ask')
   await post(`/api/sessions/${a}/approvals/${approvalOf(ra.events)!.approvalId}`, { decision: 'deny' })
   await post(`/api/sessions/${b}/approvals/${approvalOf(rb.events)!.approvalId}`, { decision: 'deny' })
+}
+
+// ---- 훅 거부 안내, 스택 파일 카드 ----
+{
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '안내 형식 테스트' })
+  const rej = r.events.find((e) => e.type === 'rejected')
+  check(
+    '훅 거부 안내에서 막힌 것과 이유를 보여주고 대안은 뺀다',
+    rej?.type === 'rejected' && rej.detail?.includes('포트 8000') === true && rej.detail.includes('관리 도구가 쓰는 포트입니다.') && !rej.detail.includes('③') && !rej.detail.includes('다른 포트를'),
+    rej,
+  )
+  const s2 = await newSession()
+  const f = await post(`/api/sessions/${s2}/messages`, { text: '파일 카드 보여줘' })
+  check('스택 파일 보기 카드 제목에 스택 이름', approvalOf(f.events)?.summary === '스택 shop 파일 조회', approvalOf(f.events)?.summary)
+  await post(`/api/sessions/${s2}/approvals/${approvalOf(f.events)!.approvalId}`, { decision: 'deny' })
 }
 
 // ---- 훅 설명, 고정 제목, Agent 종류, 바로 실행할 조회 ----

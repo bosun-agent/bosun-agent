@@ -40,7 +40,7 @@ export function ChatMessageBubble({ message, portainerUrl, onApprove, onDeny, on
       <AssistantBody message={message} hasSteps={steps.length > 0} onApprove={onApprove} onDeny={onDeny} onExpire={onExpire} />
       {message.notice && <p className="mt-1 text-xs text-neutral-500">{message.notice}</p>}
       {settled && (message.content || (message.status === 'error' && onRetry)) && (
-        <div className="mt-1 flex gap-1 text-xs text-neutral-500 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+        <div className={`mt-1 flex gap-1 text-xs text-neutral-500 ${message.status === 'error' ? '' : 'md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100'}`}>
           {message.content && <CopyButton text={message.content} />}
           {message.status === 'error' && onRetry && (
             <button type="button" onClick={() => onRetry(message.id)} className="rounded px-1.5 py-0.5 hover:bg-neutral-100 hover:text-neutral-700">

@@ -93,6 +93,14 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   return res
 }
 
+// 모델이 도구 호출을 글로 썼을 때 한 번 더 시도하며 보내는 말. Docker Agent API에는 숨김 메시지가 없어서 글자로 알아보고 화면과 턴 번호에서 뺀다.
+export const RETRY_NUDGE = '직전 답에서 도구 호출을 글로 적어 실행되지 않았어요. 글로 적지 말고 도구를 실제로 호출해서 요청을 이어서 처리해 주세요.'
+
+// 사용자가 쓰지 않은 메시지인지(Agent의 implicit 메시지, WEB의 재시도 문구).
+export function isHiddenMessage(item: { message?: DAChatMessage; implicit?: boolean }): boolean {
+  return item.implicit === true || item.message?.content === RETRY_NUDGE
+}
+
 // 새 대화의 임시 제목. 제목이 비어 있으면 Docker Agent가 사용자 입력으로 LLM을 불러 제목을 짓는데, 그 호출에는 보안 훅이 걸리지 않는다.
 // 첫 메시지를 보낼 때 turns.ts가 진짜 제목으로 바꾼다.
 export const NEW_SESSION_TITLE = '새 대화'

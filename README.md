@@ -64,7 +64,7 @@ cp server/real.env.example server/real.env
 Docker Desktop과 `bosun-portainer`를 켠 뒤 터미널 2개를 띄운다. PowerShell이든 Git Bash든 같다.
 
 ```bash
-npm start          # 터미널 1: WEB 백엔드(3001) + Docker Agent(8080)
+npm start          # 터미널 1: WEB 백엔드(3001) + Docker Agent(17080)
 npm run dev:http   # 터미널 2: 화면
 ```
 
@@ -86,7 +86,7 @@ Agent 상태는 화면 위쪽 안내와 **설정 > 정보**에 나온다. 무엇
 | 모든 도구 호출이 막힘(조회까지) | 훅이 실패하면 안전하게 다 막는다. 설정의 `python` 경로, 훅 경로, PyYAML 설치 |
 | Portainer 연결 오류 | `bosun-portainer`가 켜져 있는지, `agent.env`의 `PORTAINER_URL`·`PORTAINER_API_KEY` |
 | 모델 오류·키 오류 | 설정 화면에서 API 키를 다시 넣는다(저장하면 Agent가 다시 시작된다) |
-| 8080·3001 포트가 이미 사용 중 | 전에 띄운 Agent나 백엔드가 남아 있다. 남은 Agent는 다음 `npm start`가 정리한다 |
+| 17080·3001 포트가 이미 사용 중 | 전에 띄운 Agent나 백엔드가 남아 있다. 남은 Agent는 다음 `npm start`가 정리한다 |
 
 ### 더 알아둘 것
 

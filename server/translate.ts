@@ -23,10 +23,20 @@ export function isPolicyDenied(response: string, isError: boolean): boolean {
 // 정책 훅 문구는 "정책 훅이 이 요청을 거부했습니다: <사유>. 허용 범위: ..."라서 앞머리와 허용 범위는 뺀다.
 // 사유에 모델이 만든 인자가 섞일 수 있으므로 가리고 길이를 줄인다. permissions.deny 문구에는 사유가 없다.
 const DETAIL_MAX = 120
+// 훅의 거부 안내(deny_guide.py): "<앞머리>. ① 막힌 것: … ② 이유: … ③ 대신 할 수 있는 것: …". 대안은 Agent가 이어서 설명한다.
+const DENY_GUIDE = /①\s*막힌 것:\s*([\s\S]*?)\s*②\s*이유:\s*([\s\S]*?)\s*(?:③|$)/
+const GUIDE_MAX = 300
+
+const asSentence = (s: string) => (/[.!?]$/.test(s) ? s : `${s}.`)
 
 export function policyDeniedDetail(response: string): string | undefined {
   const reason = /\bReason: ([\s\S]*)/.exec(response)?.[1]
   if (!reason) return undefined
+  const guide = DENY_GUIDE.exec(reason)
+  if (guide) {
+    const masked = maskText(`${asSentence(guide[1])} ${asSentence(guide[2])}`)
+    return masked.length > GUIDE_MAX ? `${masked.slice(0, GUIDE_MAX - 1)}…` : masked
+  }
   const first = reason
     .replace(/^정책 훅이 이 요청을 거부했습니다:\s*/, '')
     .split(/(?<=[.!?])\s|\n/)[0]
@@ -44,6 +54,13 @@ const POLICY_DENIED_REASON = '보안 정책에 따라 이 작업은 실행하지
 // "<｜DSML｜ invoke name=\"EndpointList\">"). Agent는 도구를 부르지 않고 그 글을 답으로 끝낸다.
 // 화면에는 표기를 보이지 않고, 턴이 끝나면 다시 시도하라고 알린다.
 const LEAKED_TOOL_CALL = /<｜\s*(DSML|tool)/
+export const TOOL_CALL_AS_TEXT = 'TOOL_CALL_AS_TEXT'
+
+// 복원할 때도 표기는 보여주지 않는다. 표기 앞의 글만 남긴다.
+export function withoutLeakedToolCall(text: string): string {
+  const leak = LEAKED_TOOL_CALL.exec(text)
+  return leak ? text.slice(0, leak.index).trimEnd() : text
+}
 // 표기가 조각으로 나뉘어 올 수 있어서, 끝에 걸친 "<｜…" 앞부분은 이만큼까지 다음 조각을 기다린다.
 const HOLD_MAX = 12
 
@@ -87,6 +104,14 @@ export class Translator {
     const held = this.held
     this.held = ''
     return this.leaked ? [] : this.textEvents(held)
+  }
+
+  // 도구 호출을 글로 쓴 턴을 한 번 더 시도할 때 부른다. 앞서 보낸 글은 화면에 남고 다음 글은 빈 줄 뒤에 이어진다.
+  continueAfterLeak(): void {
+    this.leaked = false
+    this.held = ''
+    this.produced = false
+    this.toolSinceText = true
   }
 
   translate(ev: DAEvent): Translated {
@@ -226,7 +251,7 @@ export class Translator {
         }
         if (this.leaked) {
           return {
-            events: [{ type: 'error', code: 'TOOL_CALL_AS_TEXT', message: 'AI가 도구를 제대로 부르지 못했어요. 다시 시도해주세요.' }],
+            events: [{ type: 'error', code: TOOL_CALL_AS_TEXT, message: 'AI가 도구를 제대로 부르지 못했어요. 다시 시도해주세요.' }],
           }
         }
         return { events: [...this.flushHeld(), { type: 'done' }] }
