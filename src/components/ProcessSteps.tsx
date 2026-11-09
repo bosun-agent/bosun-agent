@@ -3,7 +3,7 @@ import { AUTO_APPROVED_LABEL, groupSteps } from '../lib/processSteps'
 import type { ProcessStep, StepState } from '../types'
 
 const STATE_STYLE: Record<StepState, string> = {
-  active: 'text-neutral-700',
+  active: 'text-neutral-800',
   done: 'text-neutral-500',
   failed: 'text-red-600',
   stopped: 'text-neutral-400',
@@ -36,7 +36,7 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className="mb-1 text-xs text-neutral-400 hover:text-neutral-600"
+        className="mb-1 text-xs text-neutral-500 hover:text-neutral-600"
       >
         처리 과정 보기 · {groups.length}단계
         {autoCount > 0 && <span className="ml-1 font-medium text-amber-700">· 자동 승인 {autoCount}건</span>}
@@ -46,7 +46,7 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
 
   return (
     <div className="mb-1.5">
-      <ol className="space-y-0.5 text-xs">
+      <ol className="space-y-1 text-[13px]">
         {groups.map(({ step, count }) => (
           <li
             key={step.id}
@@ -54,7 +54,7 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
           >
             <span className="inline-flex w-3 justify-center">
               {step.state === 'active' ? (
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-500" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-navy-600" />
               ) : (
                 STATE_ICON[step.state]
               )}
@@ -75,7 +75,7 @@ export function ProcessSteps({ steps, live }: ProcessStepsProps) {
         <button
           type="button"
           onClick={() => setExpanded(false)}
-          className="mt-1 text-xs text-neutral-400 hover:text-neutral-600"
+          className="mt-1 text-xs text-neutral-500 hover:text-neutral-600"
         >
           접기
         </button>

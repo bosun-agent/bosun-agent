@@ -637,7 +637,7 @@ function App() {
       />
       {/* Home에서는 와이어프레임대로 입력창 바로 아래에 Portainer 버튼을 둔다. */}
       {!isEmpty && (
-        <p className="py-2 text-center text-xs text-neutral-400">AI는 실수할 수 있어요. 승인 카드의 내용을 꼭 확인해주세요.</p>
+        <p className="py-2 text-center text-xs text-neutral-500">AI는 실수할 수 있어요. 승인 카드의 내용을 꼭 확인해주세요.</p>
       )}
     </div>
   )
@@ -669,7 +669,7 @@ function App() {
         <AgentStatusBanner />
 
         {isEmpty ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto py-12">
+          <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto py-12">
             <img src={logoUrl} alt="BOSUN" width={216} height={300} className="h-36 w-auto select-none" draggable={false} />
             {composer}
             <div className="flex max-w-2xl flex-wrap justify-center gap-1.5 px-4">
@@ -678,7 +678,7 @@ function App() {
                   key={p.text}
                   type="button"
                   onClick={() => pickExample(p.text)}
-                  className="rounded-full border border-neutral-200 px-3 py-1 text-xs text-neutral-600 hover:bg-neutral-100"
+                  className="rounded-full border border-neutral-200 bg-white px-3.5 py-1.5 text-[13px] text-neutral-700 transition-colors hover:border-navy-300 hover:text-navy-800"
                 >
                   {p.text}
                 </button>
@@ -689,16 +689,16 @@ function App() {
                 href={portainerUrl || BUILD_PORTAINER_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-full bg-neutral-100 px-8 py-1 text-xs text-neutral-600 hover:bg-neutral-200"
+                className="text-[13px] text-neutral-500 underline-offset-4 transition-colors hover:text-navy-700 hover:underline"
               >
-                Go to Portainer
+                Portainer 열기 ↗
               </a>
             ) : (
               <span
                 title="WEB 백엔드에 PORTAINER_URL을 정하면 열려요"
-                className="cursor-not-allowed rounded-full bg-neutral-100 px-8 py-1 text-xs text-neutral-400"
+                className="cursor-not-allowed text-[13px] text-neutral-400"
               >
-                Go to Portainer
+                Portainer 열기
               </span>
             )}
           </div>
@@ -723,7 +723,7 @@ function App() {
           type="button"
           onClick={() => setSettingsOpen(true)}
           aria-label="설정"
-          className={`absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-md text-neutral-700 hover:bg-neutral-100 lg:top-auto ${
+          className={`absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-lg text-neutral-700 hover:bg-neutral-100 lg:top-auto ${
             showScenarios ? 'lg:bottom-14' : 'lg:bottom-3'
           }`}
         >

@@ -46,16 +46,16 @@ export function SettingsModal({
         aria-modal="true"
         aria-label="설정"
         onClick={(e) => e.stopPropagation()}
-        className="flex h-[min(40rem,90vh)] w-full max-w-3xl flex-col gap-1 overflow-hidden rounded-lg border border-neutral-300 bg-neutral-100 p-1 shadow-lg sm:flex-row"
+        className="flex h-[min(40rem,90vh)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl sm:flex-row"
       >
-        <nav className="flex shrink-0 gap-1 overflow-x-auto rounded-md bg-neutral-100 p-1 sm:w-44 sm:flex-col">
+        <nav className="flex shrink-0 flex-wrap gap-1 bg-neutral-100 p-2 sm:w-44 sm:flex-col sm:flex-nowrap">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               type="button"
               onClick={() => setSectionId(s.id)}
-              className={`shrink-0 rounded-md px-3 py-1.5 text-left text-sm ${
-                s.id === sectionId ? 'bg-neutral-300 font-medium' : 'bg-neutral-200 text-neutral-600 hover:bg-neutral-300'
+              className={`shrink-0 rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
+                s.id === sectionId ? 'bg-neutral-200 font-semibold text-navy-900' : 'text-neutral-600 hover:bg-neutral-200'
               }`}
             >
               {s.label}
@@ -63,14 +63,14 @@ export function SettingsModal({
           ))}
         </nav>
 
-        <section className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-md bg-neutral-100 p-2">
+        <section className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
           <div className="flex items-center justify-between">
-            <h2 className="rounded-md bg-neutral-200 px-3 py-1 text-sm font-medium">{section.label}</h2>
+            <h2 className="text-lg font-semibold tracking-[-0.012em]">{section.label}</h2>
             <button
               type="button"
               onClick={onClose}
               aria-label="설정 닫기"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100"
             >
               ✕
             </button>
@@ -142,7 +142,7 @@ function ModelSection() {
       {settings.models.map((model) => {
         const custom = settings.customModels?.includes(model)
         return (
-          <div key={model} className="flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm hover:bg-neutral-50">
+          <div key={model} className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm hover:bg-neutral-50">
             <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
               <input
                 type="radio"
@@ -178,9 +178,9 @@ function ModelSection() {
               onChange={(e) => setNewModel(e.target.value)}
               placeholder="openrouter/..."
               aria-label="더할 모델"
-              className="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-[13px]"
+              className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-mono text-[13px]"
             />
-            <button type="submit" disabled={saving || !newModel.trim()} className="shrink-0 rounded-md bg-neutral-800 px-3 py-2 text-sm text-white disabled:opacity-40">
+            <button type="submit" disabled={saving || !newModel.trim()} className="shrink-0 rounded-lg bg-navy-800 px-3 py-2 text-sm text-white disabled:opacity-40">
               더하기
             </button>
           </div>
@@ -243,9 +243,9 @@ function ApiKeySection() {
           placeholder={settings.apiKey.set ? '새 키로 바꾸기' : 'API 키'}
           autoComplete="off"
           aria-label="API 키"
-          className="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-[13px]"
+          className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-mono text-[13px]"
         />
-        <button type="submit" disabled={saving || !value.trim()} className="shrink-0 rounded-md bg-neutral-800 px-3 py-2 text-sm text-white disabled:opacity-40">
+        <button type="submit" disabled={saving || !value.trim()} className="shrink-0 rounded-lg bg-navy-800 px-3 py-2 text-sm text-white disabled:opacity-40">
           저장
         </button>
       </div>

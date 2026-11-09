@@ -10,8 +10,8 @@ BOSUN 프로젝트의 WEB 파트. 사용자가 자연어로 컨테이너를 관�
 | Node.js **22.18 이상** | 백엔드 `.ts`를 Node가 바로 실행한다. 낮으면 `npm start`부터 실패한다(`node -v`로 확인) |
 | Docker Desktop + Portainer 컨테이너(`bosun-portainer`) | Agent가 Portainer를 거쳐 Docker를 다룬다. Portainer API 키도 여기서 만든다 |
 | docker-agent 실행 파일 **v1.148.0 이상** | Docker Desktop에 든 `docker agent` 플러그인은 버전이 낮아 agent.yaml을 못 읽을 수 있다 |
-| Python 3 + uv(`uvx`) | agent.yaml이 정책·백업 훅(Python)과 `mcp-portainer`(uvx)를 실행한다 |
-| Agent 폴더(`agent.yaml` + `hooks/`) | Agent 담당 쪽 설정. WEB 저장소에는 없다 |
+| Python 3 + PyYAML, uv(`uvx`) | Agent 설정이 정책·백업 훅(Python)과 `mcp-portainer`(uvx)를 실행한다 |
+| 같은 저장소의 `agent` 브랜치 | 훅과 Agent 설정 예시. `web` 브랜치에는 없다 |
 | OpenRouter API 키 | 모델 호출. 화면 설정에서 나중에 바꿀 수도 있다 |
 
 화면만 볼 거면 Node만 있으면 된다(아래 "Agent 없이 화면만 보기").
@@ -30,7 +30,7 @@ npm install
 
 `-b web`을 빼면 기본 브랜치(main)를 받는데, 거기에는 WEB 코드가 없다.
 
-**2. Agent 폴더 준비.** 아무 곳에 폴더를 하나 만들고(예: `C:/bosun/agent`) Agent 담당에게 받은 `agent.direct.yaml`과 `hooks/`를 넣는다. agent.yaml 안의 `python`·`uvx`·훅·`SSL_CERT_FILE`(Portainer 자체 서명 인증서를 넣은 CA 묶음) 경로는 받은 사람 PC 기준이니 **내 PC의 절대경로로 고친다**(Windows는 `python3` 대신 `python`일 수 있다. `where python`, `where uvx`로 확인).
+**2. Agent 준비.** `agent` 브랜치를 따로 받고 그 브랜치 README 3절대로 실행 폴더(예: `C:/bosun/agent-run`)에 `agents/beginner.yaml`, `agents/expert.yaml`을 만든다. 설정 안의 자리표시자는 **내 PC의 절대경로로 바꾼다**. Windows에서 `python3`이 안 되면 `python.exe` 전체 경로로, `uvx`가 PATH에 없으면 `uvx.exe` 전체 경로로 적는다(`where python`, `where uvx`로 확인).
 
 **3. 같은 폴더에 `agent.env` 만들기.** Agent에게 넘기는 비밀값이다. 커밋하지 않는다.
 
@@ -51,10 +51,12 @@ cp server/real.env.example server/real.env
 | 값 | 넣을 것 |
 |---|---|
 | `AGENT_BIN` | docker-agent 실행 파일 절대경로. Windows는 `C:/.../docker-agent.exe`처럼 `/`로 써도 된다 |
-| `AGENT_ENV_FILE` | 3에서 만든 `agent.env` 절대경로. agent.yaml도 이 폴더에서 찾는다 |
-| `AGENT_NAME` | agent.yaml 파일 이름(확장자 빼고). `agent.direct.yaml`이면 `agent.direct` |
+| `AGENT_ENV_FILE` | 3에서 만든 `agent.env` 절대경로 |
+| `AGENT_CONFIG` | `agents` 폴더 절대경로. 두 Agent가 함께 뜬다 |
+| `AGENT_NAME` | 처음에 쓸 Agent. `beginner`나 `expert`면 설정 > 정책에서 고를 수 있다 |
 | `AGENT_TOKEN` | 아무 긴 값. `node -e "console.log(crypto.randomUUID())"`로 만들면 된다 |
-| `AGENT_MODELS` | 설정 화면에서 고를 모델. 쉼표로 여러 개 |
+| `AGENT_MODELS` | 설정 화면에서 고를 모델. 쉼표로 여러 개. 설정에 정의된 이름(`flash`)을 쓴다 |
+| `TELEMETRY_ENABLED` | `false`로 둔다. docker-agent 사용 통계를 끈다 |
 | `PORTAINER_URL` | (선택) 정책에 막혔을 때 보여줄 "Portainer 열기" 링크. 브라우저에서 여는 주소 |
 
 ### 띄우기
@@ -79,9 +81,9 @@ Agent 상태는 화면 위쪽 안내와 **설정 > 정보**에 나온다. 무엇
 | 증상 | 확인할 것 |
 |---|---|
 | `server/real.env: not found` | 4단계 파일이 없다 |
-| `Agent 설정 파일이 없어요` | `AGENT_ENV_FILE` 폴더에 `<AGENT_NAME>.yaml`이 있는지 |
+| `Agent 설정 파일이 없어요` | `AGENT_CONFIG` 폴더가 있는지 |
 | `...를 실행하지 못했어요` | `AGENT_BIN` 경로, 실행 파일 버전(`docker-agent version`) |
-| 모든 도구 호출이 막힘(조회까지) | 훅이 실패하면 안전하게 다 막는다. agent.yaml의 `python` 경로와 훅 경로 |
+| 모든 도구 호출이 막힘(조회까지) | 훅이 실패하면 안전하게 다 막는다. 설정의 `python` 경로, 훅 경로, PyYAML 설치 |
 | Portainer 연결 오류 | `bosun-portainer`가 켜져 있는지, `agent.env`의 `PORTAINER_URL`·`PORTAINER_API_KEY` |
 | 모델 오류·키 오류 | 설정 화면에서 API 키를 다시 넣는다(저장하면 Agent가 다시 시작된다) |
 | 8080·3001 포트가 이미 사용 중 | 전에 띄운 Agent나 백엔드가 남아 있다. 남은 Agent는 다음 `npm start`가 정리한다 |
@@ -90,7 +92,7 @@ Agent 상태는 화면 위쪽 안내와 **설정 > 정보**에 나온다. 무엇
 
 `npm start`는 `server/real.env`를 읽고, `npm run dev:http`는 화면의 `/api`를 백엔드(3001)로 넘기기만 한다. `AGENT_BIN`이 있으면 `npm start`가 Docker Agent를 같이 띄우고 관리한다(`server/agentProcess.ts`). Agent가 죽으면 다시 띄우고, 설정 화면에서 API 키를 바꾸면 다시 시작한다(처리 중인 대화가 있으면 끝난 뒤). 백엔드가 강제로 꺼져 Agent가 남았으면 다음 `npm start`가 그 Agent를 끝내고 새로 띄운다. `npm run agent`는 Agent 로그만 따로 보고 싶을 때 쓴다. 그렇게 띄운 Agent가 먼저 떠 있으면 `npm start`는 그것을 쓰고, API 키를 바꿔도 다시 시작하지 못한다.
 
-(선택) `real.env`에 더 넣을 수 있는 값: `MAX_TURNS`(동시에 처리할 대화 수, 기본 3), `BACKUP_DB`(백업 훅 DB가 다른 곳에 있을 때), `AGENT_CONFIG`·`AGENT_SESSION_DB`(agent.yaml·session.db를 다른 폴더에 둘 때), `AGENT_KEY_NAME`(OpenRouter가 아닌 모델을 쓸 때 API 키 이름).
+(선택) `real.env`에 더 넣을 수 있는 값: `MAX_TURNS`(동시에 처리할 대화 수, 기본 3), `BACKUP_DB`(백업 훅 DB가 다른 곳에 있을 때), `AGENT_SESSION_DB`(session.db를 다른 폴더에 둘 때), `AGENT_KEY_NAME`(OpenRouter가 아닌 모델을 쓸 때 API 키 이름).
 
 `PORTAINER_URL`의 Portainer가 자체 서명 인증서를 쓰면 링크를 처음 열 때 브라우저가 경고를 띄운다. 주소가 맞으면 계속 진행하면 된다.
 

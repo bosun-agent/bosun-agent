@@ -23,7 +23,7 @@ export function DevScenarioBar({ disabled, onRun }: DevScenarioBarProps) {
           disabled={disabled}
           onClick={() => onRun(command)}
           title={command}
-          className="shrink-0 rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+          className="shrink-0 rounded-lg border border-neutral-200 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {label}
         </button>

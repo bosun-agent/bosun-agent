@@ -1,5 +1,36 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url("./assets/fonts/PretendardVariable.woff2") format("woff2-variations");
+}
+
+@theme {
+  --font-sans: "Pretendard Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-neutral-50: #faf9f7;
+  --color-neutral-100: #f3f1ed;
+  --color-neutral-200: #e8e5df;
+  --color-neutral-300: #d7d3cb;
+  --color-neutral-400: #a9a49b;
+  --color-neutral-500: #79746b;
+  --color-neutral-600: #58544c;
+  --color-neutral-700: #423f39;
+  --color-neutral-800: #2b2925;
+  --color-neutral-900: #1c1b18;
+
+  --color-navy-50: #eef2f8;
+  --color-navy-100: #dfe6f1;
+  --color-navy-300: #9fb2cf;
+  --color-navy-600: #27487a;
+  --color-navy-700: #1d3a66;
+  --color-navy-800: #162d50;
+  --color-navy-900: #10213c;
+}
+
 :root {
   color-scheme: light;
 }
@@ -10,6 +41,9 @@ html, body, #root {
 
 body {
   margin: 0;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  color: var(--color-neutral-900);
 }
 
 /* Tailwind v4는 버튼 커서를 기본(화살표)으로 둔다. 누를 수 있는 것은 손가락, 못 누르는 것은 금지 표시로 맞춘다. */
@@ -32,8 +66,13 @@ body {
   }
 
   /* 키보드로 옮겨 다닐 때 어디에 있는지 보이게 한다. 마우스로 누를 때는 그리지 않는다. */
+  input[type="radio"],
+  input[type="checkbox"] {
+    accent-color: var(--color-navy-700);
+  }
+
   :focus-visible {
-    outline: 2px solid var(--color-neutral-500);
+    outline: 2px solid var(--color-navy-600);
     outline-offset: 2px;
   }
 }

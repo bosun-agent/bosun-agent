@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { AgentConfigSummary, ApprovalMode, AuditRecord, BackupRecord, SessionUsage, Settings, SystemInfo, UsageTotals } from '../lib/agentProtocol'
+import { READ_CHOICES, type AgentConfigSummary, type AgentMode, type ApprovalMode, type AuditRecord, type BackupRecord, type ReadChoice, type SessionUsage, type Settings, type SystemInfo, type UsageTotals } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 import { agentStateText, restartAgent, useAgentStatus } from '../lib/agentStatus'
 import { notifyEnabled, setNotifyEnabled } from '../lib/notify'
 
 // 설정 창의 정책·승인 기록·정보·알림 화면.
-// 정책은 Agent 설정(agent.yaml)에서 고른 값을 읽어서 보여준다. 웹에서 바꾸는 기능은 팀 결정이 필요하다.
+// 정책은 Agent 설정에서 고른 값을 읽어서 보여준다. WEB에서 고르는 것은 승인 방식, Agent 종류, 바로 실행할 조회뿐이다. 거부 규칙은 Agent 설정에서만 바뀐다.
 
 function useLoad<T>(load: (() => Promise<T>) | undefined) {
   const [data, setData] = useState<T | null>(null)
@@ -24,8 +24,8 @@ function Note({ children }: { children: ReactNode }) {
 
 function Box({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-md bg-white px-3 py-2">
-      <h3 className="mb-1 text-sm font-medium">{title}</h3>
+    <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+      <h3 className="mb-1.5 text-sm font-semibold">{title}</h3>
       {children}
     </div>
   )
@@ -50,6 +50,20 @@ const SAFETY: Record<string, string> = {
 const RULES: [RegExp, string][] = [
   [/^docker_proxy:method=GET$/, '조회(GET 요청)'],
   [/^EndpointList$/, '환경 목록 조회'],
+  [/^StackList$/, '스택 목록 조회'],
+  [/path=\/(_ping|version|info|system\/df)$/, 'Docker 상태·디스크 사용량'],
+  [/path=\/containers\/json$/, '컨테이너 목록'],
+  [/path=\/containers\/\*\/stats$/, 'CPU·메모리 사용량'],
+  [/path=\/images\/json$/, '이미지 목록'],
+  [/method=GET:path=\/volumes$/, '볼륨 목록'],
+  [/method=GET:path=\/networks(\/\*)?$/, '네트워크 목록·상세'],
+  [/path=\/exec\/\*\/start$/, '지금 백업 실행(승인한 백업 명령만)'],
+  [/containers\/create/, '컨테이너 직접 생성(새 앱은 스택으로 만들어요)'],
+  [/method=DELETE:path=\*\/images/, '이미지 삭제'],
+  [/method=DELETE:path=\*\/networks/, '네트워크 삭제'],
+  [/pause/, '일시정지·재개'],
+  [/images\/search/, '이미지 검색'],
+  [/networks\/(create|\*\/connect|\*\/disconnect)/, '네트워크 생성·연결·해제'],
   [/exec/, '컨테이너 안 명령 실행(exec)'],
   [/archive/, '컨테이너 안 파일 읽기·쓰기'],
   [/\/export/, '컨테이너 파일시스템 내보내기'],
@@ -65,16 +79,16 @@ function ruleLabel(pattern: string): string | undefined {
 
 const HOOKS: Record<string, string> = {
   tool_input_transform: '도구를 실행하기 전에 요청을 검사해요(허용 목록 정책, 삭제 전 백업).',
-  tool_guard: '도구를 실행하기 전에 막을지 정해요.',
+  tool_guard: '도구를 실행하기 전에 막거나, 승인 카드에 쉬운 설명을 붙여요.',
   pre_tool_use: '승인을 묻기 직전에 검사해요.',
   permission_request: '승인을 묻기 전에 자동으로 허용·거부할 수 있어요.',
   post_tool_use: '도구를 실행한 뒤에 결과를 검사해요.',
-  tool_response_transform: '도구 결과에 섞인 수상한 지시(인젝션)를 표시해요.',
+  tool_response_transform: '도구 결과에서 비밀값을 가리고, 섞인 수상한 지시(인젝션)를 표시해요.',
   user_prompt_submit: '사용자 메시지를 모델에 보내기 전에 검사해요(인젝션 방어).',
   user_steering_messages_submit: '처리 중에 끼어든 메시지를 검사해요.',
   user_followup_submit: '이어서 보낸 메시지를 검사해요.',
   before_llm_call: '모델을 부르기 직전에 대화를 정리해요(막힌 메시지 가리기).',
-  session_start: '대화를 시작할 때 실행돼요.',
+  session_start: '대화를 시작할 때 지금 있는 앱 요약을 AI에게 알려 줘요.',
 }
 
 function RuleList({ title, tone, rules, empty }: { title: string; tone: string; rules: string[]; empty: string }) {
@@ -83,14 +97,26 @@ function RuleList({ title, tone, rules, empty }: { title: string; tone: string; 
       {rules.length === 0 ? (
         <p className="text-xs text-neutral-500">{empty}</p>
       ) : (
-        <ul className="space-y-1 text-sm">
-          {rules.map((r) => (
-            <li key={r} className="flex flex-wrap items-baseline gap-x-2">
-              <span className={tone}>{ruleLabel(r) ?? '규칙'}</span>
-              <code className="text-[11px] break-all text-neutral-500">{r}</code>
-            </li>
-          ))}
-        </ul>
+        <>
+          {/* 같은 뜻의 규칙이 여러 줄이어도(exec 패턴 24줄 등) 사람이 읽는 항목은 한 번만 보여 준다. */}
+          <ul className="space-y-1 text-sm">
+            {[...new Set(rules.map((r) => ruleLabel(r) ?? '그 밖의 규칙'))].map((label) => (
+              <li key={label} className={tone}>
+                {label}
+              </li>
+            ))}
+          </ul>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs text-neutral-500">규칙 원문 보기 ({rules.length}줄)</summary>
+            <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto">
+              {rules.map((r) => (
+                <li key={r}>
+                  <code className="text-[11px] break-all text-neutral-500">{r}</code>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </>
       )}
     </Box>
   )
@@ -101,6 +127,8 @@ export function PolicySection({ onApprovalModeChange }: { onApprovalModeChange?:
   return (
     <div className="space-y-2">
       <ApprovalModeBox onChange={onApprovalModeChange} />
+      <AgentModeBox />
+      <AutoReadBox />
       {!data ? (
         <Unavailable failed={failed} />
       ) : !data.config ? (
@@ -167,7 +195,7 @@ function ApprovalModeBox({ onChange }: { onChange?: (mode: ApprovalMode) => void
             return (
               <label
                 key={mode}
-                className={`flex cursor-pointer gap-2 rounded-md px-2 py-1.5 ${checked ? 'bg-neutral-100' : 'hover:bg-neutral-50'}`}
+                className={`flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 ${checked ? 'bg-navy-50' : 'hover:bg-neutral-50'}`}
               >
                 <input type="radio" name="approval-mode" className="mt-1" checked={checked} disabled={saving} onChange={() => void choose(mode)} />
                 <span>
@@ -188,12 +216,105 @@ function ApprovalModeBox({ onChange }: { onChange?: (mode: ApprovalMode) => void
   )
 }
 
+const AGENT_MODE_TEXT: Record<AgentMode, { label: string; help: string }> = {
+  beginner: { label: '초보자용', help: '바꾸기 전에 할 일을 쉬운 말로 먼저 보여 주고, 동의하면 승인 카드를 띄워요.' },
+  expert: { label: '숙련자용', help: '계획 없이 바로 승인 카드를 띄워요.' },
+}
+
+// 두 Agent를 띄운 설치에서만 보인다. 권한과 훅은 같고 안내 방식만 다르다.
+function AgentModeBox() {
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    agent.getSettings?.().then(setSettings, () => undefined)
+  }, [])
+
+  async function choose(mode: AgentMode) {
+    if (!agent.saveAgentMode || settings?.agentMode === mode) return
+    setFailed(false)
+    try {
+      setSettings(await agent.saveAgentMode(mode))
+    } catch {
+      setFailed(true)
+    }
+  }
+
+  if (!settings?.agentMode || !agent.saveAgentMode) return null
+  return (
+    <Box title="AI 안내 방식">
+      <div className="space-y-1" role="radiogroup" aria-label="AI 안내 방식">
+        {(Object.keys(AGENT_MODE_TEXT) as AgentMode[]).map((mode) => {
+          const checked = settings.agentMode === mode
+          return (
+            <label key={mode} className={`flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 ${checked ? 'bg-navy-50' : 'hover:bg-neutral-50'}`}>
+              <input type="radio" name="agent-mode" className="mt-1" checked={checked} onChange={() => void choose(mode)} />
+              <span>
+                <span className="block text-sm text-neutral-900">{AGENT_MODE_TEXT[mode].label}</span>
+                <span className="block text-xs text-neutral-500">{AGENT_MODE_TEXT[mode].help}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+      <p className="mt-1.5 text-xs text-neutral-500">새 대화부터 적용돼요. 어느 쪽이든 할 수 있는 일과 막히는 일은 같아요.</p>
+      {failed && <p className="mt-1 text-sm text-red-600">저장하지 못했어요. 다시 골라주세요.</p>}
+    </Box>
+  )
+}
+
+const READ_TEXT: Record<ReadChoice, string> = {
+  logs: '컨테이너 로그',
+  container_inspect: '컨테이너 상세',
+  top: '컨테이너 안 프로그램 목록',
+  image_inspect: '이미지 상세·이력',
+  volume_inspect: '볼륨 상세',
+  stack_file: '스택 설정 파일(Compose) 보기',
+}
+
+// 비밀값이 섞일 수 있어 기본은 승인이다. 켜면 WEB이 대신 승인한다. 바꾸는 작업은 여기서 고를 수 없다.
+function AutoReadBox() {
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    agent.getSettings?.().then(setSettings, () => undefined)
+  }, [])
+
+  async function toggle(choice: ReadChoice, on: boolean) {
+    if (!settings || !agent.saveAutoReads) return
+    const next = on ? [...settings.autoReads, choice] : settings.autoReads.filter((c) => c !== choice)
+    setFailed(false)
+    try {
+      setSettings(await agent.saveAutoReads(next))
+    } catch {
+      setFailed(true)
+    }
+  }
+
+  if (!settings || !agent.saveAutoReads) return null
+  return (
+    <Box title="승인 없이 바로 볼 조회">
+      <div className="grid gap-x-3 gap-y-1 sm:grid-cols-2">
+        {READ_CHOICES.map((choice) => (
+          <label key={choice} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-neutral-50">
+            <input type="checkbox" checked={settings.autoReads.includes(choice)} onChange={(e) => void toggle(choice, e.target.checked)} />
+            {READ_TEXT[choice]}
+          </label>
+        ))}
+      </div>
+      <p className="mt-1.5 text-xs text-neutral-500">
+        체크하면 승인 카드 없이 바로 실행하고 승인 기록에 "자동 승인"으로 남아요. 실행 전 검사와 비밀값 가리기는 그대로예요. 체크하지 않은 조회는 승인 후 실행돼요.
+      </p>
+      {failed && <p className="mt-1 text-sm text-red-600">저장하지 못했어요. 다시 골라주세요.</p>}
+    </Box>
+  )
+}
+
 function PolicyView({ cfg, approvalTimeoutSec }: { cfg: AgentConfigSummary; approvalTimeoutSec: number }) {
   return (
     <div className="space-y-2">
       <Note>
-        아래는 AI Agent 설정(agent.yaml)에 적힌 정책이에요. 실제로 막고 허용하는 건 Agent 정책이고, WEB은 그 결과를 승인 카드와 차단
-        안내로 보여줘요. 이 부분은 지금 Agent 설정 파일에서만 바꿀 수 있어요.
+        아래는 AI Agent 설정에 적힌 정책이에요. 실제로 막고 허용하는 건 Agent 정책이고, WEB은 그 결과를 승인 카드와 차단 안내로 보여줘요.
+        거부 규칙은 안전을 위해 Agent 설정 파일에서만 바꿀 수 있어요.
       </Note>
       {cfg.agents.map((a) => (
         <Box key={a.name} title={`안전 모드: ${a.safety ?? '지정 안 함'}`}>
@@ -218,7 +339,7 @@ function PolicyView({ cfg, approvalTimeoutSec }: { cfg: AgentConfigSummary; appr
                   <p className="text-neutral-800">{HOOKS[h.event] ?? h.event}</p>
                   <p className="text-[11px] text-neutral-500">
                     <code>{h.event}</code>
-                    {h.matchers.length > 0 && ` · 대상 ${h.matchers.join(', ')}`} · {h.scripts.join(', ')}
+                    {h.matchers.length > 0 && ` · 대상 ${h.matchers.join(', ')}`} · {[...new Set(h.scripts)].join(', ')}
                   </p>
                 </li>
               ))}
@@ -247,7 +368,7 @@ export function AuditSection() {
   return (
     <div className="space-y-1">
       <Note>최근 200건이에요. 누가, 언제, 무엇을 승인·거부했는지 남아요. 대화를 지워도 기록은 남아요.</Note>
-      <ul className="divide-y divide-neutral-200 rounded-md bg-white">
+      <ul className="divide-y divide-neutral-200 rounded-lg bg-white">
         {data.map((r) => {
           const d = DECISION[r.decision] ?? { label: r.decision, tone: '' }
           return (
@@ -315,7 +436,7 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
                   <button
                     type="button"
                     onClick={() => void restartAgent(setProc)}
-                    className="ml-2 rounded-md border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                    className="ml-2 rounded-lg border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
                   >
                     다시 시작
                   </button>
@@ -402,7 +523,7 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
       {agent.getToolCount && (
         <Box title="쓸 수 있는 도구 수">
           <div className="flex items-center gap-2 text-sm">
-            <button type="button" onClick={countTools} disabled={tools === 'loading'} className="rounded-md border border-neutral-300 px-2 py-1 text-xs disabled:opacity-40">
+            <button type="button" onClick={countTools} disabled={tools === 'loading'} className="rounded-lg border border-neutral-300 px-2 py-1 text-xs disabled:opacity-40">
               확인하기
             </button>
             {tools === 'loading' && <span className="text-neutral-500">MCP 서버를 띄워서 세는 중…</span>}
@@ -431,7 +552,7 @@ export function NotifySection() {
   return (
     <div className="space-y-2">
       <Note>다른 탭이나 창을 보고 있을 때 승인 카드가 뜨면 탭 제목에 "(승인 필요)"가 붙어요. 브라우저 알림도 받을 수 있어요.</Note>
-      <label className="flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm">
+      <label className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm">
         <input type="checkbox" checked={on} onChange={toggle} />
         승인이 필요하면 브라우저 알림 보내기
       </label>
@@ -481,7 +602,7 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
   return (
     <div className="space-y-1.5">
       <Note>
-        컨테이너·이미지·네트워크를 지우기 직전에 Agent 백업 훅이 설정을 저장해요. 설정만 저장하고 볼륨이나 컨테이너 안의 파일은 저장하지
+        컨테이너를 지우기 직전에 Agent 백업 훅이 설정을 저장해요. 설정만 저장하고 볼륨이나 컨테이너 안의 파일은 저장하지
         않아요. 백업은 승인을 묻기 전에 만들어져서, 거부한 삭제도 목록에 남아요. 보관 기간은 훅 설정(BACKUP_TTL_DAYS, 기본 30일)을 따라요.
       </Note>
       {data.records.length === 0 && <Note>아직 백업이 없어요.</Note>}
@@ -490,7 +611,7 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
           // 0.5.0 전 백엔드는 outcome을 주지 않는다. 화면만 먼저 바뀐 경우에도 깨지지 않게 모름으로 둔다.
           const outcome = OUTCOME[r.outcome] ?? OUTCOME.unknown
           return (
-          <li key={r.id} className="rounded-md bg-white px-3 py-2 text-sm">
+          <li key={r.id} className="rounded-lg bg-white px-3 py-2 text-sm">
             <details>
               <summary className="cursor-pointer">
                 <span className="font-medium">
@@ -513,7 +634,7 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
                   <button
                     type="button"
                     onClick={() => onDraft(restorePrompt(r))}
-                    className="mt-2 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
+                    className="mt-2 rounded-lg border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
                   >
                     이 설정으로 다시 만들어 달라고 쓰기
                   </button>

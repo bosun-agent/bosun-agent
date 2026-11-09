@@ -3,7 +3,7 @@
 // API 키는 Docker Agent env 파일(AGENT_ENV_FILE)에 쓴다. 키 값은 화면으로 돌려주지 않는다.
 
 import { chmodSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import type { ApprovalMode, Settings } from '../src/lib/agentProtocol.ts'
+import { READ_CHOICES, type AgentMode, type ApprovalMode, type ReadChoice, type Settings } from '../src/lib/agentProtocol.ts'
 import { config } from './config.ts'
 import { getSetting, setSetting } from './store.ts'
 
@@ -34,6 +34,8 @@ export function getSettings(): Settings {
     customModels: customModels().filter((m) => !config.agentModels.includes(m)),
     apiKey: { editable: config.agentEnvFile !== '', set: apiKeySet() },
     approvalMode: approvalMode(),
+    ...(agentModesEnabled() ? { agentMode: currentAgentName() as AgentMode } : {}),
+    autoReads: autoReads(),
     ...(config.portainerUrl ? { portainerUrl: config.portainerUrl } : {}),
   }
 }
@@ -51,6 +53,45 @@ export function saveApprovalMode(mode: unknown): boolean {
   if (!APPROVAL_MODES.includes(mode as ApprovalMode)) return false
   setSetting('approval_mode', mode as string)
   return true
+}
+
+// ---- 초보자용·숙련자용 Agent ----
+// AGENT_CONFIG가 두 Agent가 든 폴더일 때 AGENT_NAME이 beginner나 expert다. 파일 하나인 설치에서는 고를 수 없다.
+export const AGENT_MODES: readonly AgentMode[] = ['beginner', 'expert']
+
+function agentModesEnabled(): boolean {
+  return AGENT_MODES.includes(config.agentName as AgentMode)
+}
+
+// 실행 요청 주소에 넣는 Agent 이름. Docker Agent는 대화마다 처음 만든 Agent를 계속 쓰므로 새 대화부터 바뀐다.
+export function currentAgentName(): string {
+  const saved = getSetting('agent_mode')
+  return agentModesEnabled() && AGENT_MODES.includes(saved as AgentMode) ? (saved as string) : config.agentName
+}
+
+export function saveAgentMode(mode: unknown): boolean {
+  if (!agentModesEnabled() || !AGENT_MODES.includes(mode as AgentMode)) return false
+  setSetting('agent_mode', mode as string)
+  return true
+}
+
+// ---- 승인 없이 바로 실행할 조회 ----
+
+export function autoReads(): ReadChoice[] {
+  try {
+    const list = JSON.parse(getSetting('auto_reads') ?? '[]') as unknown
+    return Array.isArray(list) ? READ_CHOICES.filter((c) => list.includes(c)) : []
+  } catch {
+    return []
+  }
+}
+
+export function validAutoReads(value: unknown): value is ReadChoice[] {
+  return Array.isArray(value) && value.every((v) => READ_CHOICES.includes(v as ReadChoice))
+}
+
+export function saveAutoReads(reads: ReadChoice[]): void {
+  setSetting('auto_reads', JSON.stringify(reads))
 }
 
 // 목록에 없는 모델이면 false.

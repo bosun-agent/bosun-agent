@@ -1,11 +1,12 @@
 // 도구 호출 → 화면 문구. 처리 과정 줄과 승인 카드를 코드 템플릿으로 만든다(LLM 재요약 금지).
-// 도구는 Portainer MCP(mcp-portainer)의 docker_proxy, EndpointList, 스택 도구(Stack*)다(Agent 담당 agent.direct.yaml).
+// 도구는 Portainer MCP(mcp-portainer)의 docker_proxy, EndpointList, 스택 도구(Stack*)다(저장소 agent 브랜치의 설정).
 // 표에 없는 도구는 "확인할 수 없는 작업" 카드로 띄운다.
 // docker_proxy는 Docker Engine API 요청 하나라서 method와 path로 작업을 고른다.
 // 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다.
 
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { ProposedAction, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
+import type { ProposedAction, ReadChoice, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
+import type { HookExplanation } from './agentClient.ts'
 import { maskText } from './mask.ts'
 
 interface ToolAction {
@@ -358,6 +359,53 @@ export function approvalCard(
   if (Object.keys(params).length > 0) action.params = params
   if (!summary) return { summary: '어떤 작업인지 확인할 수 없어요.', action, reasons: [UNKNOWN_TOOL], risk: UNKNOWN_RISK }
   return { summary, action, reasons: info?.reasons ?? [], ...(info?.risk ? { risk: info.risk } : {}) }
+}
+
+// ---- 승인 카드 설명 훅 ----
+// 훅은 실제로 실행될 요청만 보고 정해진 문장을 만든다. 있으면 WEB 표의 효과 문구 대신 쓰고, 위험도도 훅 기준으로 맞춘다.
+
+const BLAST_LABEL: Record<string, string> = { low: '영향 적음', medium: '영향 있음', high: '영향 큼' }
+const MAX_HOOK_REASON = 1500
+
+export function withHookExplanation(card: ApprovalCard, hook: HookExplanation | undefined): ApprovalCard {
+  const level = hook?.blast_radius && BLAST_LABEL[hook.blast_radius] ? (hook.blast_radius as RiskLevel['level']) : undefined
+  const reason = hook?.reason?.trim()
+  const next: ApprovalCard = { ...card }
+  if (reason) {
+    const text = maskText(reason.length > MAX_HOOK_REASON ? `${reason.slice(0, MAX_HOOK_REASON)}…` : reason)
+    // 훅이 설명한 도구면 "설명할 수 없는 도구" 경고는 뺀다.
+    next.reasons = [effect(text), ...card.reasons.filter((r) => r.code !== 'EFFECT' && (r.code !== 'UNKNOWN' || !level))]
+  }
+  if (level && card.risk?.level !== level) next.risk = { level, label: BLAST_LABEL[level] }
+  if (hook?.category === 'backup-now') next.summary = '지금 볼륨 백업'
+  return next
+}
+
+// 훅 설명의 "'이름' 컨테이너(짧은 ID)"에서 이름을 배운다. 백엔드를 다시 켠 뒤 모델이 기억한 ID로 바로 불러도 카드에 이름이 나온다.
+export function learnHookName(names: Map<string, string>, hook: HookExplanation | undefined): void {
+  for (const m of hook?.reason?.matchAll(/'([^']+)' 컨테이너\(([0-9a-f]{12})\)/g) ?? []) names.set(m[2], m[1])
+}
+
+// ---- 승인 없이 바로 실행할 수 있는 조회 ----
+// 설정에서 고른 조회만 WEB이 대신 승인한다. 표에 정확히 맞는 GET만 해당한다.
+
+const REF = '[A-Za-z0-9][A-Za-z0-9_.-]*'
+const READ_PATHS: [RegExp, ReadChoice][] = [
+  [new RegExp(`^/containers/${REF}/logs$`), 'logs'],
+  [new RegExp(`^/containers/${REF}/json$`), 'container_inspect'],
+  [new RegExp(`^/containers/${REF}/top$`), 'top'],
+  [/^\/images\/[A-Za-z0-9][A-Za-z0-9_./:@-]*\/(?:json|history)$/, 'image_inspect'],
+  [new RegExp(`^/volumes/${REF}$`), 'volume_inspect'],
+]
+
+export function readChoice(tool: string, args: Record<string, unknown>): ReadChoice | undefined {
+  if (tool === 'StackFileInspect') return 'stack_file'
+  if (tool !== 'docker_proxy' || (str(args.method) ?? 'GET').toUpperCase() !== 'GET') return undefined
+  const path = (str(args.path) ?? '').replace(/^\/v\d+(\.\d+)?(?=\/)/, '')
+  if (/[?#%\\]|\.\.|\/\//.test(path)) return undefined
+  const choice = READ_PATHS.find(([re]) => re.test(path))?.[1]
+  // 끝나지 않는 로그 받기는 조회로 치지 않는다.
+  return choice === 'logs' && truthy(objectArg(args.query_params).follow) ? undefined : choice
 }
 
 // ---- ID → 이름 ----

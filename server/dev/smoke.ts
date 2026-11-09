@@ -736,6 +736,54 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   await post(`/api/sessions/${b}/approvals/${approvalOf(rb.events)!.approvalId}`, { decision: 'deny' })
 }
 
+// ---- 훅 설명, 고정 제목, Agent 종류, 바로 실행할 조회 ----
+{
+  const put = (body: unknown) => fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const deny = (s: string, id: string) => post(`/api/sessions/${s}/approvals/${id}`, { decision: 'deny' })
+
+  const s1 = await newSession()
+  const backup = await post(`/api/sessions/${s1}/messages`, { text: '지금 백업해줘' })
+  const c1 = approvalOf(backup.events)
+  check(
+    '훅 설명이 효과 문구가 되고 위험도와 제목도 바뀐다',
+    c1?.summary === '지금 볼륨 백업' && c1.reasons[0]?.code === 'EFFECT' && c1.reasons[0].message.includes('볼륨 백업을 한 번') && c1.risk?.level === 'medium' && !c1.reasons.some((r) => r.code === 'UNKNOWN'),
+    c1,
+  )
+  await deny(s1, c1!.approvalId)
+
+  const s2 = await newSession()
+  const byId = await post(`/api/sessions/${s2}/messages`, { text: '아이디로 재시작해줘' })
+  const c2 = approvalOf(byId.events)
+  check('훅 설명에서 이름을 배워 카드에 ID 대신 이름', c2?.summary === '컨테이너 v2 재시작', c2?.summary)
+  await deny(s2, c2!.approvalId)
+
+  const s3 = await newSession()
+  const listed = async () =>
+    ((await fetch(`${BASE}/api/sessions`).then((r) => r.json())) as { sessions: { sessionId: string; title: string }[] }).sessions.find((x) => x.sessionId === s3)?.title
+  const before = await listed()
+  await post(`/api/sessions/${s3}/messages`, { text: '안녕 제목 테스트' })
+  check('새 대화는 고정 제목으로 만들고 첫 메시지로 바꾼다', before === '새 대화' && (await listed()) === '안녕 제목 테스트', [before, await listed()])
+
+  const settings = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { agentMode?: string; autoReads: string[] }
+  check('파일 하나인 설치는 Agent 종류를 못 고른다', settings.agentMode === undefined && (await put({ agentMode: 'expert' })).status === 400, settings.agentMode)
+  check('바로 실행할 조회 기본은 없음, 모르는 값은 400', settings.autoReads.length === 0 && (await put({ autoReads: ['exec'] })).status === 400, settings.autoReads)
+
+  const s4 = await newSession()
+  const asked = await post(`/api/sessions/${s4}/messages`, { text: '로그 확인해줘' })
+  check('고르기 전에는 조회도 승인 카드', last(asked.events) === 'approval_required', types(asked.events))
+  await deny(s4, approvalOf(asked.events)!.approvalId)
+  const saved = await put({ autoReads: ['logs'] })
+  check('바로 실행할 조회 저장', saved.status === 200 && ((await saved.json()) as { autoReads: string[] }).autoReads[0] === 'logs')
+  const s5 = await newSession()
+  const auto = await post(`/api/sessions/${s5}/messages`, { text: '로그 확인해줘' })
+  check('고른 조회는 카드 없이 실행', types(auto.events).includes('auto_approved') && !types(auto.events).includes('approval_required') && text(auto.events).includes('로그를 봤어요'), types(auto.events))
+  const s6 = await newSession()
+  const still = await post(`/api/sessions/${s6}/messages`, { text: '재시작해줘' })
+  check('고른 조회가 아니면 그대로 카드', last(still.events) === 'approval_required', types(still.events))
+  await deny(s6, approvalOf(still.events)!.approvalId)
+  await put({ autoReads: [] })
+}
+
 // ---- 모델 관리 ----
 {
   const add = (model: string) => post('/api/settings/models', { model })

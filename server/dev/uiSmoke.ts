@@ -21,7 +21,7 @@ page.on('pageerror', (e) => errors.push(String(e)))
 const shot = async (name: string) => {
   if (OUT) await page.screenshot({ path: `${OUT}/${name}.png` })
 }
-const input = () => page.getByPlaceholder("What's on your mind?")
+const input = () => page.getByPlaceholder('무엇을 해 드릴까요?')
 async function send(text: string) {
   await input().fill(text)
   await input().press('Enter')
@@ -54,7 +54,7 @@ await shot('01-reply')
 await newChat()
 await send('nginx 삭제해줘')
 await page.getByText('승인이 필요해요').waitFor()
-check('승인 카드에 승인하면 어떻게 되는지 한 줄', await page.getByText('→ 컨테이너와 그 안에서 바뀐 파일이 지워져요', { exact: false }).isVisible())
+check('승인 카드에 승인하면 어떻게 되는지 한 줄', await page.getByText('컨테이너와 그 안에서 바뀐 파일이 지워져요', { exact: false }).isVisible())
 check('삭제 카드 위에 되돌릴 수 없음 표시', await page.getByText('되돌릴 수 없음', { exact: true }).isVisible())
 check('요청 원문은 접혀 있다', !(await page.getByText('DELETE /containers/nginx-web').isVisible()))
 await page.getByText('기술 정보 (Docker에 보낼 요청)').click()

@@ -45,7 +45,7 @@ export function AgentStatusBanner() {
     <div className="flex justify-center px-14 pt-3">
       <div
         role="status"
-        className={`flex max-w-2xl items-center gap-3 rounded-md px-3 py-1.5 text-sm ${
+        className={`flex max-w-2xl items-center gap-3 rounded-lg px-3 py-1.5 text-sm ${
           tone === 'error' ? 'bg-red-50 text-red-700' : 'bg-neutral-100 text-neutral-700'
         }`}
       >
@@ -55,7 +55,7 @@ export function AgentStatusBanner() {
             type="button"
             onClick={restart}
             disabled={busy}
-            className="shrink-0 rounded-md border border-current px-2 py-0.5 text-xs disabled:opacity-40"
+            className="shrink-0 rounded-lg border border-current px-2 py-0.5 text-xs disabled:opacity-40"
           >
             다시 시작
           </button>

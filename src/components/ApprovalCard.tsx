@@ -20,14 +20,26 @@ const WARN_CODES = new Set(['CONCURRENT', 'ORPHANS'])
 
 // 카드 맨 위 위험도 표시. 문장을 읽기 전에 재시작(곧 돌아옴)과 삭제(되돌릴 수 없음)를 구분하게 한다.
 const RISK_STYLE: Record<RiskLevel['level'], string> = {
-  high: 'bg-red-100 text-red-700',
-  medium: 'bg-amber-100 text-amber-800',
-  low: 'bg-neutral-100 text-neutral-600',
+  high: 'bg-red-50 text-red-700',
+  medium: 'bg-amber-50 text-amber-800',
+  low: 'bg-navy-50 text-navy-700',
   unknown: 'border border-red-300 bg-white text-red-700',
 }
 
 function RiskBadge({ risk }: { risk: RiskLevel }) {
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${RISK_STYLE[risk.level]}`}>{risk.label}</span>
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${RISK_STYLE[risk.level]}`}>{risk.label}</span>
+}
+
+// 카드 한 장에는 위험도에 맞는 색 하나만 쓴다.
+const TONE = {
+  danger: { border: 'border-red-200', head: 'text-red-700', dot: 'bg-red-500', approve: 'bg-red-600 hover:bg-red-700' },
+  warn: { border: 'border-amber-300', head: 'text-amber-800', dot: 'bg-amber-500', approve: 'bg-navy-800 hover:bg-navy-700' },
+  calm: { border: 'border-navy-100', head: 'text-navy-700', dot: 'bg-navy-600', approve: 'bg-navy-800 hover:bg-navy-700' },
+}
+function toneOf(risk?: RiskLevel) {
+  if (risk?.level === 'high' || risk?.level === 'unknown') return TONE.danger
+  if (risk?.level === 'medium') return TONE.warn
+  return TONE.calm
 }
 // 위험 사유가 아니라 "승인하면 어떻게 되는지" 설명이다(server/tools.ts EFFECT). 점 대신 → 로 보여준다.
 const EFFECT_CODE = 'EFFECT'
@@ -56,7 +68,7 @@ export function ApprovalCard({
         <p className="text-neutral-500 line-through">
           {summary}
         </p>
-        <p className="mt-2 font-mono text-xs text-neutral-400">
+        <p className="mt-2 font-mono text-xs text-neutral-500">
           {action.tool}
           {action.target && ` → ${action.target}`}
         </p>
@@ -68,12 +80,14 @@ export function ApprovalCard({
   }
 
   const urgent = remainingMs <= URGENT_MS
+  const tone = toneOf(risk)
+  const shownParams = { 도구: `${action.tool}${action.target ? ` → ${action.target}` : ''}`, ...action.params }
 
   return (
-    <div className="max-w-[85%] rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-[15px]">
-      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium">
-        <span className="flex items-center gap-1.5 text-amber-700">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+    <div className={`w-full max-w-[560px] rounded-2xl border bg-white px-4 py-3.5 text-[15px] shadow-[0_1px_3px_rgb(28_27_24/0.06)] ${tone.border}`}>
+      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs font-medium">
+        <span className={`flex items-center gap-1.5 ${tone.head}`}>
+          <span className={`inline-block h-1.5 w-1.5 rounded-full ${tone.dot}`} />
           승인이 필요해요
           {risk && <RiskBadge risk={risk} />}
         </span>
@@ -87,14 +101,9 @@ export function ApprovalCard({
           {formatRemaining(remainingMs)} 남음
         </span>
       </div>
-      <p className="text-neutral-900">{summary}</p>
-      <p className="mt-2 font-mono text-xs text-neutral-500">
-        {action.tool}
-        {action.target && ` → ${action.target}`}
-      </p>
-      {action.params && <ParamList params={action.params} />}
+      <p className="text-[17px] font-semibold tracking-[-0.012em] text-neutral-900">{summary}</p>
       {reasons.length > 0 && (
-        <ul className="mt-2 space-y-1 text-sm">
+        <ul className="mt-2 space-y-1 text-sm leading-relaxed">
           {reasons.map((reason) => (
             <li
               key={reason.code}
@@ -108,26 +117,27 @@ export function ApprovalCard({
                       : 'text-neutral-600'
               }
             >
-              {reason.code === EFFECT_CODE ? '→ ' : WARN_CODES.has(reason.code) ? '⚠ ' : '· '}
+              {reason.code === EFFECT_CODE ? '' : WARN_CODES.has(reason.code) ? '⚠ ' : '· '}
               {reason.message}
             </li>
           ))}
         </ul>
       )}
-      <div className="mt-3 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onApprove}
-          className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white"
-        >
-          승인
-        </button>
+      <ParamList params={shownParams} />
+      <div className="mt-3.5 flex justify-end gap-2">
         <button
           type="button"
           onClick={onDeny}
-          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700"
+          className="rounded-lg border border-neutral-300 px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
         >
           거부
+        </button>
+        <button
+          type="button"
+          onClick={onApprove}
+          className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-white transition-colors ${tone.approve}`}
+        >
+          승인
         </button>
       </div>
     </div>
@@ -135,7 +145,7 @@ export function ApprovalCard({
 }
 
 // 요청 원문(Docker Engine API). 처음 보는 사람에게는 어려워서 "기술 정보"로 접어 둔다.
-const TECH_KEYS = new Set(['요청', '옵션', '본문', 'compose 파일'])
+const TECH_KEYS = new Set(['도구', '요청', '옵션', '본문', 'compose 파일'])
 
 // Docker Engine API 쿼리 옵션 → 뜻. 표에 없는 옵션은 원문만 보여준다.
 const OPTION_HELP: Record<string, string> = {
@@ -193,7 +203,7 @@ function ParamList({ params }: { params: Record<string, unknown> }) {
   const main = entries.filter(([k]) => !TECH_KEYS.has(k) || k === '옵션')
   const tech = entries.filter(([k]) => TECH_KEYS.has(k) && k !== '옵션')
   return (
-    <div className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs">
+    <div className="mt-2.5 rounded-lg bg-neutral-50 px-3 py-2 text-xs">
       {main.length > 0 && (
         <dl className={PARAM_GRID}>
           {main.map(([name, value]) => (
@@ -204,7 +214,7 @@ function ParamList({ params }: { params: Record<string, unknown> }) {
       {tech.length > 0 && (
         <details className={main.length > 0 ? 'mt-1.5' : ''}>
           <summary className="cursor-pointer text-neutral-500">
-            {tech.some(([k]) => k === 'compose 파일') ? 'compose 파일 보기' : '기술 정보 (Docker에 보낼 요청)'}
+            {tech.some(([k]) => k === 'compose 파일') ? '기술 정보 · compose 파일 보기' : '기술 정보 (Docker에 보낼 요청)'}
           </summary>
           <dl className={`mt-1 ${PARAM_GRID}`}>
             {tech.map(([name, value]) => (

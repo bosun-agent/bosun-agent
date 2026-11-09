@@ -13,14 +13,14 @@ export function RejectedNotice({
   resolved?: boolean
   portainer?: string
 }) {
-  const box = resolved ? 'border-neutral-200 bg-neutral-50 text-neutral-700' : 'border-red-300 bg-red-50 text-red-900'
+  const box = resolved ? 'border-neutral-200 bg-neutral-50 text-neutral-700' : 'border-red-200 bg-white text-neutral-900'
   return (
-    <div className={`max-w-[85%] rounded-2xl border px-4 py-3 text-[15px] ${box}`}>
+    <div className={`w-full max-w-[560px] rounded-2xl border px-4 py-3.5 text-[15px] ${box}`}>
       <div className={`mb-1 flex items-center gap-1.5 text-xs font-medium ${resolved ? 'text-neutral-500' : 'text-red-700'}`}>
         <span className={`inline-block h-1.5 w-1.5 rounded-full ${resolved ? 'bg-neutral-400' : 'bg-red-500'}`} />
         {resolved ? '도중에 막힌 요청' : '차단됨'}
       </div>
-      <p>{resolved ? '중간에 보안 정책에 막힌 요청이 있었어요. 막힌 요청은 실행하지 않았고, 그 뒤 승인한 작업은 진행했어요.' : reason}</p>
+      <p className="font-semibold">{resolved ? '중간에 보안 정책에 막힌 요청이 있었어요. 막힌 요청은 실행하지 않았고, 그 뒤 승인한 작업은 진행했어요.' : reason}</p>
       {details.length > 0 && (
         <ul className={`mt-1.5 list-disc space-y-0.5 pl-5 text-sm ${resolved ? 'text-neutral-500' : 'text-red-800'}`}>
           {details.map((d) => (
@@ -29,12 +29,12 @@ export function RejectedNotice({
         </ul>
       )}
       {portainer !== undefined && !resolved && (
-        <p className="mt-2 text-sm text-red-800">
+        <p className="mt-2 text-sm text-neutral-600">
           꼭 필요한 작업이면 Portainer 화면에서 직접 할 수 있어요.
           {portainer && (
             <>
               {' '}
-              <a href={portainer} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">
+              <a href={portainer} target="_blank" rel="noopener noreferrer" className="font-medium text-navy-700 underline underline-offset-2">
                 Portainer 열기 ↗
               </a>
             </>

@@ -40,7 +40,7 @@ export function ChatMessageBubble({ message, portainerUrl, onApprove, onDeny, on
       <AssistantBody message={message} hasSteps={steps.length > 0} onApprove={onApprove} onDeny={onDeny} onExpire={onExpire} />
       {message.notice && <p className="mt-1 text-xs text-neutral-500">{message.notice}</p>}
       {settled && (message.content || (message.status === 'error' && onRetry)) && (
-        <div className="mt-1 flex gap-1 text-xs text-neutral-400 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+        <div className="mt-1 flex gap-1 text-xs text-neutral-500 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
           {message.content && <CopyButton text={message.content} />}
           {message.status === 'error' && onRetry && (
             <button type="button" onClick={() => onRetry(message.id)} className="rounded px-1.5 py-0.5 hover:bg-neutral-100 hover:text-neutral-700">
@@ -92,7 +92,7 @@ function UserBubble({ message, onEdit }: Pick<ChatMessageBubbleProps, 'message' 
             <button type="button" onClick={() => setEditing(false)} className="rounded-lg border border-neutral-300 px-3 py-1 text-sm text-neutral-700">
               취소
             </button>
-            <button type="button" onClick={submit} disabled={!draft.trim()} className="rounded-lg bg-neutral-900 px-3 py-1 text-sm text-white disabled:opacity-40">
+            <button type="button" onClick={submit} disabled={!draft.trim()} className="rounded-lg bg-navy-800 px-3 py-1 text-sm text-white disabled:opacity-40">
               새 대화로 보내기
             </button>
           </div>
@@ -104,15 +104,15 @@ function UserBubble({ message, onEdit }: Pick<ChatMessageBubbleProps, 'message' 
   const shown = long && !unfolded ? `${message.content.slice(0, FOLD_CHARS)}…` : message.content
   return (
     <div className="group flex flex-col items-end">
-      <div className="max-w-[75%] rounded-2xl bg-neutral-900 px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap text-white">
+      <div className="max-w-[75%] rounded-2xl bg-navy-50 px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap text-navy-900">
         {shown}
         {long && (
-          <button type="button" onClick={() => setUnfolded((v) => !v)} className="mt-1 block text-xs text-neutral-300 underline">
+          <button type="button" onClick={() => setUnfolded((v) => !v)} className="mt-1 block text-xs text-neutral-500 underline">
             {unfolded ? '접기' : `전체 보기 (${message.content.length.toLocaleString()}자)`}
           </button>
         )}
       </div>
-      <div className="mt-1 flex gap-1 text-xs text-neutral-400 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+      <div className="mt-1 flex gap-1 text-xs text-neutral-500 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
         <CopyButton text={message.content} />
         {onEdit && (
           <button
@@ -162,7 +162,7 @@ function AssistantBody({
       <div className="flex w-full flex-col items-start gap-2">
         {/* 카드를 띄우기 전에 Agent가 한 말(무엇을 왜 하려는지) */}
         {!expired && message.content && (
-          <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-900">
+          <div className="max-w-[92%] py-0.5 text-[15px] leading-[1.7] text-neutral-900">
             <Markdown text={message.content} />
           </div>
         )}
@@ -175,7 +175,7 @@ function AssistantBody({
         />
         {/* 만료 뒤 Agent가 이어서 한 말 */}
         {expired && message.content && (
-          <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-900">
+          <div className="max-w-[92%] py-0.5 text-[15px] leading-[1.7] text-neutral-900">
             <Markdown text={message.content} />
           </div>
         )}
@@ -200,7 +200,7 @@ function AssistantBody({
   // 처리 과정이 보이는 동안에는 빈 말풍선에 점 애니메이션을 따로 띄우지 않는다.
   if (message.status === 'thinking' && !message.content) {
     return hasSteps ? null : (
-      <div className="rounded-2xl bg-neutral-100 px-4 py-2.5">
+      <div className="py-1">
         <TypingDots />
       </div>
     )
@@ -209,7 +209,7 @@ function AssistantBody({
   if (!message.content) return null
 
   return (
-    <div className="max-w-[75%] rounded-2xl bg-neutral-100 px-4 py-2.5 text-[15px] leading-relaxed text-neutral-900">
+    <div className="max-w-[92%] py-0.5 text-[15px] leading-[1.7] text-neutral-900">
       <Markdown text={message.content} />
       {message.status === 'streaming' && <StreamCursor />}
     </div>

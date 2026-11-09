@@ -13,9 +13,9 @@ import type { AgentEvent, ApprovalDecision } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import type { DAEvent } from './agentClient.ts'
 import { config } from './config.ts'
-import { approvalMode, currentModel } from './settings.ts'
+import { approvalMode, autoReads, currentAgentName, currentModel } from './settings.ts'
 import { addCard, logDecision, logUsage, updateApprovalCard, type ApprovalStatus } from './store.ts'
-import { approvalCard, learnNames, targetKeys, type ApprovalCard, type StackInfo } from './tools.ts'
+import { approvalCard, learnHookName, learnNames, readChoice, targetKeys, withHookExplanation, type ApprovalCard, type StackInfo } from './tools.ts'
 import { Translator } from './translate.ts'
 
 export interface Sink {
@@ -253,13 +253,13 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
     t.index = (session.messages ?? []).filter((m) => m.message?.role === 'user' && !m.implicit).length
     // 첫 메시지로 제목을 정한다. 화면과 같은 규칙이다. Docker Agent가 따로 만들면 LLM을 한 번 더 부르고,
     // 영어 프롬프트라서 영어 제목이나 빈 제목이 나왔다(2026-10-11 실측).
-    if (t.index === 0 && !session.title) {
+    if (t.index === 0 && (!session.title || session.title === agent.NEW_SESSION_TITLE)) {
       const title = text.trim().length > TITLE_MAX ? `${text.trim().slice(0, TITLE_MAX)}…` : text.trim()
       await agent.setTitle(sessionId, title).catch((err) => console.warn('[agent] set title failed', err))
     }
     // 사용량 기록의 기준값. 못 받으면 이 턴은 기록하지 않는다.
     t.usageBefore = await agent.getSnapshot(sessionId).catch(() => null)
-    upstream = await agent.runAgent(sessionId, text, t.abort.signal, currentModel())
+    upstream = await agent.runAgent(sessionId, text, t.abort.signal, currentModel(), currentAgentName())
   } catch (err) {
     turns.delete(sessionId)
     if (err instanceof agent.AgentHttpError && err.status === 404) {
@@ -356,7 +356,8 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
   if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
 
   const expiresAt = Date.now() + config.approvalTimeoutMs
-  const card = approvalCard(tool, args, names, stacks)
+  learnHookName(names, ev.metadata)
+  const card = withHookExplanation(approvalCard(tool, args, names, stacks), ev.metadata)
   const keys = targetKeys(tool, args, names, stacks)
   const busyWith = sameTargetWaiting(t, keys)
   if (busyWith) {
@@ -381,7 +382,7 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
   }
   ap.event.approvalId = ap.id
   // 다른 대화가 같은 대상의 결정을 기다리고 있으면 대신 승인하지 않고 묻는다. 어느 쪽을 먼저 할지는 사람이 정한다.
-  if (!busyWith && autoApproves() && (await autoApprove(t, ap, card))) return
+  if (!busyWith && autoApproves(tool, args) && (await autoApprove(t, ap, card))) return
   approvals.set(ap.id, ap)
   ap.timer = setTimeout(() => void expire(ap), config.approvalTimeoutMs + config.expiryGraceMs)
   addCard(t.sessionId, t.index, { kind: 'approval', approvalId: ap.id, status: 'pending', ...card, expiresAt: ap.event.expiresAt })
@@ -397,9 +398,11 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
 // 감사 기록의 user. 화면에서 누른 결정은 local, 만료 자동 거부는 system이다.
 export const AUTO_USER = 'auto'
 
-// never(YOLO)면 위험도와 상관없이 삭제까지 모두 대신 승인한다.
-function autoApproves(): boolean {
-  return approvalMode() === 'never'
+// never(YOLO)면 위험도와 상관없이 삭제까지 모두 대신 승인한다. 아니면 설정에서 "바로 실행"으로 고른 조회만 대신 승인한다.
+function autoApproves(tool: string, args: Record<string, unknown>): boolean {
+  if (approvalMode() === 'never') return true
+  const choice = readChoice(tool, args)
+  return choice !== undefined && autoReads().includes(choice)
 }
 
 // Agent에 승인을 보내고 카드·감사 기록을 승인으로 남긴다. 보내지 못하면 false를 돌려주고 평소처럼 카드를 띄운다.

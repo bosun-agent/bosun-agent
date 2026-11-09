@@ -73,7 +73,7 @@ class Run {
   async tool(
     name: string,
     args: Record<string, unknown>,
-    result: { ask?: boolean; output?: string; deny?: string; hookBlock?: string },
+    result: { ask?: boolean; output?: string; deny?: string; hookBlock?: string; metadata?: Record<string, string> },
   ): Promise<{ output: string; isError: boolean }> {
     const call = { id: `call_${randomUUID().slice(0, 8)}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }
 
@@ -88,7 +88,7 @@ class Run {
       return { output: message, isError: true }
     }
     if (result.ask) {
-      await this.send({ type: 'tool_call_confirmation', tool_call: call, tool_definition: { name } })
+      await this.send({ type: 'tool_call_confirmation', tool_call: call, tool_definition: { name }, ...(result.metadata ? { metadata: result.metadata } : {}) })
       const decision = await new Promise<Resume>((r) => (this.waiting = r))
       this.waiting = null
       if (decision.confirmation !== 'approve') {
@@ -115,6 +115,42 @@ class Run {
 const runs = new Map<string, Run>()
 
 const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
+  {
+    // 승인 카드 설명 훅이 metadata를 붙인다(tool_guard_approval_explainer.py). 지금 백업은 WEB 표에 없는 요청이다.
+    match: /지금 백업/,
+    run: async (r) => {
+      const res = await r.tool(
+        'docker_proxy',
+        { environment_id: 1, method: 'POST', path: '/containers/bosun-backup/exec', body: { Cmd: ['backup'], AttachStdout: true, AttachStderr: true } },
+        {
+          ask: true,
+          output: '백업 완료',
+          metadata: { reason: "'bosun-backup' 컨테이너(abc123def456)로 지금 볼륨 백업을 한 번 합니다(정해진 백업 명령만 실행).", blast_radius: 'medium', category: 'backup-now' },
+        },
+      )
+      await r.say(res.isError ? '백업하지 않았어요.' : '백업을 마쳤어요.')
+    },
+  },
+  {
+    // 백엔드를 다시 켠 뒤 모델이 기억한 ID로 바로 부르는 경우. WEB은 이름을 모르고 훅 설명에만 있다.
+    match: /아이디로 재시작/,
+    run: async (r) => {
+      const res = await r.tool(
+        'docker_proxy',
+        { environment_id: 1, method: 'POST', path: `/containers/54849cdb24ae${'0'.repeat(52)}/restart` },
+        { ask: true, output: '', metadata: { reason: "'v2' 컨테이너(54849cdb24ae)를 껐다가 다시 켭니다. 잠깐 서비스가 끊깁니다.", blast_radius: 'medium', category: 'container-restart' } },
+      )
+      await r.say(res.isError ? '재시작하지 않았어요.' : '재시작했어요.')
+    },
+  },
+  {
+    // 민감한 조회는 strict라서 승인을 묻는다. 설정에서 바로 실행으로 고를 수 있다.
+    match: /로그 확인/,
+    run: async (r) => {
+      const res = await r.tool('docker_proxy', { environment_id: 1, method: 'GET', path: '/containers/web/logs', query_params: { tail: '100' } }, { ask: true, output: 'hello' })
+      await r.say(res.isError ? '로그를 보지 않았어요.' : '로그를 봤어요.')
+    },
+  },
   {
     // 모델이 글도 도구 호출도 없이 끝내는 경우(2026-10-28 실제 DeepSeek flash에서 나왔다). stream_stopped만 온다.
     match: /빈 답/,
@@ -396,10 +432,10 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
 const agentApp = new Hono()
 
 agentApp.post('/api/sessions', async (c) => {
-  const body = await c.req.json<{ safety_policy?: string }>().catch(() => ({}) as { safety_policy?: string })
+  const body = await c.req.json<{ safety_policy?: string; title?: string }>().catch(() => ({}) as { safety_policy?: string; title?: string })
   // 정책은 agent.yaml에서 정한다. WEB이 세션마다 안전 모드를 덮어쓰면 안 된다.
   if (body.safety_policy) console.warn(`[fake agent] session created with safety_policy=${body.safety_policy}`)
-  const s: Session = { id: randomUUID(), title: '', created_at: new Date().toISOString(), messages: [] }
+  const s: Session = { id: randomUUID(), title: body.title ?? '', created_at: new Date().toISOString(), messages: [] }
   sessions.set(s.id, s)
   return c.json(s)
 })
@@ -494,7 +530,11 @@ agentApp.post('/api/sessions/:id/resume', async (c) => {
   run.waiting?.(body)
   return c.json({ message: 'session resumed' })
 })
+// 테스트가 어느 Agent로 실행했는지 확인한다.
+let lastAgent = ''
+agentApp.get('/test/last-agent', (c) => c.json({ agent: lastAgent }))
 agentApp.post('/api/sessions/:id/agent/:agent', async (c) => {
+  lastAgent = c.req.param('agent')
   const s = sessions.get(c.req.param('id'))
   if (!s) return c.json({ message: 'session not found' }, 404)
   const { messages, model } = await c.req.json<{ messages: { content: string }[]; model?: string }>()

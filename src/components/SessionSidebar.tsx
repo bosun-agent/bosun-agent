@@ -89,7 +89,7 @@ export function SessionSidebar({
           <button
             type="button"
             onClick={onNew}
-            className="w-full rounded-md bg-neutral-200 px-3 py-1.5 text-left text-sm font-medium hover:bg-neutral-300"
+            className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-left text-sm font-semibold text-navy-800 transition-colors hover:border-navy-300"
           >
             + 새 대화
           </button>
@@ -100,13 +100,13 @@ export function SessionSidebar({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="대화 찾기"
               aria-label="대화 찾기"
-              className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-sm outline-none focus:border-neutral-400"
+              className="min-w-0 flex-1 rounded-lg bg-neutral-200/60 px-2.5 py-1.5 text-sm outline-none placeholder:text-neutral-500 focus:bg-white focus:ring-1 focus:ring-navy-300"
             />
             {onDeleteMany && (
               <button
                 type="button"
                 onClick={() => setSelected(selected ? null : new Set())}
-                className="shrink-0 rounded-md px-2 text-xs text-neutral-600 hover:bg-neutral-200"
+                className="shrink-0 rounded-lg px-2 text-xs text-neutral-600 hover:bg-neutral-200"
               >
                 {selected ? '취소' : '선택'}
               </button>
@@ -122,14 +122,14 @@ export function SessionSidebar({
                 type="button"
                 onClick={deleteSelected}
                 disabled={selected.size === 0}
-                className="rounded-md bg-red-600 px-2 py-1 font-medium text-white disabled:opacity-40"
+                className="rounded-lg bg-red-600 px-2 py-1 font-medium text-white disabled:opacity-40"
               >
                 삭제 ({selected.size}개)
               </button>
             </div>
           )}
         </div>
-        <nav className="flex-1 space-y-1.5 overflow-y-auto px-2 pb-2">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
           {pinned.length > 0 && (
             <>
               <p className="px-1 pt-1 text-[11px] font-medium text-neutral-500">고정됨</p>
@@ -171,8 +171,8 @@ function SessionRow({
   if (selected) {
     return (
       <label
-        className={`flex w-full items-center gap-2 rounded-md bg-neutral-200 py-1.5 pr-2 pl-3 text-sm ${
-          isBusy ? 'text-neutral-400' : 'text-neutral-700 hover:bg-neutral-300'
+        className={`flex w-full items-center gap-2 rounded-lg py-2 pr-2 pl-3 text-sm ${
+          isBusy ? 'text-neutral-400' : 'text-neutral-700 hover:bg-neutral-200'
         }`}
       >
         <input
@@ -210,15 +210,15 @@ function SessionRow({
         autoFocus
         maxLength={100}
         aria-label="대화 제목"
-        className="w-full rounded-md border border-neutral-400 bg-white px-3 py-1.5 text-sm outline-none"
+        className="w-full rounded-lg border border-neutral-400 bg-white px-3 py-1.5 text-sm outline-none"
       />
     )
   }
 
   return (
     <div
-      className={`group flex w-full items-center rounded-md text-sm ${
-        session.id === activeId ? 'bg-neutral-300 font-medium' : 'bg-neutral-200 text-neutral-600 hover:bg-neutral-300'
+      className={`group relative flex w-full items-center rounded-lg text-sm transition-colors ${
+        session.id === activeId ? 'bg-neutral-200 font-semibold text-navy-900' : 'text-neutral-700 hover:bg-neutral-200'
       }`}
     >
       <button
@@ -229,13 +229,13 @@ function SessionRow({
           setEditing(true)
         }}
         title={usage}
-        className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3 text-left"
+        className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-3 pl-3 text-left"
       >
         <span className="flex-1 truncate">{session.title}</span>
         {isBusy && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-500" title="처리 중" />}
       </button>
       {/* 터치 화면에서는 항상 보인다. 처리 중인 대화는 서버가 지우지 않으므로 삭제를 숨긴다. */}
-      <div className="mr-1 flex shrink-0 items-center md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+      <div className="mr-1 flex shrink-0 items-center rounded-lg bg-neutral-200 md:absolute md:top-1/2 md:right-0 md:-translate-y-1/2 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
         {onPin && (
           <IconButton label={session.pinned ? `${session.title} 고정 풀기` : `${session.title} 고정`} onClick={() => onPin(session.id, !session.pinned)}>
             <PinIcon filled={session.pinned === true} />
@@ -326,7 +326,7 @@ export function SidebarToggle({ label, onClick }: { label: string; onClick: () =
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-200"
+      className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-200"
     >
       ☰
     </button>

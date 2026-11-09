@@ -91,7 +91,7 @@ export function ChatInput({ disabled, initialText, onSend, onStop, onHelp }: Cha
           {fileError && <span className="text-xs text-red-600">{fileError}</span>}
         </div>
       )}
-      <div className="relative flex items-end gap-1 rounded-3xl border border-neutral-400 bg-white px-2 py-1.5">
+      <div className="relative flex items-end gap-1 rounded-3xl border border-neutral-300 bg-white px-2 py-1.5 shadow-[0_1px_3px_rgb(28_27_24/0.06)] transition-colors focus-within:border-navy-600">
         <button
           type="button"
           onClick={() => setAttachOpen((open) => !open)}
@@ -132,7 +132,7 @@ export function ChatInput({ disabled, initialText, onSend, onStop, onHelp }: Cha
           onKeyDown={handleKeyDown}
           disabled={disabled}
           rows={1}
-          placeholder="What's on your mind?"
+          placeholder="무엇을 해 드릴까요?"
           className="max-h-40 flex-1 resize-none bg-transparent px-1 py-[5px] text-[15px] leading-[22px] outline-none placeholder:text-neutral-400 disabled:opacity-50"
         />
         {disabled && onStop ? (
@@ -141,7 +141,7 @@ export function ChatInput({ disabled, initialText, onSend, onStop, onHelp }: Cha
             onClick={onStop}
             aria-label="멈추기"
             title="처리 중인 작업 멈추기"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy-800 text-white hover:bg-navy-700"
           >
             <span className="h-2.5 w-2.5 rounded-[2px] bg-white" />
           </button>
@@ -151,9 +151,9 @@ export function ChatInput({ disabled, initialText, onSend, onStop, onHelp }: Cha
             onClick={submit}
             disabled={!canSend}
             aria-label="전송"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy-800 text-white transition-colors hover:bg-navy-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
           >
-            <SearchIcon />
+            <SendIcon />
           </button>
         )}
       </div>
@@ -185,7 +185,7 @@ function AttachMenu({ onClose, onFile, onHelp }: { onClose: () => void; onFile: 
 
   return (
     <div ref={ref} className="absolute bottom-full left-2 z-20 mb-1.5 w-56 rounded-lg border border-neutral-300 bg-white p-2 shadow-md">
-      <p className="px-1 pb-1 text-[11px] font-medium tracking-wide text-neutral-500">ATTACH</p>
+      <p className="px-1 pb-1 text-[11px] font-medium text-neutral-500">첨부</p>
       <MenuItem icon="📄" label="텍스트 파일 붙이기" hint="compose, 로그, 설정 파일" onClick={onFile} />
       {onHelp && (
         <>
@@ -199,7 +199,7 @@ function AttachMenu({ onClose, onFile, onHelp }: { onClose: () => void; onFile: 
 
 function MenuItem({ icon, label, hint, onClick }: { icon: string; label: string; hint: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="flex w-full items-start gap-2 rounded-md px-1 py-1 text-left hover:bg-neutral-100">
+    <button type="button" onClick={onClick} className="flex w-full items-start gap-2 rounded-lg px-1 py-1 text-left hover:bg-neutral-100">
       <span className="w-4 pt-0.5 text-center text-xs">{icon}</span>
       <span>
         <span className="block text-sm text-neutral-800">{label}</span>
@@ -218,11 +218,10 @@ function PlusIcon() {
   )
 }
 
-function SearchIcon() {
+function SendIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
+      <path d="M12 19V5M6 11l6-6 6 6" />
     </svg>
   )
 }

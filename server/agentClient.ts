@@ -8,6 +8,13 @@ import { Readable } from 'node:stream'
 import { readSSE } from '../src/lib/sse.ts'
 import { config } from './config.ts'
 
+// 승인 카드 설명 훅(Agent 담당 tool_guard_approval_explainer.py)이 승인 이벤트에 붙이는 값.
+export interface HookExplanation {
+  reason?: string
+  blast_radius?: string
+  category?: string
+}
+
 // Docker Agent 이벤트 중 WEB 백엔드가 읽는 필드만 적었다(docker/docker-agent pkg/runtime/event.go).
 export interface DAToolCall {
   id?: string
@@ -25,7 +32,7 @@ export type DAEvent =
       response: string
       result?: { output: string; isError?: boolean }
     }
-  | { type: 'tool_call_confirmation'; tool_call: DAToolCall; tool_definition?: { name?: string } }
+  | { type: 'tool_call_confirmation'; tool_call: DAToolCall; tool_definition?: { name?: string }; metadata?: HookExplanation }
   | { type: 'max_iterations_reached' }
   | { type: 'elicitation_request' }
   | { type: 'error'; error: string; code?: string }
@@ -86,9 +93,13 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   return res
 }
 
+// 새 대화의 임시 제목. 제목이 비어 있으면 Docker Agent가 사용자 입력으로 LLM을 불러 제목을 짓는데, 그 호출에는 보안 훅이 걸리지 않는다.
+// 첫 메시지를 보낼 때 turns.ts가 진짜 제목으로 바꾼다.
+export const NEW_SESSION_TITLE = '새 대화'
+
 export async function createSession(): Promise<string> {
   // safety_policy를 보내지 않는다. 정책은 agent.yaml(`safety`, `permissions`) 한 곳에서 정한다.
-  const res = await request('/api/sessions', { method: 'POST', body: '{}' })
+  const res = await request('/api/sessions', { method: 'POST', body: JSON.stringify({ title: NEW_SESSION_TITLE }) })
   const session = (await res.json()) as { id: string }
   return session.id
 }
@@ -184,9 +195,10 @@ export async function runAgent(
   text: string,
   signal: AbortSignal,
   model?: string,
+  agentName: string = config.agentName,
 ): Promise<AsyncGenerator<DAEvent>> {
   const body = await openStream(
-    `/api/sessions/${encodeURIComponent(sessionId)}/agent/${encodeURIComponent(config.agentName)}`,
+    `/api/sessions/${encodeURIComponent(sessionId)}/agent/${encodeURIComponent(agentName)}`,
     { messages: [{ role: 'user', content: text }], ...(model ? { model } : {}) },
     signal,
   )
