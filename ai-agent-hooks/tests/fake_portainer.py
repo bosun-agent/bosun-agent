@@ -27,6 +27,8 @@ STACKS = {
     6: {"Id": 6, "Name": "swarmapp", "EndpointId": 3, "Type": 1, "_file": ""},
 }
 CONTAINERS = ["agent-test", "web-old"]   # 컨테이너 이름 목록
+# 11/9 데이터 볼륨 규칙 테스트용: 스택(프로젝트) → 컨테이너가 쓰는 볼륨 이름 목록
+STACK_MOUNTS = {}
 PROJECTS = {"outside-app"}               # Portainer 밖에서 만든 Compose 프로젝트 이름
 
 
@@ -79,7 +81,12 @@ class _H(BaseHTTPRequestHandler):
         if re.fullmatch(r"/api/endpoints/\d+/docker/containers/json", path):
             q = parse_qs(urlsplit(self.path).query)
             if "filters" in q:
-                label = json.loads(q["filters"][0]).get("label", [""])[0]
+                flt = json.loads(q["filters"][0])
+                label = flt.get("label", [""])[0]
+                if label.split("=", 1)[-1] in STACK_MOUNTS:
+                    proj = label.split("=", 1)[1]
+                    return self._send(200, [{"Id": fake_id(proj + "-1"), "Names": ["/" + proj + "-1"],
+                                             "Mounts": [{"Type": "volume", "Name": v} for v in STACK_MOUNTS[proj]]}])
                 proj = label.split("=", 1)[1] if "=" in label else ""
                 return self._send(200, [{"Id": fake_id(proj + "-1"), "Names": ["/" + proj + "-1"]}] if proj in PROJECTS else [])
             return self._send(200, [{"Id": fake_id(n), "Names": ["/" + n]} for n in CONTAINERS])

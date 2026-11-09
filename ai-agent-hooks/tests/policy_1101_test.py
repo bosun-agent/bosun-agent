@@ -95,7 +95,7 @@ for img, want in [("nginx", "rewrite"), ("nginx:alpine", "rewrite"), ("mysql:8.0
                   ("library/postgres:16", "rewrite"), ("docker.io/nginx", "rewrite"), ("nginx@sha256:" + "a" * 64, "rewrite"),
                   ("bitnami/redis", "block"), ("someuser/ngnix", "block"), ("ghcr.io/owner/app:1", "block"),
                   ("quay.io/prometheus/prometheus", "block"), ("localhost:5000/app", "block")]:
-    check(f"I 스택 image {img}", create(f"services:\n  web:\n    image: {img}\n")[0], want)
+    check(f"I 스택 image {img}", create(f"services:\n  web:\n    image: {img}\n    volumes: [\"d:/data\", \"d:/var/lib/mysql\", \"d:/var/lib/postgresql/data\"]\nvolumes:\n  d: {{}}\n")[0], want)
 for img, want in [("nginx", "rewrite"), ("bitnami/redis", "block")]:
     k = hook(POLICY, {"tool_name": "docker_proxy", "tool_input": {"environment_id": 3, "method": "POST", "path": "/images/create",
                                                                   "query_params": {"fromImage": img, "tag": "latest"}}})[0]

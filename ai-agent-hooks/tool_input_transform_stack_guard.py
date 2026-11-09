@@ -30,6 +30,8 @@ Compose 검사(허용 항목만)
           Portainer 데이터 볼륨, volumes의 driver_opts, bridge 외 네트워크 드라이버
   command·entrypoint·healthcheck(11/9, 정책표 5.7 231줄 "사전에 허용된 것만"): entrypoint는 거부,
   command는 CMD_ALLOW(이미지별 프로그램·옵션), healthcheck test는 HEALTH_ALLOW의 ["CMD", ...]만.
+  데이터 볼륨(11/9): redis·mysql·mariadb·postgres·mongo는 데이터 위치에 이름 있는 볼륨 필수(DATA_PATHS).
+  StackUpdate는 지금 컨테이너가 이름 없는(익명) 볼륨을 쓰면 거부(다시 배포하면 새 빈 볼륨으로 바뀜).
   비밀번호(11/9, 정책표 5.7·215·238줄): 이름에 password·secret·token·api_key 등이 들어간 환경변수에 값을 적으면 거부,
   값 안의 user:비밀번호@ 주소도 거부. Env 인자도 같다. 예외: MYSQL_RANDOM_ROOT_PASSWORD·MARIADB_RANDOM_ROOT_PASSWORD="yes"
   (앱이 스스로 비밀번호를 만든다. 로그에 나오는 값은 결과 가리기 훅이 가린다). postgres처럼 비밀번호가 꼭 필요한 이미지는 만들 수 없다.
@@ -126,6 +128,13 @@ CMD_ALLOW = {
                 "opts": {"--character-set-server": [CHARSET], "--collation-server": [COLLATION],
                          "--max-connections": [r"\d{1,5}"]}},
 }
+# 11/9 데이터 저장 이미지: 이 위치에 이름 있는 볼륨이 없으면 Docker가 이름 없는(익명) 볼륨을 자동으로 만든다.
+# 익명 볼륨은 스택을 다시 배포(StackUpdate)할 때 새 빈 볼륨으로 바뀌어 데이터가 사라진 것처럼 된다(11/9 결합 시험에서 확인).
+DATA_PATHS = {
+    "redis": "/data", "mysql": "/var/lib/mysql", "mariadb": "/var/lib/mysql",
+    "postgres": "/var/lib/postgresql/data", "mongo": "/data/db",
+}
+ANON_VOLUME_RE = re.compile(r"[0-9a-f]{64}")
 # healthcheck test도 컨테이너 안에서 명령을 실행하므로 같은 원칙. ["CMD", ...] 형식의 아래 명령만(셸 CMD-SHELL·문자열은 거부)
 HEALTH_ALLOW = {
     "redis": [["redis-cli", "ping"]],
@@ -197,6 +206,26 @@ def check_volume_ref(src, where):
     if PROTECTED.search(src):
         raise Reject(f"{where}: Portainer 데이터 볼륨({src})은 연결할 수 없습니다.")
     return src
+
+
+def mount_targets(vols):
+    out = []
+    for v in vols or []:
+        if isinstance(v, str):
+            parts = v.split(":")
+            if len(parts) >= 2:
+                out.append(parts[1].rstrip("/"))
+        elif isinstance(v, dict):
+            out.append(str(v.get("target", "")).rstrip("/"))
+    return out
+
+
+def check_data_volume(svc, where):
+    """11/9: 데이터 저장 이미지는 데이터 위치에 이름 있는 볼륨을 꼭 연결한다(익명 볼륨 방지)."""
+    path = DATA_PATHS.get(image_name(str(svc.get("image", ""))))
+    if path and path not in mount_targets(svc.get("volumes")):
+        raise Reject(f"{where}: 데이터를 저장하는 이미지라 '{path}'에 이름 있는 볼륨을 연결해야 합니다"
+                     f"(예: volumes: [\"data:{path}\"]와 최상위 volumes: {{data: {{}}}}). 없으면 이름 없는 볼륨이 생겨 수정할 때 데이터가 사라집니다.")
 
 
 def check_service_volumes(vols, where, declared):
@@ -411,6 +440,7 @@ def check_service(name, svc, vol_names, net_names, svc_names):
             s(p, f"{where} expose", r"\d{1,5}(/(tcp|udp|sctp))?")
     if "volumes" in svc:
         check_service_volumes(svc["volumes"], f"{where} volumes", vol_names)
+    check_data_volume(svc, where)
     if "restart" in svc:
         if svc["restart"] is False:  # YAML에서 따옴표 없이 쓴 no는 False로 읽힌다
             svc["restart"] = "no"
@@ -654,6 +684,19 @@ def check_env_arg(args):
         check_secret_value(e.get("name"), e.get("value", ""), "Env")
 
 
+def check_anonymous_volumes(st):
+    """11/9: 지금 이 스택의 컨테이너가 이름 없는 볼륨을 쓰면 수정을 거부한다. 다시 배포하면 새 빈 볼륨으로 바뀌기 때문."""
+    name = str(st.get("Name", ""))
+    q = urllib.parse.quote(json.dumps({"label": [f"com.docker.compose.project={name}"]}))
+    cs = lookup(f"/api/endpoints/{st.get('EndpointId')}/docker/containers/json?all=1&filters={q}", f"스택 '{name}'의 컨테이너 확인")
+    for c in cs or []:
+        for m in c.get("Mounts") or []:
+            if m.get("Type") == "volume" and ANON_VOLUME_RE.fullmatch(str(m.get("Name", ""))):
+                cname = str((c.get("Names") or ["?"])[0]).lstrip("/")
+                raise Reject(f"스택 '{name}'의 '{cname}'이(가) 이름 없는 볼륨({m.get('Destination')})을 쓰고 있어 수정할 수 없습니다. "
+                             "수정하면 새 빈 볼륨으로 바뀌어 데이터가 사라진 것처럼 됩니다.")
+
+
 def check_update(args):
     for k in args:
         if k in UPDATE_EXTRA:
@@ -666,6 +709,7 @@ def check_update(args):
         raise Reject("스택 수정에는 바꾼 뒤의 Compose 전체(StackFileContent)가 필요합니다. StackFileInspect로 지금 내용을 먼저 읽으세요.")
     st = check_stack_target(args)
     check_env_arg(args)
+    check_anonymous_volumes(st)
     content = args["StackFileContent"]
     if "REDACTED" in content:
         cur = lookup(f"/api/stacks/{st['Id']}/file", "지금 Compose 읽기").get("StackFileContent", "")

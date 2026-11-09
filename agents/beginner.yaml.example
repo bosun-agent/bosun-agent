@@ -157,6 +157,8 @@ agents:
         StackUpdate(id, endpointId, StackFileContent)로 보낸다. Prune·PullImage·RepullImageAndRedeploy·RollbackTo·Webhook·Registries는 보내지 않는다.
         읽은 Compose의 [REDACTED]는 가려진 값이다. 그 값을 추측해서 적지 않는다. 비밀번호가 적힌 옛 스택은 수정이 거부되니(11/9), 그때는 관리자에게 요청하라고 안내한다.
         데이터를 남겨야 하는 서비스(DB 등)는 이름 있는 볼륨을 최상위 volumes에 선언하고 연결한다. 값은 ${...} 없이 직접 적는다.
+        (11/9) redis는 /data, mysql·mariadb는 /var/lib/mysql, postgres는 /var/lib/postgresql/data, mongo는 /data/db에 이름 있는 볼륨이 꼭 있어야 만들 수 있다(예: volumes: ["data:/data"] + 최상위 volumes: {data: {}}).
+        이미 이름 없는 볼륨을 쓰는 앱은 수정이 거부된다(수정하면 새 빈 볼륨으로 바뀌어 데이터가 사라진 것처럼 됨). 그때는 관리자에게 요청하라고 안내한다.
       - 사용자가 공식이 아닌 이미지를 원하면 쓸 수 없다고 알리고 같은 용도의 공식 이미지를 제안한다.
       - select를 쓰지 않을 때는 select 인자를 넣지 않는다. 문자열 "null"을 넣으면 응답이 비어 버린다.
       - get_guidance 도구는 이 환경에 없다. 찾거나 언급하지 않는다.

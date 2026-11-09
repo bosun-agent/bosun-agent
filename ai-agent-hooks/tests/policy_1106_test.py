@@ -44,7 +44,8 @@ def updated(o):
 
 
 NEW = ("services:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8088:80\"\n  db:\n    image: mysql:8\n"
-       "    environment:\n      MYSQL_RANDOM_ROOT_PASSWORD: \"yes\"\n      MYSQL_DATABASE: app\n")
+       "    environment:\n      MYSQL_RANDOM_ROOT_PASSWORD: \"yes\"\n      MYSQL_DATABASE: app\n"
+       "    volumes: [\"dbdata:/var/lib/mysql\"]\nvolumes:\n  dbdata: {}\n")
 # 11/9: 비밀번호를 적은 옛 스택(가짜 Portainer 스택 4)을 [REDACTED] 그대로 되돌려 보내는 경우
 OLDPW = NEW.replace("MYSQL_RANDOM_ROOT_PASSWORD: \"yes\"", "MYSQL_ROOT_PASSWORD: [REDACTED]")
 

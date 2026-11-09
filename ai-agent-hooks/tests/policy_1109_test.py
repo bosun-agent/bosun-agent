@@ -37,8 +37,16 @@ def create(compose, name="pwtest", **extra):
                         "tool_input": {"endpointId": 3, "Name": name, "StackFileContent": compose, **extra}})
 
 
+DATA = {"mysql": "/var/lib/mysql", "mariadb": "/var/lib/mysql", "postgres": "/var/lib/postgresql/data", "redis": "/data"}
+
+
+def with_vol(text, image):
+    path = DATA.get(image.split(":")[0])
+    return text + (f"    volumes: [\"d:{path}\"]\nvolumes:\n  d: {{}}\n" if path else "")
+
+
 def db(env_block, image="mysql:8"):
-    return f"services:\n  db:\n    image: {image}\n    environment:\n{env_block}"
+    return with_vol(f"services:\n  db:\n    image: {image}\n    environment:\n{env_block}", image)
 
 
 # P: Compose 안 평문 비밀번호
@@ -92,7 +100,7 @@ check("G trust 안내도 비밀번호 규칙으로", "관리자" in o.get("reaso
 
 # E·C·H: entrypoint·command·healthcheck (정책표 5.7 231줄)
 def svc(image, extra):
-    return f"services:\n  a:\n    image: {image}\n{extra}"
+    return with_vol(f"services:\n  a:\n    image: {image}\n{extra}", image)
 
 
 for label, image, extra in [
