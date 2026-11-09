@@ -28,6 +28,9 @@ Compose 검사(허용 항목만)
   거부 예: privileged, cap_add, devices, security_opt, sysctls, pid, ipc, network_mode,
           env_file, secrets, configs, extends, include, build, 호스트 경로·docker.sock 마운트,
           Portainer 데이터 볼륨, volumes의 driver_opts, bridge 외 네트워크 드라이버
+  비밀번호(11/9, 정책표 5.7·215·238줄): 이름에 password·secret·token·api_key 등이 들어간 환경변수에 값을 적으면 거부,
+  값 안의 user:비밀번호@ 주소도 거부. Env 인자도 같다. 예외: MYSQL_RANDOM_ROOT_PASSWORD·MARIADB_RANDOM_ROOT_PASSWORD="yes"
+  (앱이 스스로 비밀번호를 만든다. 로그에 나오는 값은 결과 가리기 훅이 가린다). postgres처럼 비밀번호가 꼭 필요한 이미지는 만들 수 없다.
   '$' 변수 치환(${VAR})은 거부한다 — 검사 뒤에 값이 바뀌어 호스트 경로 등이 들어갈 수 있다.
   ('$$'는 글자 '$' 그대로라 허용)
 
@@ -94,6 +97,14 @@ MANAGED_STACKS = {"bosun-backup"}   # 관리자가 만든 관리 스택(백업).
 COMPOSE_STACK_TYPE = 2              # Portainer 스택 종류: 1 Swarm, 2 Compose, 3 Kubernetes
 LOOKUP_TIMEOUT = 5
 MASK = "[REDACTED]"
+# 11/9 정책표 5.7·238줄: 평문 토큰·패스워드를 Compose·승인 기록에 넣지 않는다. 215줄: Env에도 비밀값 금지.
+# 이름 기준은 결과 가리기 훅(tool_response_transform_secret_mask.py NAME)과 같다.
+SECRET_NAME = re.compile(r"(?i)(passw(?:or)?d|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
+                         r"auth[_\-]?token|credentials?|session[_\-]?key)")
+URL_CRED = re.compile(r"(?i)[a-z][a-z0-9+.\-]*://[^\s:/@\"']+:[^\s@/\"']+@")
+# 앱이 스스로 강한 비밀번호를 만들게 하는 켜기/끄기 설정(비밀값이 아님). 값은 yes/true/1만
+SECRET_FLAG_OK = {"MYSQL_RANDOM_ROOT_PASSWORD", "MARIADB_RANDOM_ROOT_PASSWORD"}
+FLAG_YES = {"yes", "true", "1"}
 ALLOWED_TEXT = ("스택에서 쓸 수 있는 설정: image, command, entrypoint, environment, ports, expose, "
                 "이름 있는 volumes, restart, depends_on, networks(bridge), labels, working_dir, user, hostname, "
                 "container_name, healthcheck, mem_limit, mem_reservation, cpus, deploy.resources, stop_signal, "
@@ -266,6 +277,23 @@ def check_healthcheck(h, where):
         b(h["disable"], f"{where}.disable")
 
 
+def check_secret_value(key, v, where):
+    """11/9: 비밀번호·토큰 같은 값을 그대로 적으면 거부(정책표 238줄). 값이 없으면(키만) 통과."""
+    if v is None:
+        return
+    key, sv = str(key), str(v)
+    if key in SECRET_FLAG_OK:
+        if sv.strip().lower() not in FLAG_YES:
+            raise Reject(f"{where} '{key}'는 \"yes\"만 쓸 수 있습니다.")
+        return
+    if SECRET_NAME.search(key) and sv != "":
+        raise Reject(f"{where} '{key}'에 비밀번호·토큰 값을 직접 적었습니다. 평문 비밀번호는 Compose·Env에 넣을 수 없습니다(정책표 5.7).")
+    if key == "POSTGRES_HOST_AUTH_METHOD" and sv.strip().lower() == "trust":
+        raise Reject(f"{where} 'POSTGRES_HOST_AUTH_METHOD: trust'는 비밀번호 없이 누구나 DB에 들어오게 합니다. 허용되지 않습니다.")
+    if URL_CRED.search(sv):
+        raise Reject(f"{where} '{key}' 값의 주소 안에 비밀번호(user:비밀번호@)가 들어 있습니다. 평문 비밀번호는 Compose·Env에 넣을 수 없습니다(정책표 5.7).")
+
+
 def check_service(name, svc, vol_names, net_names, svc_names):
     where = f"서비스 '{name}'"
     s(name, "서비스 이름", SVC_RE)
@@ -285,9 +313,12 @@ def check_service(name, svc, vol_names, net_names, svc_names):
                 s(k, f"{where} environment 키", r"[A-Za-z_][A-Za-z0-9_.\-]*")
                 if v is not None:
                     s(v, f"{where} environment 값")
+                check_secret_value(k, v, f"{where} environment")
         elif isinstance(env, list):
             for e in env:
                 s(e, f"{where} environment 항목", r"[A-Za-z_][A-Za-z0-9_.\-]*(=.*)?")
+                k, _, v = str(e).partition("=")
+                check_secret_value(k, v if "=" in str(e) else None, f"{where} environment")
         else:
             raise Reject(f"{where} environment는 목록이나 객체여야 합니다.")
     if "ports" in svc:
@@ -537,6 +568,7 @@ def check_env_arg(args):
         s(e.get("value", ""), "Env value")
         if is_masked(e.get("value")):
             raise Reject(f"Env '{e.get('name')}'의 값이 가려져({MASK}) 있습니다. 새 값을 직접 적으세요.")
+        check_secret_value(e.get("name"), e.get("value", ""), "Env")
 
 
 def check_update(args):

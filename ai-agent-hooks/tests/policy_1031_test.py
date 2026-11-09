@@ -47,11 +47,11 @@ services:
     depends_on: [db]
     restart: unless-stopped
   db:
-    image: postgres:16
+    image: mysql:8
     environment:
-      POSTGRES_PASSWORD: example
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
     volumes:
-      - dbdata:/var/lib/postgresql/data
+      - dbdata:/var/lib/mysql
     mem_limit: 512m
 volumes:
   dbdata:
@@ -102,7 +102,7 @@ check("2-3 컨테이너 목록 통과", proxy("GET", "/containers/json")[0], "pa
 # ---- 1. 컨테이너 생성 → 스택 ----
 check("1-1 /containers/create 거부", proxy("POST", "/containers/create", {"name": "web"}, {"Image": "nginx"})[0], "block")
 k, o = create(WEB_DB)
-check("1-2 웹+DB 스택 통과", k, "rewrite", "postgres:16" in o.get("hook_specific_output", {}).get("updated_input", {}).get("StackFileContent", ""))
+check("1-2 웹+DB 스택 통과", k, "rewrite", "mysql:8" in o.get("hook_specific_output", {}).get("updated_input", {}).get("StackFileContent", ""))
 check("1-3 privileged 거부", create("services:\n  a:\n    image: alpine\n    privileged: true\n")[0], "block")
 check("1-4 cap_add 거부", create("services:\n  a:\n    image: alpine\n    cap_add: [SYS_ADMIN]\n")[0], "block")
 check("1-5 호스트 폴더 마운트 거부", create("services:\n  a:\n    image: alpine\n    volumes: ['/:/host']\n")[0], "block")

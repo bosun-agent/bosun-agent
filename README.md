@@ -111,10 +111,10 @@ TELEMETRY_ENABLED=false
 
 ```bash
 cd ai-agent-hooks
-for t in tests/policy_1031_test.py tests/policy_1101_test.py tests/policy_1102_test.py tests/policy_1103_test.py tests/policy_1106_test.py tests/policy_1107_test.py tests/policy_1108_test.py; do python3 $t | tail -1; done
+for t in tests/policy_1031_test.py tests/policy_1101_test.py tests/policy_1102_test.py tests/policy_1103_test.py tests/policy_1106_test.py tests/policy_1107_test.py tests/policy_1108_test.py tests/policy_1109_test.py; do python3 $t | tail -1; done
 python3 tests/policy_guard_test.py tool_input_transform_direct_policy_guard.py | tail -1
 ```
-줄마다 `67/67 통과`처럼 모두 통과면 정상(총 285개). 설정 검사:
+줄마다 `67/67 통과`처럼 모두 통과면 정상(총 311개). 설정 검사:
 ```bash
 python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.example
 ```
@@ -129,6 +129,7 @@ python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.examp
 | policy_1106_test | 스택 수정·파일 보기, 같은 이름 거부, 안전 필드 |
 | policy_1107_test | 대화 시작 앱 요약(이어서 하기) |
 | policy_1108_test | 변경 요청에는 select를 빼고 보내기 |
+| policy_1109_test | 비밀번호·토큰을 Compose·Env에 적으면 거부(정책표 5.7), mysql 자동 비밀번호 설정 허용 |
 
 실제 AI로 하는 시나리오 테스트(T01~T42)는 `docs/동작기준_테스트목록.md`.
 

@@ -44,13 +44,17 @@ def updated(o):
 
 
 NEW = ("services:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8088:80\"\n  db:\n    image: mysql:8\n"
-       "    environment:\n      MYSQL_ROOT_PASSWORD: [REDACTED]\n      MYSQL_DATABASE: app\n")
+       "    environment:\n      MYSQL_RANDOM_ROOT_PASSWORD: \"yes\"\n      MYSQL_DATABASE: app\n")
+# 11/9: 비밀번호를 적은 옛 스택(가짜 Portainer 스택 4)을 [REDACTED] 그대로 되돌려 보내는 경우
+OLDPW = NEW.replace("MYSQL_RANDOM_ROOT_PASSWORD: \"yes\"", "MYSQL_ROOT_PASSWORD: [REDACTED]")
 
 # U: 스택 수정
 k, o = stack("StackUpdate", {"id": 4, "endpointId": 3, "StackFileContent": NEW})
 up = updated(o).get("StackFileContent", "")
 check("U1 정상 수정은 통과하고 검사한 Compose로 다시 씀", k, "rewrite", "8088:80" in up and "mem_limit" in up)
-check("U2 [REDACTED]로 돌아온 비밀번호는 원래 값으로 되살림", "Old-Secret-1106" in up and "REDACTED" not in up, True)
+k2, o2 = stack("StackUpdate", {"id": 4, "endpointId": 3, "StackFileContent": OLDPW})
+check("U2 (11/9) [REDACTED] 비밀번호를 되살리면 평문이 되므로 거부", k2, "block",
+      "평문 비밀번호" in o2.get("reason", "") and "Old-Secret-1106" not in o2.get("reason", ""))
 k, o = stack("StackUpdate", {"id": 4, "endpointId": 3,
                              "StackFileContent": NEW.replace("MYSQL_DATABASE: app", "MYSQL_PASSWORD: [REDACTED]")})
 check("U3 원래 없던 키의 [REDACTED]는 거부", k, "block", "되살릴 수 없습니다" in o.get("reason", ""))
@@ -89,9 +93,9 @@ masked = o.get("hook_specific_output", {}).get("updated_tool_response", "")
 body = json.loads(masked.split("\n\n[비밀값")[0])["StackFileContent"] if masked else ""
 check("F4 결과의 비밀번호는 가리고 줄바꿈·다른 줄은 그대로",
       "Old-Secret-1106" not in masked and "MYSQL_ROOT_PASSWORD: [REDACTED]\n      MYSQL_DATABASE: app" in body, True)
-check("F5 가린 결과를 그대로 돌려보내면 되살아남(왕복)",
-      "Old-Secret-1106" in updated(stack("StackUpdate", {"id": 4, "endpointId": 3, "StackFileContent": body})[1]).get("StackFileContent", ""),
-      True)
+k5, o5 = stack("StackUpdate", {"id": 4, "endpointId": 3, "StackFileContent": body})
+check("F5 (11/9) 가린 결과를 그대로 돌려보내도 평문 비밀번호라 거부, 안내에 원래 값 없음",
+      k5 == "block" and "Old-Secret-1106" not in json.dumps(o5, ensure_ascii=False), True)
 
 # C: 같은 이름
 SIMPLE = "services:\n  web:\n    image: nginx:alpine\n"
