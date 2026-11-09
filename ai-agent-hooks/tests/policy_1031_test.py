@@ -115,7 +115,7 @@ check("1-11 devices 거부", create("services:\n  a:\n    image: alpine\n    dev
 check("1-12 build 거부", create("services:\n  a:\n    build: .\n")[0], "block")
 check("1-13 env_file 거부", create("services:\n  a:\n    image: alpine\n    env_file: /etc/passwd\n")[0], "block")
 check("1-14 변수 치환 거부", create("services:\n  a:\n    image: alpine\n    volumes: ['${SRC}:/data']\nvolumes:\n  x:\n")[0], "block")
-check("1-15 $$는 허용", create("services:\n  a:\n    image: alpine\n    command: echo $$HOME\n")[0], "rewrite")
+check("1-15 $$는 허용", create("services:\n  a:\n    image: alpine\n    environment:\n      PRICE: \"10$$\"\n")[0], "rewrite")
 check("1-16 Portainer 볼륨 거부", create("services:\n  a:\n    image: alpine\n    volumes: ['portainer_data:/data']\nvolumes:\n  portainer_data:\n    external: true\n")[0], "block")
 check("1-17 driver_opts 볼륨 거부", create("services:\n  a:\n    image: alpine\n    volumes: ['v:/d']\nvolumes:\n  v:\n    driver_opts: {type: none, o: bind, device: /}\n")[0], "block")
 check("1-18 선언 안 된 볼륨 거부", create("services:\n  a:\n    image: alpine\n    volumes: ['v:/d']\n")[0], "block")

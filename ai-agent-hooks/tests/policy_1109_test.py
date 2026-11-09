@@ -4,6 +4,7 @@
   - V: Env 인자에도 비밀값 거부
   - R: 앱이 스스로 만드는 비밀번호 설정(MYSQL_RANDOM_ROOT_PASSWORD 등)은 허용, 그 로그는 가림
   - G: 거부 안내 ①②③
+  - E·C·H: entrypoint 거부, command·healthcheck는 허용 목록만(정책표 5.7 231줄)
 """
 import json
 import os
@@ -88,5 +89,58 @@ r = o.get("reason", "")
 check("G 안내에 이유와 대신 할 것(RANDOM_ROOT_PASSWORD) 포함", "①" in r and "③" in r and "MYSQL_RANDOM_ROOT_PASSWORD" in r, True)
 k, o = create(db('      POSTGRES_HOST_AUTH_METHOD: trust\n', "postgres:16"))
 check("G trust 안내도 비밀번호 규칙으로", "관리자" in o.get("reason", ""), True)
+
+# E·C·H: entrypoint·command·healthcheck (정책표 5.7 231줄)
+def svc(image, extra):
+    return f"services:\n  a:\n    image: {image}\n{extra}"
+
+
+for label, image, extra in [
+    ("entrypoint 문자열", "redis:7", '    entrypoint: sh\n'),
+    ("entrypoint 목록", "nginx:alpine", '    entrypoint: ["/bin/sh", "-c", "id"]\n'),
+    ("entrypoint 빈 목록(기본 시작 프로그램 지우기)", "redis:7", '    entrypoint: []\n'),
+    ("command sh -c", "redis:7", '    command: sh -c "redis-server"\n'),
+    ("command 목록 [sh, -c]", "redis:7", '    command: ["sh", "-c", "id"]\n'),
+    ("command python -c", "python:3.12", '    command: python -c "print(1)"\n'),
+    ("목록 없는 이미지(nginx)에 command", "nginx:alpine", '    command: nginx -g "daemon off;"\n'),
+    ("redis 모르는 옵션", "redis:7", '    command: redis-server --loadmodule /x.so\n'),
+    ("redis 값 형식 틀림", "redis:7", '    command: redis-server --appendonly maybe\n'),
+    ("redis 옵션 뒤에 셸 이어 붙이기", "redis:7", '    command: redis-server --appendonly yes ; sh\n'),
+    ("redis 값 개수 모자람(--save 60)", "redis:7", '    command: redis-server --save 60\n'),
+    ("mysql 다른 프로그램", "mysql:8", '    command: mysql -e "drop database x"\n'),
+    ("mysql --init-file", "mysql:8", '    command: --init-file=/tmp/x.sql\n'),
+    ("따옴표 안 맞음", "redis:7", '    command: redis-server "--appendonly yes\n'),
+    ("healthcheck CMD-SHELL", "redis:7", '    healthcheck:\n      test: ["CMD-SHELL", "redis-cli ping || exit 1"]\n'),
+    ("healthcheck 문자열(셸)", "redis:7", '    healthcheck:\n      test: redis-cli ping\n'),
+    ("healthcheck 목록 밖 CMD", "nginx:alpine", '    healthcheck:\n      test: ["CMD", "curl", "-f", "http://localhost"]\n'),
+]:
+    k, o = create(svc(image, extra))
+    check(f"E/C/H {label} 거부", k, "block")
+
+for label, image, extra in [
+    ("command 없음", "redis:7", ''),
+    ("redis --appendonly yes", "redis:7", '    command: redis-server --appendonly yes\n'),
+    ("redis 목록 형식 + 여러 옵션", "redis:7", '    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1", "--maxmemory", "256mb"]\n'),
+    ("redis 프로그램 이름 없이 옵션만", "redis:7-alpine", '    command: --appendonly yes\n'),
+    ("redis --maxmemory-policy", "redis", '    command: redis-server --maxmemory-policy allkeys-lru\n'),
+    ("mysql 문자 설정 = 형식", "mysql:8.0", '    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci\n'),
+    ("mysql 밑줄 이름(--max_connections)", "mysql:8", '    command: mysqld --max_connections=50\n'),
+    ("mariadb mariadbd", "mariadb:11", '    command: mariadbd --character-set-server=utf8mb4\n'),
+    ("healthcheck redis-cli ping", "redis:7", '    healthcheck:\n      test: ["CMD", "redis-cli", "ping"]\n      interval: 10s\n'),
+    ("healthcheck mysqladmin ping", "mysql:8", '    healthcheck:\n      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]\n'),
+    ("healthcheck NONE(끄기)", "nginx:alpine", '    healthcheck:\n      test: ["NONE"]\n'),
+]:
+    env = '    environment:\n      MYSQL_RANDOM_ROOT_PASSWORD: "yes"\n' if image.startswith("mysql") else ''
+    env = '    environment:\n      MARIADB_RANDOM_ROOT_PASSWORD: "yes"\n' if image.startswith("mariadb") else env
+    check(f"E/C/H {label} 통과", create(svc(image, env + extra))[0], "rewrite")
+
+k, o = create(svc("redis:7", '    command: sh -c "id"\n'))
+r = o.get("reason", "")
+check("G command 거부 안내에 허용 옵션 예시", "③" in r and "--appendonly yes" in r, True)
+k, o = create(svc("redis:7", '    entrypoint: sh\n'))
+check("G entrypoint 거부 안내", "entrypoint" in o.get("reason", "") and "③" in o.get("reason", ""), True)
+k, o = hook(STACK, {"tool_name": "StackUpdate", "tool_input": {"id": 4, "endpointId": 3,
+             "StackFileContent": svc("redis:7", '    entrypoint: sh\n')}})
+check("E 수정(StackUpdate)도 entrypoint 거부", k, "block")
 
 print(f"\n{sum(results)}/{len(results)} 통과")

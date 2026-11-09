@@ -28,6 +28,8 @@ Compose 검사(허용 항목만)
   거부 예: privileged, cap_add, devices, security_opt, sysctls, pid, ipc, network_mode,
           env_file, secrets, configs, extends, include, build, 호스트 경로·docker.sock 마운트,
           Portainer 데이터 볼륨, volumes의 driver_opts, bridge 외 네트워크 드라이버
+  command·entrypoint·healthcheck(11/9, 정책표 5.7 231줄 "사전에 허용된 것만"): entrypoint는 거부,
+  command는 CMD_ALLOW(이미지별 프로그램·옵션), healthcheck test는 HEALTH_ALLOW의 ["CMD", ...]만.
   비밀번호(11/9, 정책표 5.7·215·238줄): 이름에 password·secret·token·api_key 등이 들어간 환경변수에 값을 적으면 거부,
   값 안의 user:비밀번호@ 주소도 거부. Env 인자도 같다. 예외: MYSQL_RANDOM_ROOT_PASSWORD·MARIADB_RANDOM_ROOT_PASSWORD="yes"
   (앱이 스스로 비밀번호를 만든다. 로그에 나오는 값은 결과 가리기 훅이 가린다). postgres처럼 비밀번호가 꼭 필요한 이미지는 만들 수 없다.
@@ -66,7 +68,7 @@ import sys
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from image_source import image_allowed, reject_text  # noqa: E402 — 이미지 출처 제한(11/1)
+from image_source import image_allowed, image_name, reject_text  # noqa: E402 — 이미지 출처 제한(11/1)
 from deny_guide import stack_reason  # noqa: E402 — 거부 안내 ①②③(11/1)
 import portainer_api  # noqa: E402 — 같은 이름·수정 대상 확인(11/6)
 
@@ -105,9 +107,34 @@ URL_CRED = re.compile(r"(?i)[a-z][a-z0-9+.\-]*://[^\s:/@\"']+:[^\s@/\"']+@")
 # 앱이 스스로 강한 비밀번호를 만들게 하는 켜기/끄기 설정(비밀값이 아님). 값은 yes/true/1만
 SECRET_FLAG_OK = {"MYSQL_RANDOM_ROOT_PASSWORD", "MARIADB_RANDOM_ROOT_PASSWORD"}
 FLAG_YES = {"yes", "true", "1"}
-ALLOWED_TEXT = ("스택에서 쓸 수 있는 설정: image, command, entrypoint, environment, ports, expose, "
+# 11/9 정책표 5.7 231줄: command·entrypoint는 "사전에 허용된 실행 명령·인자·엔트리포인트만".
+# entrypoint는 허용 목록이 비어 있다(= 쓰면 거부). command는 이미지별로 프로그램 이름과 옵션(값 형식)만 허용.
+# 옵션은 "--옵션 값" 또는 "--옵션=값". 첫 단어가 '-'로 시작하면 이미지가 프로그램 이름을 붙여 준다(redis·mysql·mariadb 공식 이미지 동작).
+# 관리자가 옵션을 더할 때는 여기에 한 줄 넣고 tests/policy_1109_test.py에 예시를 더한다.
+CHARSET = r"utf8mb4|utf8mb3|utf8"
+COLLATION = r"utf8mb4_[a-z0-9_]+"
+SIZE = r"\d+[kmgKMG]?[bB]?"
+CMD_ALLOW = {
+    "redis": {"progs": {"redis-server"},
+              "opts": {"--appendonly": [r"yes|no"], "--save": [r"\d{1,6}", r"\d{1,9}"], "--maxmemory": [SIZE],
+                       "--maxmemory-policy": [r"noeviction|allkeys-lru|volatile-lru|allkeys-lfu|volatile-lfu|"
+                                              r"allkeys-random|volatile-random|volatile-ttl"]}},
+    "mysql": {"progs": {"mysqld"},
+              "opts": {"--character-set-server": [CHARSET], "--collation-server": [COLLATION],
+                       "--max-connections": [r"\d{1,5}"]}},
+    "mariadb": {"progs": {"mariadbd", "mysqld"},
+                "opts": {"--character-set-server": [CHARSET], "--collation-server": [COLLATION],
+                         "--max-connections": [r"\d{1,5}"]}},
+}
+# healthcheck test도 컨테이너 안에서 명령을 실행하므로 같은 원칙. ["CMD", ...] 형식의 아래 명령만(셸 CMD-SHELL·문자열은 거부)
+HEALTH_ALLOW = {
+    "redis": [["redis-cli", "ping"]],
+    "mysql": [["mysqladmin", "ping", "-h", "localhost"], ["mysqladmin", "ping", "-h", "127.0.0.1"]],
+    "mariadb": [["healthcheck.sh", "--connect", "--innodb_initialized"], ["mariadb-admin", "ping", "-h", "localhost"]],
+}
+ALLOWED_TEXT = ("스택에서 쓸 수 있는 설정: image, command(허용 목록만), environment, ports, expose, "
                 "이름 있는 volumes, restart, depends_on, networks(bridge), labels, working_dir, user, hostname, "
-                "container_name, healthcheck, mem_limit, mem_reservation, cpus, deploy.resources, stop_signal, "
+                "container_name, healthcheck(허용 목록만), mem_limit, mem_reservation, cpus, deploy.resources, stop_signal, "
                 "stop_grace_period, tty, stdin_open, read_only, init.")
 
 
@@ -277,6 +304,58 @@ def check_healthcheck(h, where):
         b(h["disable"], f"{where}.disable")
 
 
+def cmd_tokens(v, where):
+    if isinstance(v, list):
+        return [str(s(x, where)) for x in v]
+    import shlex
+    try:
+        return shlex.split(str(s(v, where)))
+    except ValueError:
+        raise Reject(f"{where}의 따옴표가 맞지 않습니다.")
+
+
+def check_command(image, v, where):
+    """11/9: command는 이미지별 허용 목록만(정책표 5.7)."""
+    toks = cmd_tokens(v, f"{where} command")
+    if not toks:
+        return
+    rule = CMD_ALLOW.get(image_name(str(image)))
+    shown = " ".join(toks)[:80]
+    bad = f"{where} command '{shown}'는 허용 목록에 없습니다(정책표 5.7: 미리 허용한 명령·옵션만)."
+    if not rule:
+        raise Reject(bad)
+    if toks[0] in rule["progs"]:
+        toks = toks[1:]
+    elif not toks[0].startswith("-"):
+        raise Reject(bad)
+    i = 0
+    norm = (lambda o: o.replace("_", "-")) if image_name(str(image)) in ("mysql", "mariadb") else (lambda o: o)
+    while i < len(toks):
+        t = toks[i]
+        if t.startswith("--") and "=" in t:
+            opt, val = t.split("=", 1)
+            pats = rule["opts"].get(norm(opt))
+            if not pats or len(pats) != 1 or not re.fullmatch(pats[0], val):
+                raise Reject(bad)
+            i += 1
+            continue
+        pats = rule["opts"].get(norm(t))
+        vals = toks[i + 1:i + 1 + len(pats or [])]
+        if not pats or len(vals) != len(pats) or not all(re.fullmatch(p, x) for p, x in zip(pats, vals)):
+            raise Reject(bad)
+        i += 1 + len(pats)
+
+
+def check_health_test(image, t, where):
+    """11/9: healthcheck test도 허용 목록만. NONE(끄기)은 허용."""
+    if isinstance(t, list) and t[:1] == ["NONE"]:
+        return
+    ok = HEALTH_ALLOW.get(image_name(str(image)), [])
+    if not (isinstance(t, list) and t[:1] == ["CMD"] and [str(x) for x in t[1:]] in ok):
+        raise Reject(f"{where} healthcheck test는 허용 목록에 있는 확인 명령만 [\"CMD\", ...] 형식으로 쓸 수 있습니다"
+                     f"(셸 CMD-SHELL·문자열 거부, 정책표 5.7).")
+
+
 def check_secret_value(key, v, where):
     """11/9: 비밀번호·토큰 같은 값을 그대로 적으면 거부(정책표 238줄). 값이 없으면(키만) 통과."""
     if v is None:
@@ -303,9 +382,13 @@ def check_service(name, svc, vol_names, net_names, svc_names):
     s(svc["image"], f"{where} image", IMG_RE)
     if not image_allowed(str(svc["image"])):
         raise Reject(f"{where}: " + reject_text(str(svc["image"])))
-    for k in ("command", "entrypoint"):
-        if k in svc and svc[k] is not None:
-            str_or_list(svc[k], f"{where} {k}")
+    if svc.get("entrypoint") is not None:
+        raise Reject(f"{where}의 entrypoint(시작 프로그램 바꾸기)는 허용되지 않습니다(정책표 5.7). 이미지 기본 시작 프로그램을 쓰세요.")
+    if svc.get("command") is not None:
+        check_command(svc["image"], svc["command"], where)
+    hc = svc.get("healthcheck")
+    if isinstance(hc, dict) and "test" in hc:
+        check_health_test(svc["image"], hc["test"], where)
     if "environment" in svc:
         env = svc["environment"]
         if isinstance(env, dict):

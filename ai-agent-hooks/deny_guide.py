@@ -83,6 +83,12 @@ STACK_RULES = [
     (r"조회에 실패|대상을 찾지 못했습니다",  # 11/6: 같은 이름·수정 대상 확인
      "실행하기 전에 정확히 어떤 스택인지, 같은 이름이 있는지 확인해야 하는데 지금 확인할 수 없습니다.",
      "스택 목록을 먼저 보고 정확한 스택을 확인하세요. 계속되면 관리자에게 알리세요."),
+    (r"entrypoint\(|command '.*허용 목록|healthcheck test는",  # 11/9 정책표 5.7 231줄
+     "시작 명령을 마음대로 바꾸면 컨테이너 안에서 아무 프로그램이나 실행할 수 있습니다(정책표 5.7: 미리 허용한 것만).",
+     "command·entrypoint를 빼고 이미지 기본 설정으로 만드세요. 지금 허용된 옵션: redis 저장(--appendonly yes, --save 60 1)·"
+     "메모리(--maxmemory 256mb, --maxmemory-policy), mysql·mariadb 문자 설정(--character-set-server=utf8mb4, --collation-server)·"
+     "--max-connections. 상태 확인(healthcheck)은 redis [\"CMD\",\"redis-cli\",\"ping\"], "
+     "mysql [\"CMD\",\"mysqladmin\",\"ping\",\"-h\",\"localhost\"]. 다른 옵션은 " + ADMIN),
     (r"비밀번호·토큰 값|주소 안에 비밀번호|비밀번호 없이 누구나|RANDOM_ROOT_PASSWORD",  # 11/9 정책표 5.7·238줄
      "Compose와 Env는 Portainer·대화 기록·승인 기록에 그대로 남아서, 비밀번호를 적으면 여러 곳에 퍼집니다(정책표 5.7).",
      "mysql·mariadb는 비밀번호를 적지 말고 MYSQL_RANDOM_ROOT_PASSWORD: \"yes\"(mariadb는 MARIADB_RANDOM_ROOT_PASSWORD)로 만들면 "
@@ -131,8 +137,8 @@ STACK_RULES = [
      "스택 목록 보기, 만들기, 수정, 켜기·끄기는 할 수 있습니다. 삭제는 " + ADMIN),
 ]
 STACK_DEFAULT = ("초보자용으로 검사를 마친 설정만 허용합니다.",
-                 "쓸 수 있는 설정: image, command, entrypoint, environment, ports, expose, 이름 있는 volumes, restart, depends_on, "
-                 "networks(bridge), labels, working_dir, user, hostname, container_name, healthcheck, mem_limit, mem_reservation, "
+                 "쓸 수 있는 설정: image, command(허용 목록만), environment, ports, expose, 이름 있는 volumes, restart, depends_on, "
+                 "networks(bridge), labels, working_dir, user, hostname, container_name, healthcheck(허용 목록만), mem_limit, mem_reservation, "
                  "cpus, deploy.resources, stop_signal, stop_grace_period, tty, stdin_open, read_only, init.")
 
 

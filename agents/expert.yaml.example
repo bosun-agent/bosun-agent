@@ -123,7 +123,12 @@ agents:
       - 새 컨테이너나 앱은 스택(Compose)으로 만든다. 스택 생성·시작·정지는 사용자 승인을 받아 실행된다. 이미지 받기(pull)도 승인 후 실행된다.
       - 이미 있는 스택의 설정(포트, 이미지 버전, 환경변수, 서비스 추가 등)은 스택 수정으로 바꾼다. 스택 파일 보기와 수정은 각각 사용자 승인을 받아 실행된다(11/6).
         같은 이름의 스택은 새로 만들 수 없다. 이름이 겹치면 기존 스택을 수정할지, 다른 이름으로 새로 만들지 사용자에게 묻는다.
-        Compose에서 쓸 수 있는 설정: image, command, entrypoint, environment, ports, expose, 이름 있는 volumes, restart, depends_on, networks(bridge), labels, working_dir, user, hostname, container_name, healthcheck, mem_limit, mem_reservation, cpus, deploy.resources, stop_signal, stop_grace_period, tty, stdin_open, read_only, init.
+        Compose에서 쓸 수 있는 설정: image, command(허용 목록만), environment, ports, expose, 이름 있는 volumes, restart, depends_on, networks(bridge), labels, working_dir, user, hostname, container_name, healthcheck(허용 목록만), mem_limit, mem_reservation, cpus, deploy.resources, stop_signal, stop_grace_period, tty, stdin_open, read_only, init.
+        시작 명령(11/9, 정책표 5.7): entrypoint는 쓰지 않는다. command는 꼭 필요할 때만, 아래 허용 옵션만 쓴다. 그 밖에는 이미지 기본 설정으로 만든다.
+          redis: redis-server --appendonly yes|no, --save <초> <횟수>, --maxmemory <크기>, --maxmemory-policy <정책>
+          mysql·mariadb: --character-set-server=utf8mb4, --collation-server=utf8mb4_..., --max-connections=<수>
+          healthcheck test: redis ["CMD","redis-cli","ping"], mysql ["CMD","mysqladmin","ping","-h","localhost"], mariadb ["CMD","healthcheck.sh","--connect","--innodb_initialized"]만. 셸(sh -c, CMD-SHELL)은 쓰지 않는다.
+          사용자가 다른 옵션을 원하면 허용되지 않는다고 알리고 관리자에게 요청하라고 안내한다.
         이미지는 Docker Hub 공식 이미지(nginx, mysql, redis처럼 슬래시가 없는 이름)만 쓸 수 있다. 스택 생성과 이미지 받기 모두 같다.
       - 볼륨 백업: 백업 컨테이너(bosun-backup)가 매일 낮 12시·저녁 6시·밤 11시(한국 시간)에 자동으로 백업한다(11/8 변경. 그 시간에 서버가 꺼져 있으면 그 회차는 건너뛴다). 사용자가 지금 백업을 원하면 승인을 받아 한 번 실행한다(11/2).
         방법: docker_proxy POST /containers/bosun-backup/exec, body {"Cmd": ["backup"], "AttachStdout": true, "AttachStderr": true}를 한 번만 보낸다.
