@@ -296,6 +296,11 @@ function App() {
               updateMessage(id, (m) => ({ notice: event.reason, steps: markTargetChanged(m.steps ?? [], event.detail) }))
               break
             }
+            // 차단이 아니라 훅이 결과를 숨긴 것이다. 처리 과정 줄은 tool_status로 이미 남았다.
+            if (event.code === 'RESULT_HIDDEN') {
+              updateMessage(id, () => ({ notice: event.reason }))
+              break
+            }
             // 막힌 뒤에도 Agent가 다른 작업을 이어 갈 수 있어서 상태는 바꾸지 않는다.
             updateMessage(id, (m) => ({
               rejectionReason: event.reason,

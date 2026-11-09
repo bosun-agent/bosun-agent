@@ -10,7 +10,7 @@
     "dev": "vite",
     "dev:http": "vite --mode http",
     "server": "node --env-file=server/dev/dev.env --watch server/main.ts",
-    "start": "node --env-file=server/real.env server/main.ts",
+    "start": "vite build --mode http --logLevel warn && node --env-file=server/start.env --env-file=server/real.env server/main.ts",
     "agent": "node --env-file=server/real.env server/runAgent.ts",
     "server:fake": "node --env-file=server/dev/dev.env server/dev/fakeUpstream.ts",
     "server:smoke": "node --env-file=server/dev/dev.env server/dev/smoke.ts",

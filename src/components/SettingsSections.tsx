@@ -570,10 +570,9 @@ const KIND_LABEL: Record<string, string> = { container: '컨테이너', image: '
 // 넣었더니 모델이 생성 설정을 비우거나 잘못 감싸서 보내며 수십 번 헤맸다(2026-10-28 리허설).
 const RESTORE_KEYS: Record<string, string[]> = {
   container: ['이미지', '포트', '마운트', '재시작 정책', '네트워크'],
-  network: ['드라이버', '서브넷'],
 }
 // Docker 기본값이라 적지 않아도 같은 값
-const RESTORE_DEFAULTS: Record<string, string> = { '재시작 정책': 'no', 네트워크: 'bridge', 드라이버: 'bridge' }
+const RESTORE_DEFAULTS: Record<string, string> = { '재시작 정책': 'no', 네트워크: 'bridge' }
 
 // 백업한 설정으로 다시 만들어 달라는 요청 문장. 보내지는 않고 입력창에 채운다. 실행은 평소처럼 승인을 받는다.
 function restorePrompt(r: BackupRecord): string {
@@ -582,7 +581,8 @@ function restorePrompt(r: BackupRecord): string {
   const lines = (RESTORE_KEYS[r.kind] ?? [])
     .filter((k) => r.summary[k] && r.summary[k] !== RESTORE_DEFAULTS[k])
     .map((k) => `- ${k}: ${r.summary[k]}`)
-  return [`지운 ${kind} ${r.summary.이름 ?? r.target}를 다시 만들어줘.`, ...lines].join('\n')
+  // 컨테이너를 직접 만드는 요청은 막혀 있어서 스택으로 만들어 달라고 쓴다.
+  return [`지운 ${kind} ${r.summary.이름 ?? r.target}를 같은 설정의 스택으로 다시 만들어줘.`, ...lines].join('\n')
 }
 
 // 백업은 승인 전에 만들어져서 거부한 삭제도 남는다. 같은 대화의 승인 카드와 짝지은 결과를 보여준다(server/backups.ts).
@@ -629,7 +629,8 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
                 ))}
               </dl>
               {/* 지우지 않았거나 아직 결정 전이면 다시 만들 대상이 없다. */}
-              {onDraft && r.outcome !== 'kept' && r.outcome !== 'pending' && (
+              {/* 네트워크 만들기는 정책으로 막혀 있다. 예전 백업 기록에만 남아 있다. */}
+              {onDraft && r.kind !== 'network' && r.outcome !== 'kept' && r.outcome !== 'pending' && (
                 <>
                   <button
                     type="button"
@@ -640,7 +641,7 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
                   </button>
                   {r.kind === 'container' && (
                     <p className="mt-1 text-[11px] text-neutral-500">
-                      이미지·포트 같은 기본 설정만 넣어요. 환경변수 값과 명령은 넣지 않으니, 필요하면 보내기 전에 직접 적어주세요.
+                      이미지·포트 같은 기본 설정만 넣어서 스택으로 다시 만들어요. 비밀번호·토큰은 정책상 설정에 적을 수 없어요.
                     </p>
                   )}
                 </>

@@ -121,6 +121,31 @@ const alwaysLeak = new Set<string>()
 
 const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
   {
+    // 비밀값 가리기 훅이 실패하면 결과가 안내 문구로 바뀐다.
+    match: /숨김 결과/,
+    run: async (r) => {
+      await r.tool('docker_proxy', { environment_id: 1, method: 'GET', path: '/containers/web/json' }, {
+        output: '[비밀값을 가리는 중 오류가 나서 이 도구 결과를 숨겼습니다. 다시 조회하고, 계속되면 관리자에게 알리세요]',
+      })
+      await r.say('결과를 볼 수 없었어요.')
+    },
+  },
+  {
+    match: /자원 스택/,
+    run: async (r) => {
+      const res = await r.tool(
+        'StackCreateDockerStandaloneString',
+        {
+          endpointId: 1,
+          Name: 'limits',
+          StackFileContent: ['services:', '  web:', '    image: nginx:alpine', '    restart: unless-stopped', '    mem_limit: 512m', '    cpus: 1.0', '  cache:', '    image: redis:7', '    deploy:', '    # 자원', '      resources:', '        limits:', '          memory: 1g'].join('\n'),
+        },
+        { ask: true, output: '{"Id":9}' },
+      )
+      await r.say(res.isError ? '만들지 않았어요.' : '만들었어요.')
+    },
+  },
+  {
     // 훅의 거부 안내 형식(deny_guide.py)
     match: /안내 형식/,
     run: async (r) => {

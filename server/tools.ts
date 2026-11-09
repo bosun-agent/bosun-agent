@@ -580,6 +580,15 @@ function hideEnv(env: unknown): unknown {
   return env
 }
 
+// 서비스의 자원 상한. mem_limit·cpus와 deploy.resources.limits 두 곳에 적을 수 있다.
+function serviceLimits(svc: Record<string, unknown>): string | undefined {
+  const limits = objectArg(objectArg(objectArg(svc.deploy).resources).limits)
+  const memory = svc.mem_limit ?? limits.memory
+  const cpus = svc.cpus ?? limits.cpus
+  const parts = [memory !== undefined ? `메모리 ${String(memory)}` : '', cpus !== undefined ? `CPU ${String(cpus)}` : ''].filter(Boolean)
+  return parts.length ? parts.join(' · ') : undefined
+}
+
 function cut(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text
 }
@@ -618,9 +627,15 @@ function composeDetails(content: string): ComposeDetails {
   const shared: string[] = []
   const commands: string[] = []
   const env: string[] = []
+  const limits: string[] = []
+  const restarts: string[] = []
 
   for (const name of names) {
     const svc = objectArg(services[name])
+    const limit = serviceLimits(svc)
+    if (limit) limits.push(`${limit} (${name})`)
+    const restart = str(svc.restart)
+    if (restart) restarts.push(`${restart} (${name})`)
     images.push(`${name} (${str(svc.image) ?? (svc.build ? '직접 빌드' : '이미지 없음')})`)
     for (const p of Array.isArray(svc.ports) ? svc.ports : []) {
       if (typeof p === 'string' || typeof p === 'number') {
@@ -651,6 +666,8 @@ function composeDetails(content: string): ComposeDetails {
   params.서비스 = images.join(', ')
   if (ports.length) params.포트 = ports.join(', ')
   if (mounts.length) params.마운트 = mounts.join(', ')
+  if (limits.length) params['자원 상한'] = limits.join(', ')
+  if (restarts.length) params['재시작 정책'] = restarts.join(', ')
   if (commands.length) {
     params.명령 = maskText(commands.join('\n'))
     reasons.push({

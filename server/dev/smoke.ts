@@ -745,6 +745,28 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   await post(`/api/sessions/${b}/approvals/${approvalOf(rb.events)!.approvalId}`, { decision: 'deny' })
 }
 
+// ---- 훅이 숨긴 결과, 스택 카드의 자원·재시작 ----
+{
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '숨김 결과 보여줘' })
+  const hidden = r.events.find((e) => e.type === 'rejected')
+  check('훅이 결과를 숨기면 차단이 아니라 RESULT_HIDDEN 안내', hidden?.type === 'rejected' && hidden.code === 'RESULT_HIDDEN' && last(r.events) === 'done', r.events)
+  const status = r.events.find((e) => e.type === 'tool_status' && e.status === 'failed')
+  check('처리 과정에 결과를 숨겼다고 남는다', status?.type === 'tool_status' && status.summary.includes('숨김'), status)
+  const restored = (await fetch(`${BASE}/api/sessions/${s}/messages`).then((res) => res.json())) as { messages: { cards?: { kind: string; code?: string }[] }[] }
+  check('숨김 안내는 복원에도 남는다', restored.messages.flatMap((m) => m.cards ?? []).some((c) => c.kind === 'rejected' && c.code === 'RESULT_HIDDEN'))
+
+  const s2 = await newSession()
+  const stack = await post(`/api/sessions/${s2}/messages`, { text: '자원 스택 만들어줘' })
+  const params = approvalOf(stack.events)?.action.params as Record<string, string> | undefined
+  check(
+    '스택 카드에 자원 상한과 재시작 정책',
+    params?.['자원 상한'] === '메모리 512m · CPU 1 (web), 메모리 1g (cache)' && params['재시작 정책'] === 'unless-stopped (web)',
+    params,
+  )
+  await post(`/api/sessions/${s2}/approvals/${approvalOf(stack.events)!.approvalId}`, { decision: 'deny' })
+}
+
 // ---- 훅 거부 안내, 스택 파일 카드 ----
 {
   const s = await newSession()

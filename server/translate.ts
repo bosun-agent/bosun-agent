@@ -47,6 +47,10 @@ export function policyDeniedDetail(response: string): string | undefined {
   return masked.length > DETAIL_MAX ? `${masked.slice(0, DETAIL_MAX - 1)}…` : masked
 }
 
+// 비밀값 가리기 훅이 실패하면 도구 결과 전체를 안내 문구로 바꾼다(Agent 담당 tool_response_transform_secret_mask.py의 HIDDEN).
+const RESULT_HIDDEN_PREFIX = '[비밀값을 가리는 중 오류가 나서'
+const RESULT_HIDDEN_REASON = '비밀값을 가리는 중 오류가 나서 이 조회 결과는 보여주지 않았어요. 다시 시도해 보고, 계속되면 관리자에게 알려주세요.'
+
 const HOOK_BLOCKED_REASON = '보안 규칙에 걸려 요청을 처리하지 않았어요.'
 const POLICY_DENIED_REASON = '보안 정책에 따라 이 작업은 실행하지 않았어요.'
 
@@ -184,6 +188,14 @@ export class Translator {
           // 막힌 호출은 실행되지 않아 tool_call이 없다. 처리 과정에는 "정책에 따라 차단됨" 한 줄만 남기도록 tool_status는 보내지 않는다.
           const detail = policyDeniedDetail(res.response)
           return { events: [{ type: 'rejected', code: 'POLICY_DENIED', reason: POLICY_DENIED_REASON, ...(detail ? { detail } : {}) }] }
+        }
+        if (res.response.trimStart().startsWith(RESULT_HIDDEN_PREFIX)) {
+          return {
+            events: [
+              { type: 'tool_status', tool: name, status: 'failed', summary: '비밀값 보호로 결과를 숨김', callId: res.tool_call_id },
+              { type: 'rejected', code: 'RESULT_HIDDEN', reason: RESULT_HIDDEN_REASON },
+            ],
+          }
         }
         const status = isError ? 'failed' : 'succeeded'
         return {

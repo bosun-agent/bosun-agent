@@ -29,6 +29,7 @@ dist-ssr
 !.env.http
 !.env.demo
 server/*.env
+!server/start.env
 
 # WEB 백엔드 SQLite(승인·차단 카드, 승인 감사 기록)
 server/data/

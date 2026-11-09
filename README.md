@@ -61,17 +61,16 @@ cp server/real.env.example server/real.env
 
 ### 띄우기
 
-Docker Desktop과 `bosun-portainer`를 켠 뒤 터미널 2개를 띄운다. PowerShell이든 Git Bash든 같다.
+Docker Desktop과 `bosun-portainer`를 켠 뒤 터미널에서 실행한다. PowerShell이든 Git Bash든 같다.
 
 ```bash
-npm start          # 터미널 1: WEB 백엔드(3001) + Docker Agent(17080)
-npm run dev:http   # 터미널 2: 화면
+npm start          # 화면 빌드 + WEB 백엔드(3001) + Docker Agent(17080)
 ```
 
-브라우저에서 **http://localhost:5173** 을 연다. 처음 메시지는 Agent가 `mcp-portainer`를 받느라 조금 걸릴 수 있다.
+브라우저에서 **http://localhost:3001** 을 연다. 처음 메시지는 Agent가 `mcp-portainer`를 받느라 조금 걸릴 수 있다.
 
-- 끌 때: 두 터미널에서 Ctrl+C. Agent도 같이 꺼진다.
-- 코드를 받아 왔으면(`git pull`): `npm install` 후 두 터미널을 다시 띄운다.
+- 끌 때: 터미널에서 Ctrl+C. Agent도 같이 꺼진다.
+- 코드를 받아 왔으면(`git pull`): `npm install` 후 `npm start`를 다시 실행한다.
 - `bosun-portainer`는 끄지 않는다(Agent가 Portainer에 붙지 못한다).
 
 ### 잘 안 될 때
@@ -90,7 +89,7 @@ Agent 상태는 화면 위쪽 안내와 **설정 > 정보**에 나온다. 무엇
 
 ### 더 알아둘 것
 
-`npm start`는 `server/real.env`를 읽고, `npm run dev:http`는 화면의 `/api`를 백엔드(3001)로 넘기기만 한다. `AGENT_BIN`이 있으면 `npm start`가 Docker Agent를 같이 띄우고 관리한다(`server/agentProcess.ts`). Agent가 죽으면 다시 띄우고, 설정 화면에서 API 키를 바꾸면 다시 시작한다(처리 중인 대화가 있으면 끝난 뒤). 백엔드가 강제로 꺼져 Agent가 남았으면 다음 `npm start`가 그 Agent를 끝내고 새로 띄운다. `npm run agent`는 Agent 로그만 따로 보고 싶을 때 쓴다. 그렇게 띄운 Agent가 먼저 떠 있으면 `npm start`는 그것을 쓰고, API 키를 바꿔도 다시 시작하지 못한다.
+`npm start`는 화면을 빌드하고 `server/real.env`를 읽어 백엔드가 화면까지 내보낸다. 화면을 고치면서 볼 때만 터미널을 하나 더 열어 `npm run dev:http`(5173, `/api`는 백엔드 3001로 넘긴다)를 쓴다. `AGENT_BIN`이 있으면 `npm start`가 Docker Agent를 같이 띄우고 관리한다(`server/agentProcess.ts`). Agent가 죽으면 다시 띄우고, 설정 화면에서 API 키를 바꾸면 다시 시작한다(처리 중인 대화가 있으면 끝난 뒤). 백엔드가 강제로 꺼져 Agent가 남았으면 다음 `npm start`가 그 Agent를 끝내고 새로 띄운다. `npm run agent`는 Agent 로그만 따로 보고 싶을 때 쓴다. 그렇게 띄운 Agent가 먼저 떠 있으면 `npm start`는 그것을 쓰고, API 키를 바꿔도 다시 시작하지 못한다.
 
 (선택) `real.env`에 더 넣을 수 있는 값: `MAX_TURNS`(동시에 처리할 대화 수, 기본 3), `BACKUP_DB`(백업 훅 DB가 다른 곳에 있을 때), `AGENT_SESSION_DB`(session.db를 다른 폴더에 둘 때), `AGENT_KEY_NAME`(OpenRouter가 아닌 모델을 쓸 때 API 키 이름).
 
