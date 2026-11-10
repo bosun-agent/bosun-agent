@@ -1,4 +1,33 @@
-# Logs
+# 비밀값·기록 — 절대 올리지 않는다
+agent.env
+real.env
+*.env
+!*.env.example
+!server/dev/dev.env
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+*.bak
+*.bak-*
+*.fix-*
+
+# 웹: 실제 연동용 비밀값(server/dev/dev.env는 개발용 가짜 값이라 커밋한다)
+.env
+.env.*
+!.env.http
+!.env.demo
+!.env.example
+server/*.env
+
+# 웹 백엔드 SQLite(승인·차단 카드, 승인 감사 기록)
+server/data/
+
+# 실제 실행 설정(경로가 PC마다 다름) — 예시(.example)만 올린다
+/agent.yaml
+/agents/*.yaml
+
+# 로그·빌드 산출물
 logs
 *.log
 npm-debug.log*
@@ -6,13 +35,12 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
 node_modules
 dist
 dist-ssr
 *.local
 
-# Editor directories and files
+# 편집기·OS·캐시
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -22,16 +50,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.fuse_hidden*
+__pycache__/
 
-# 실제 연동용 비밀값(server/dev/dev.env는 개발용이라 커밋한다)
-.env
-.env.*
-!.env.http
-!.env.demo
-server/*.env
-
-# WEB 백엔드 SQLite(승인·차단 카드, 승인 감사 기록)
-server/data/
-
-# 로컬 문서
-docs/
+# 로컬 문서(팀 문서 docs/는 커밋한다)
+docs/*.local.md
+docs/tmp/

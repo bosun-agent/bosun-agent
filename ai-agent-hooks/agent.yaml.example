@@ -1,0 +1,344 @@
+# ============================================================
+# Airlock 없이 Docker Agent가 mcp-portainer에 직접 연결 (docker-agent v1.145.0 / v1.148.0에서 확인)
+# Airlock 경유 버전은 agent.airlock.yaml.example 이다. 두 파일을 섞어 쓰지 않는다.
+#
+# 정책 (10/31 팀 보안 정책표 반영)
+#   - safety: strict — allow에 없는 호출은 모두 사용자 승인(WEB 승인 카드)을 거친다.
+#   - allow: 민감하지 않은 조회(GET)와 EndpointList·StackList만. deny: 승인으로도 실행하지 않는 호출.
+#     상세(inspect)·로그·top·이미지 상세·이력·볼륨 상세는 allow에서 빠져 승인(ask)을 거친다.
+#   - 새 컨테이너는 스택(Compose)으로 만든다. /containers/create 직접 생성, 이미지·네트워크 삭제는 deny.
+#   - 스택 검사 훅(tool_input_transform_stack_guard.py)이 Compose의 위험 설정을 거부한다.
+#   - 이미지는 Docker Hub 공식 이미지만 허용한다(11/1, image_source.py). 스택 생성과 이미지 받기 모두.
+#   - 비밀값 가리기 훅(tool_response_transform_secret_mask.py)이 docker_proxy 결과의 비밀번호·토큰을 가린다.
+#   - 규칙 적용 순서는 deny → allow → ask. ask로는 allow를 뒤집을 수 없으므로, GET 중 위험한 것은 deny에 둔다.
+#   - 정책 훅(tool_input_transform_direct_policy_guard.py)이 docker_proxy의 허용 범위를 정하고(허용 목록, 나머지 거부),
+#     컨테이너 생성 설정도 허용 항목만 통과시킨다(privileged·호스트 폴더·호스트 네트워크 등 거부, 승인 필요),
+#     삭제 전 백업 훅(tool_input_transform_direct_backup_guard.py)이 컨테이너 DELETE 전에 inspect를 저장한다
+#     (10/31부터 이미지·네트워크 DELETE는 정책 훅과 deny가 막으므로 백업하지 않는다).
+#     볼륨 데이터는 백업할 수 없으므로 볼륨 삭제와 prune은 deny에 둔다.
+#
+# 비밀값: 이 파일에 직접 적지 않는다. env 파일(권한 600)에 두고 --env-from-file로 읽는다.
+#   /절대경로/agent.env 예:
+#     OPENROUTER_API_KEY=...
+#     PORTAINER_URL=https://portainer.example:9443
+#     PORTAINER_API_KEY=...
+#   주의: --env-from-file 값은 mcp-portainer에 자동으로 전달되지 않는다. 아래 toolsets.env의 ${env.…} 참조가 있어야 전달된다(공식 문서 표기).
+#
+# 실행(WEB 연동):
+#   docker-agent serve api /실행폴더/agent.yaml \
+#     --env-from-file /절대경로/agent.env \
+#     --session-db /절대경로/session.db \
+#     --auth-token <WEB과 공유하는 토큰> \
+#     -l 127.0.0.1:8080
+#   API 주소의 agent 이름은 파일 이름이다(agent.yaml → agent).
+#   승인 응답은 approve / reject만 쓴다. approve-tool은 이후 같은 도구(docker_proxy 전체)를 자동 승인한다.
+#
+# 버전: Portainer 2.45.1 / mcp-portainer 2.45.1로 팀 고정(마이너가 같아야 함, 지원 2.41~2.45).
+# 자리표시자: /절대경로/(훅 폴더), /실행폴더/(agent.env가 있는 폴더)
+
+permissions:
+  allow:
+    # 민감하지 않은 조회만 승인 없이 실행(10/31). 여기 없는 GET은 strict라서 승인을 묻는다.
+    # 정책 훅이 /v1.43 같은 버전 접두어를 떼어 보내므로 경로는 접두어 없이 적는다.
+    - "docker_proxy:method=GET:path=/_ping"
+    - "docker_proxy:method=GET:path=/version"
+    - "docker_proxy:method=GET:path=/info"
+    - "docker_proxy:method=GET:path=/system/df"
+    - "docker_proxy:method=GET:path=/containers/json" # 컨테이너 목록
+    - "docker_proxy:method=GET:path=/containers/*/stats" # 사용량
+    - "docker_proxy:method=GET:path=/images/json" # 이미지 목록
+    - "docker_proxy:method=GET:path=/volumes" # 볼륨 목록
+    - "docker_proxy:method=GET:path=/networks" # 네트워크 목록
+    - "docker_proxy:method=GET:path=/networks/*" # 네트워크 상세
+    - "EndpointList" # 환경 목록 조회
+    - "StackList" # 스택 목록 조회
+    - "docker_proxy:method=POST:path=/exec/*/start" # 11/2: 백업 실행 2단계. 정책 훅이 Portainer에 물어 백업 명령일 때만 통과(승인은 1단계에서 한 번)
+  deny:
+    - "docker_proxy:method=POST:path=*/containers/create*" # 직접 생성 금지 — 스택으로 만든다(10/31)
+    - "docker_proxy:method=DELETE:path=*/images/*" # 이미지 삭제 금지(10/31)
+    - "docker_proxy:method=DELETE:path=*/networks/*" # 네트워크 삭제 금지(10/31)
+    # 11/6 보안 정책표 3절 DENY: 일시정지·재개, 이미지 검색, 네트워크 생성·연결·해제(10/18에 열었던 것). 정책 훅도 막는다
+    - "docker_proxy:path=*/containers/*/pause*"
+    - "docker_proxy:path=*/containers/*/unpause*"
+    - "docker_proxy:path=*/images/search*"
+    - "docker_proxy:path=*/networks/create*"
+    - "docker_proxy:path=*/networks/*/connect*"
+    - "docker_proxy:path=*/networks/*/disconnect*"
+    # 컨테이너 안 명령 실행(exec): bosun-backup(백업 컨테이너) 말고 모든 컨테이너를 막는다(11/2 백업 명령 예외).
+    #   패턴은 "이름이 bosun-backup과 한 글자라도 다르면 거부"를 글자 자리마다 적은 것. 정책 훅이 backup 명령만 통과시키고 경로를 이름으로 보낸다
+    - 'docker_proxy:path=*/containers/[^b]*/exec*'
+    - 'docker_proxy:path=*/containers/b[^o]*/exec*'
+    - 'docker_proxy:path=*/containers/bo[^s]*/exec*'
+    - 'docker_proxy:path=*/containers/bos[^u]*/exec*'
+    - 'docker_proxy:path=*/containers/bosu[^n]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun[^\-]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-[^b]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-b[^a]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-ba[^c]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-bac[^k]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-back[^u]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-backu[^p]*/exec*'
+    - 'docker_proxy:path=*/containers/bosun-backup[^/]*/exec*'
+    - 'docker_proxy:path=*/containers/b/exec*'
+    - 'docker_proxy:path=*/containers/bo/exec*'
+    - 'docker_proxy:path=*/containers/bos/exec*'
+    - 'docker_proxy:path=*/containers/bosu/exec*'
+    - 'docker_proxy:path=*/containers/bosun/exec*'
+    - 'docker_proxy:path=*/containers/bosun-/exec*'
+    - 'docker_proxy:path=*/containers/bosun-b/exec*'
+    - 'docker_proxy:path=*/containers/bosun-ba/exec*'
+    - 'docker_proxy:path=*/containers/bosun-bac/exec*'
+    - 'docker_proxy:path=*/containers/bosun-back/exec*'
+    - 'docker_proxy:path=*/containers/bosun-backu/exec*'
+    - "docker_proxy:path=*/archive*" # 컨테이너 안 파일 읽기/쓰기 — GET이라 deny가 아니면 승인 없이 실행됨
+    - "docker_proxy:path=*/export*" # 컨테이너 파일시스템 전체 내보내기(GET)
+    - "docker_proxy:path=*/prune*" # 컨테이너·이미지·볼륨·네트워크 일괄 삭제
+    - "docker_proxy:method=DELETE:path=*/volumes/*" # 볼륨 삭제 — 데이터 복구 수단이 없음
+    - "docker_proxy:path=*%*" # 인코딩된 경로(예: arch%69ve)로 deny를 피하는 것 방지
+    - "docker_proxy:path=*/images/get*" # 이미지 여러 개 내보내기(GET, tar)
+    - "docker_proxy:path=*/images/*/get" # 이미지 내보내기(GET, tar)
+  # deny는 글자 그대로 비교하는 보조 장치다. 실제 범위는 정책 훅(허용 목록)이 정한다.
+
+models:
+  flash:
+    provider: openrouter # OPENROUTER_API_KEY 필요(env 파일)
+    model: deepseek/deepseek-v4.1-flash
+    max_tokens: 4096 # 응답 최대 길이. OpenRouter는 요청 전에 이만큼의 비용을 미리 잡아 두므로, 크면 잔액이 적을 때 402로 거부된다(11/4 8192→4096)
+
+agents:
+  root:
+    model: flash
+    description: Docker/Portainer 운영 보조 AI Agent
+    safety: strict # restricted로 바꾸지 않는다(restricted는 승인을 묻지 않는다).
+    instruction: |
+      너는 Portainer를 통해 Docker 환경을 조회하고 관리하는 운영 보조 에이전트다.
+
+      [할 수 있는 일]
+      - 목록 조회(환경, 컨테이너, 이미지, 볼륨, 네트워크, 스택), 사용량, 네트워크 상세는 바로 실행된다.
+      - 컨테이너 상세(inspect), 로그, 프로세스 목록(top), 이미지 상세·이력, 볼륨 상세는 비밀값이 섞일 수 있어 사용자 승인을 받아 실행된다.
+      - 시작·정지·재시작, 정지된 컨테이너 삭제는 사용자 승인을 받아 실행된다. 삭제 전에는 백업 훅이 대상 설정을 저장한다.
+      - 실행 중인 컨테이너는 강제 삭제(force)할 수 없다. 먼저 정지하고 정지를 확인한 뒤 삭제한다(각각 승인).
+      - 새 컨테이너나 앱은 스택(Compose)으로 만든다. 스택 생성·시작·정지는 사용자 승인을 받아 실행된다. 이미지 받기(pull)도 승인 후 실행된다.
+      - 이미 있는 스택의 설정(포트, 이미지 버전, 환경변수, 서비스 추가 등)은 스택 수정으로 바꾼다. 스택 파일 보기와 수정은 각각 사용자 승인을 받아 실행된다(11/6).
+        같은 이름의 스택은 새로 만들 수 없다. 이름이 겹치면 기존 스택을 수정할지, 다른 이름으로 새로 만들지 사용자에게 묻는다.
+        Compose에서 쓸 수 있는 설정: image, command(허용 목록만), environment, ports, expose, 이름 있는 volumes, restart, depends_on, networks(bridge), labels, working_dir, user, hostname, container_name, healthcheck(허용 목록만), mem_limit, mem_reservation, cpus, deploy.resources, stop_signal, stop_grace_period, tty, stdin_open, read_only, init.
+        시작 명령(11/9, 정책표 5.7): entrypoint는 쓰지 않는다. command는 꼭 필요할 때만, 아래 허용 옵션만 쓴다. 그 밖에는 이미지 기본 설정으로 만든다.
+          redis: redis-server --appendonly yes|no, --save <초> <횟수>, --maxmemory <크기>, --maxmemory-policy <정책>
+          mysql·mariadb: --character-set-server=utf8mb4, --collation-server=utf8mb4_..., --max-connections=<수>
+          healthcheck test: redis ["CMD","redis-cli","ping"], mysql ["CMD","mysqladmin","ping","-h","localhost"], mariadb ["CMD","healthcheck.sh","--connect","--innodb_initialized"]만. 셸(sh -c, CMD-SHELL)은 쓰지 않는다.
+          사용자가 다른 옵션을 원하면 허용되지 않는다고 알리고 관리자에게 요청하라고 안내한다.
+        이미지는 Docker Hub 공식 이미지(nginx, mysql, redis처럼 슬래시가 없는 이름)만 쓸 수 있다. 스택 생성과 이미지 받기 모두 같다.
+      - 볼륨 백업: 백업 컨테이너(bosun-backup)가 매일 낮 12시·저녁 6시·밤 11시(한국 시간)에 자동으로 백업한다(11/8 변경. 그 시간에 서버가 꺼져 있으면 그 회차는 건너뛴다). 사용자가 지금 백업을 원하면 승인을 받아 한 번 실행한다(11/2).
+        방법: docker_proxy POST /containers/bosun-backup/exec, body {"Cmd": ["backup"], "AttachStdout": true, "AttachStderr": true}를 한 번만 보낸다.
+        승인되면 훅이 백업을 바로 실행하고 결과(백업 로그)를 돌려준다. /exec/…/start는 보내지 않는다. 결과를 쉬운 말로 요약한다. 그 밖의 exec는 하지 않는다.
+        데이터베이스처럼 쓰는 중인 앱은 사용자에게 먼저 정지할지 묻고, 정지 → 백업 → 시작 순서로 진행한다(각각 승인). 복원은 관리자에게 요청하라고 안내한다.
+      - 여러 서비스가 이름으로 서로 통신해야 하면 한 스택에 함께 넣는다(새로 만들거나 스택 수정으로 서비스 추가). 같은 스택 안의 서비스는 이름으로 바로 통신한다(11/6).
+      - 쓸 이미지를 고를 때는 용도에 맞는 Docker Hub 공식 이미지(nginx, mysql, postgres, redis, mariadb, mongo, httpd, node, python 등)를 제안하고, 사용자가 정하게 한다.
+      - 비밀번호·토큰(11/9, 정책표 5.7): 이름에 PASSWORD·SECRET·TOKEN·API_KEY 등이 들어간 환경변수에 값을 적지 않는다. Compose environment와 Env 인자 모두 같다.
+        주소 안에 user:비밀번호@도 넣지 않는다. 사용자가 비밀번호를 알려 줘도 Compose·Env에 적지 않고, 정책상 넣을 수 없다고 설명한다.
+        mysql·mariadb는 비밀번호 대신 MYSQL_RANDOM_ROOT_PASSWORD: "yes"(mariadb는 MARIADB_RANDOM_ROOT_PASSWORD: "yes")로 만든다. 앱이 스스로 강한 비밀번호를 만들고, 그 값은 처음 시작할 때 컨테이너 로그에 한 번 나온다.
+        이 값은 결과 가리기 훅이 가려서 Agent도 볼 수 없다. 로그 조회로 보여 주겠다고 제안하지 않는다. 관리자가 터미널에서 확인한다고 안내한다.
+        계획·설명에는 값 "yes"를 그대로 적는다(비밀번호가 아니라 켜기 설정이다).
+        postgres처럼 비밀번호가 꼭 필요한 이미지는 이 Agent로 만들 수 없으니 관리자에게 요청하라고 안내한다(POSTGRES_HOST_AUTH_METHOD: trust 같은 비밀번호 끄기도 쓰지 않는다).
+      - 컨테이너 안 명령 실행(위의 백업 명령 하나만 예외), 컨테이너 안 파일 읽기·내보내기, 이미지 내보내기, 일괄 정리(prune), 강제 종료(kill), 일시정지·재개, 이미지 검색, 네트워크 생성·연결·해제, 볼륨 생성·삭제, 이미지·네트워크 삭제, 컨테이너 직접 생성(/containers/create), 스택 삭제, 관리용 스택(bosun-backup) 수정·정지, 볼륨을 함께 지우는 컨테이너 삭제(v=true), 위 목록에 없는 Compose 설정(build, privileged, 호스트 폴더 연결, host 네트워크, env_file, 변수 치환 ${...} 등), 이미 있는 컨테이너의 설정 변경 등 위에 없는 변경은 이 Agent에서 할 수 없다. 요청받아도 시도하지 않는다.
+
+      [도구 사용]
+      - docker_proxy를 호출할 때는 method를 항상 명시한다(GET/POST/DELETE 등).
+      - environment_id를 모르면 EndpointList로 먼저 조회한다. 추측해서 넣지 않는다.
+      - 응답이 크므로 select(JMESPath)로 필요한 필드만 받는다. 예: /containers/json → [].{id:Id,name:Names[0],state:State,image:Image}
+      - 로그는 query_params에 tail(1~200, 보통 100)을 지정하고 follow는 쓰지 않는다. stats는 stream=false로 조회한다.
+      - EndpointList는 인자 없이 호출한다(필요하면 select만 쓴다). 선택 인자를 빈 값이나 []로 채우지 않는다.
+      - 새로 만들 때는 StackCreateDockerStandaloneString을 쓴다. endpointId(환경 ID), Name(소문자·숫자·-·_), StackFileContent(Compose YAML 문자열)를 넣는다.
+        예: Name "myweb", StackFileContent "services:\n  web:\n    image: nginx:alpine\n    ports: [\"8080:80\"]\n"
+        만들기 전에 StackList로 같은 이름의 스택이 있는지 확인한다. 생성하면 바로 실행된다. 켜고 끌 때는 StackStart·StackStop(id, endpointId)을 쓴다.
+      - 스택 수정 순서(11/6): StackList로 id·endpointId 확인 → StackFileInspect(id)로 지금 Compose 읽기 → 필요한 곳만 바꾼 Compose 전체를
+        StackUpdate(id, endpointId, StackFileContent)로 보낸다. Prune·PullImage·RepullImageAndRedeploy·RollbackTo·Webhook·Registries는 보내지 않는다.
+        읽은 Compose의 [REDACTED]는 가려진 값이다. 그 값을 추측해서 적지 않는다. 비밀번호가 적힌 옛 스택은 수정이 거부되니(11/9), 그때는 관리자에게 요청하라고 안내한다.
+        데이터를 남겨야 하는 서비스(DB 등)는 이름 있는 볼륨을 최상위 volumes에 선언하고 연결한다. 값은 ${...} 없이 직접 적는다.
+        (11/9) redis는 /data, mysql·mariadb는 /var/lib/mysql, postgres는 /var/lib/postgresql/data, mongo는 /data/db에 이름 있는 볼륨이 꼭 있어야 만들 수 있다(예: volumes: ["data:/data"] + 최상위 volumes: {data: {}}).
+        이미 이름 없는 볼륨을 쓰는 앱은 수정이 거부된다(수정하면 새 빈 볼륨으로 바뀌어 데이터가 사라진 것처럼 됨). 그때는 관리자에게 요청하라고 안내한다.
+      - 사용자가 공식이 아닌 이미지를 원하면 쓸 수 없다고 알리고 같은 용도의 공식 이미지를 제안한다.
+      - select를 쓰지 않을 때는 select 인자를 넣지 않는다. 문자열 "null"을 넣으면 응답이 비어 버린다.
+      - get_guidance 도구는 이 환경에 없다. 찾거나 언급하지 않는다.
+
+      [변경 작업]
+      - 승인은 도구를 호출하면 시스템이 사용자에게 직접 묻는다. 사용자가 요청한 변경은 대화로 먼저 허락을 구하지 말고 바로 호출한다. 여러 단계가 필요하면 단계마다 호출하면 각각 승인 질문이 나간다.
+      - 변경 전에 대상을 조회로 확인하고, 변경 후에도 조회로 결과를 확인해 알린다.
+      - 시간 초과 오류를 받으면 같은 변경을 다시 보내지 않는다. 다시 해도 안전해 보이는 작업(예: 이미지 받기)도 마찬가지다.
+        먼저 조회로 현재 상태를 확인하고, 확인한 상태를 사용자에게 알린 뒤 다시 시도할지 사용자에게 묻고 그 턴을 끝낸다(11/2).
+
+      [거부되었거나 할 수 없는 작업의 안내]
+      - 무엇이 안 되는지만 사실대로 알린다. 사용자 거부, 정책 거부, 훅 거부를 구분해서 말한다.
+      - 다른 경로나 인자로 우회하지 않는다. 설정 변경, 권한 추가, 마스킹 해제를 제안하지 않는다.
+      - 요청이 거부되면 거부 이유의 ① 막힌 것 ② 이유 ③ 대신 할 수 있는 것을 쉬운 말로 그대로 전하고, ③의 대안을 권한다. Portainer 화면에서 직접 하라고 안내하지 않는다.
+      - 도구를 부르기 전에는 결과가 정해지지 않았다는 표현만 쓴다(예: "확인해 보겠습니다", "시도해 보겠습니다"). "만들겠습니다", "정지하겠습니다", "실행합니다"처럼
+        될 것처럼 말하지 않는다. 변경 요청은 정책 검사와 사용자 승인을 거치므로 거부될 수 있다. 결과는 도구 결과를 받은 뒤 사실대로 전한다(11/3).
+      - 대안은 위 [할 수 있는 일] 안에서만 제시한다. 이 Agent 밖에서 하는 방법(호스트 명령, Portainer 화면, 설정 파일 수정 등)도 안내하지 않는다.
+      - 결과의 [REDACTED]는 가려진 값이다. 실제 값처럼 말하거나 추측하지 않는다.
+
+    toolsets:
+      - type: mcp
+        command: uvx
+        args: ["--from", "mcp-portainer==2.45.1", "mcp-portainer"]
+        env:
+          PORTAINER_URL: "${env.PORTAINER_URL}"
+          PORTAINER_API_KEY: "${env.PORTAINER_API_KEY}"
+          PORTAINER_PROFILES: "DOCKER" # Docker 관련 도구만 등록
+          PORTAINER_MCP_DISABLE_GUIDANCE_GATE: "1" # 켜 두면 첫 호출이 "Output validation error"로 실패한다(안내문도 모델에 전달되지 않음)
+          PORTAINER_TIMEOUT: "120" # mcp-portainer → Portainer 호출 상한(초)
+          PORTAINER_TLS_VERIFY: "0" # Portainer가 자체 서명 인증서일 때만 주석 해제
+        lifecycle:
+          call_timeout: 150s # 120초보다 길게 둔다. mcp-portainer가 먼저 끊어야 모델이 "상태부터 확인하라"는 오류를 받는다.
+        tools: # 화이트리스트 — 셸 도구는 넣지 않는다
+          - docker_proxy
+          - EndpointList
+          - StackList # 10/31 추가 — 스택 목록(조회)
+          - StackCreateDockerStandaloneString # 10/31 추가 — Compose로 스택 생성(승인)
+          - StackStart # 10/31 추가 — 스택 시작(승인)
+          - StackStop # 10/31 추가 — 스택 정지(승인)
+          - StackFileInspect # 11/6 추가 — 스택 Compose 보기(승인, 정책표 6절 ASK). 수정 전에 지금 내용을 읽는다
+          - StackUpdate # 11/6 추가 — 스택 수정(승인, 정책표 2절·5.7 ASK). StackDelete는 정책표 DENY라 넣지 않는다
+
+    hooks:
+      # 실행 줄의 -X utf8: Windows에서 한글이 CP949로 처리되는 문제 방지(Mac·Linux에도 무해). Windows는 python3 대신 python일 수 있다.
+
+      # 1) 정책(허용 목록) → 2) 삭제 전 백업 순서로 실행. 둘 다 on_error: block 필수
+      #    훅이 실패하면 docker_proxy 호출은 조회까지 모두 막힌다(안전 쪽). 훅 고장은 즉시 고친다.
+      # 승인 카드 설명(11/1) — 실행될 요청을 쉬운 말로 설명해 승인 카드에 붙인다(metadata.reason·blast_radius).
+      #    허용·거부 판정은 하지 않는다. tool_guard는 훅 오류면 호출을 거부하므로 훅 안에서 모든 오류를 잡는다
+      tool_guard:
+        - matcher: "*"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_guard_approval_explainer.py
+              timeout: 10
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env   # 11/1: Portainer 조회(컨테이너 ID 고정·이름 표시)
+                PORTAINER_TLS_VERIFY: "0"
+
+      tool_input_transform:
+        - matcher: "docker_proxy"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_input_transform_direct_policy_guard.py
+              timeout: 15
+              on_error: block
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env   # 11/1: Portainer 조회(컨테이너 ID 고정·이름 표시)
+                PORTAINER_TLS_VERIFY: "0"
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_input_transform_direct_backup_guard.py
+              timeout: 30
+              on_error: block
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env # 훅은 --env-from-file 값을 받지 못한다
+                PORTAINER_TLS_VERIFY: "0" # Portainer가 정식 인증서면 이 줄을 지운다
+
+        # 스택 도구 검사(10/31) — Compose 위험 설정 거부. PyYAML 필요, 없으면 생성이 모두 거부된다
+      #   11/6: 같은 이름 생성 거부, 스택 수정(StackUpdate)·파일 보기(StackFileInspect) 검사, 켜기·끄기 대상 확인
+        - matcher: "StackCreateDockerStandaloneString"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_input_transform_stack_guard.py
+              timeout: 15
+              on_error: block
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env # 11/6: 같은 이름·대상 스택을 Portainer에 물어 확인
+                PORTAINER_TLS_VERIFY: "0"
+        - matcher: "StackStart"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_input_transform_stack_guard.py
+              timeout: 15
+              on_error: block
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env # 11/6: 같은 이름·대상 스택을 Portainer에 물어 확인
+                PORTAINER_TLS_VERIFY: "0"
+        - matcher: "StackStop"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_input_transform_stack_guard.py
+              timeout: 15
+              on_error: block
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env # 11/6: 같은 이름·대상 스택을 Portainer에 물어 확인
+                PORTAINER_TLS_VERIFY: "0"
+        - matcher: "StackFileInspect" # 11/6
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_input_transform_stack_guard.py
+              timeout: 15
+              on_error: block
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env # 11/6: 같은 이름·대상 스택을 Portainer에 물어 확인
+                PORTAINER_TLS_VERIFY: "0"
+        - matcher: "StackUpdate" # 11/6 — 정책표 5.7 조건 검사
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_input_transform_stack_guard.py
+              timeout: 15
+              on_error: block
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env # 11/6: 같은 이름·대상 스택을 Portainer에 물어 확인
+                PORTAINER_TLS_VERIFY: "0"
+
+      # 이어서 하기(11/7) — 대화 시작 때 지금 있는 앱(스택·컨테이너·볼륨·백업 연결) 요약을 넣는다. 조회만 하고, 실패하면 아무것도 넣지 않는다
+      #   공식 문서: session_start의 additional_context는 그 대화가 끝날 때까지 유지된다. 비밀값 가리기·인젝션 검사를 거친다
+      session_start:
+        - type: command
+          command: python3 -X utf8 /절대경로/session_start_app_summary.py
+          timeout: 15
+          env:
+            AGENT_ENV_FILE: /실행폴더/agent.env
+            PORTAINER_TLS_VERIFY: "0"
+
+      # 사용자 입력 인젝션 방어 — 입력 경로 3가지 모두 등록(일반·steer·followup)
+      user_prompt_submit:
+        - type: command
+          command: python3 -X utf8 /절대경로/user_prompt_submit_injection_guard.py
+          timeout: 10
+      user_steering_messages_submit:
+        - type: command
+          command: python3 -X utf8 /절대경로/user_prompt_submit_injection_guard.py
+          timeout: 10
+      user_followup_submit:
+        - type: command
+          command: python3 -X utf8 /절대경로/user_prompt_submit_injection_guard.py
+          timeout: 10
+
+      # 차단된 입력은 세션에 남으므로, 모델 호출 직전에 대화에서 가린다(세션 기록은 그대로)
+      before_llm_call:
+        - type: command
+          command: python3 -X utf8 /절대경로/before_llm_call_injection_sanitizer.py
+          timeout: 10
+          on_error: block
+
+      # 도구 결과 인젝션 방어 — 의심 패턴이면 원문 뒤에 경고를 덧붙인다
+      tool_response_transform:
+        # 비밀값 가리기(10/31) — 인젝션 검사보다 먼저. 실패하면 원문이 그대로 간다(이 훅 종류는 차단 불가)
+        # 11/2: 그 앞에 "지금 백업" 실행 훅. 승인된 백업 준비(exec 만들기) 뒤에 같은 명령인지 확인하고 바로 실행해 백업 로그를 돌려준다
+        - matcher: "docker_proxy"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_response_transform_backup_runner.py
+              timeout: 300
+              on_error: warn
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env
+                PORTAINER_TLS_VERIFY: "0"
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_response_transform_secret_mask.py
+              timeout: 10
+              on_error: warn
+        - matcher: "StackFileInspect" # 11/6: 스택 Compose 안의 비밀번호 가리기
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_response_transform_secret_mask.py
+              timeout: 10
+              on_error: warn
+        - matcher: "*"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_response_transform_injection_guard.py
+              timeout: 10
+              on_error: warn
