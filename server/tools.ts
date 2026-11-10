@@ -218,6 +218,18 @@ function titled(resource: string, target: string | undefined, verb: string): str
   return target ? `${resource} ${target} ${verb}` : `${resource} ${verb}`
 }
 
+// 민감한 조회 경로(READ_PATHS와 같은 범위)의 대상과 동작. 이미지 이름에는 `/`가 들어간다.
+const CONTAINER_READS: Record<string, string> = { logs: '로그 조회', json: '상세 조회', top: '프로그램 목록 조회' }
+function readTitle(kind: string, rest: string[]): { target: string; verb: string } | undefined {
+  const last = rest.at(-1) ?? ''
+  if (kind === 'containers' && rest.length === 2 && CONTAINER_READS[last]) return { target: rest[0], verb: CONTAINER_READS[last] }
+  if (kind === 'images' && rest.length >= 2 && (last === 'json' || last === 'history')) {
+    return { target: rest.slice(0, -1).join('/'), verb: last === 'json' ? '상세 조회' : '이력 조회' }
+  }
+  if (kind === 'volumes' && rest.length === 1) return { target: rest[0], verb: '상세 조회' }
+  return undefined
+}
+
 function dockerRequest(
   method: string,
   path: string,
@@ -226,8 +238,13 @@ function dockerRequest(
 ): ToolAction {
   const [kind, ...rest] = pathParts(path)
   const resource = RESOURCES[kind]
-  // GET은 permissions.allow라 보통 묻지 않는다. method를 빼고 부르면 승인 카드가 뜬다.
-  if (method === 'GET' || method === 'HEAD') return { label: '조회', summary: resource ? `${resource} 조회` : '조회', risk: { level: 'low', label: '조회' } }
+  // 목록 조회는 permissions.allow라 묻지 않는다. 로그·상세처럼 민감한 조회는 승인 카드가 뜨고,
+  // 설정에서 바로 실행으로 고르면 처리 과정·승인 기록에 남는다. 무엇을 봤는지 알 수 있게 대상과 종류를 적는다.
+  if (method === 'GET' || method === 'HEAD') {
+    const read = readTitle(kind, rest)
+    if (resource && read) return { label: read.verb, summary: titled(resource, read.target, read.verb), target: read.target, risk: { level: 'low', label: '조회' } }
+    return { label: '조회', summary: resource ? `${resource} 조회` : '조회', risk: { level: 'low', label: '조회' } }
+  }
   if (!resource) return { label: '변경' }
 
   if (method === 'DELETE') {
@@ -441,6 +458,9 @@ export function targetKeys(
 ): string[] {
   if (tool.startsWith('Stack')) return stackKeys(tool, args, stacks)
   if (tool !== 'docker_proxy') return []
+  // 조회는 대상을 바꾸지 않는다. 카드 제목에 대상이 있어도 같은 대상 충돌(CONCURRENT·TARGET_CHANGED)에는 넣지 않는다.
+  const method = (str(args.method) ?? 'GET').toUpperCase()
+  if (method === 'GET' || method === 'HEAD') return []
   const kind = pathParts(str(args.path) ?? '')[0]
   const target = describeTool(tool, args)?.target
   if (!RESOURCES[kind] || !target) return []

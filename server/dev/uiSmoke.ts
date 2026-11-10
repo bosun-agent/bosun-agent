@@ -274,6 +274,11 @@ page.once('dialog', (d) => void d.accept())
 await page.getByRole('radio', { name: /묻지 않기/ }).check()
 await page.getByRole('radio', { name: /묻지 않기/ }).and(page.locator(':checked')).waitFor()
 await shot('12-approval-mode')
+check(
+  '묻지 않기면 바로 볼 조회 선택은 잠기고 정책 목록에도 알린다',
+  (await page.getByRole('checkbox', { name: '컨테이너 로그' }).isDisabled()) &&
+    (await page.getByText('모두 승인 없이 바로 실행돼요', { exact: false }).isVisible()),
+)
 await page.getByLabel('설정 닫기').click()
 check('묻지 않기면 입력창 위에 늘 보인다', await page.getByText('묻지 않기(YOLO) 켜짐', { exact: false }).isVisible())
 await newChat()
@@ -288,6 +293,12 @@ await page.getByLabel('설정', { exact: true }).click()
 await page.getByRole('button', { name: '정책' }).click()
 await page.getByRole('radio', { name: /매번 묻기/ }).check()
 await page.getByRole('radio', { name: /매번 묻기/ }).and(page.locator(':checked')).waitFor()
+// 바로 볼 조회를 고르면 아래 정책 목록의 자동 허용에도 WEB 설정으로 같이 보인다
+await page.getByRole('checkbox', { name: '컨테이너 로그' }).check()
+await page.getByText('WEB 설정', { exact: true }).waitFor()
+check('고른 조회가 자동 허용 목록에 WEB 설정으로 보인다', !(await page.getByRole('checkbox', { name: '컨테이너 로그' }).isDisabled()))
+await page.getByRole('checkbox', { name: '컨테이너 로그' }).uncheck()
+await page.getByText('WEB 설정', { exact: true }).waitFor({ state: 'detached' })
 await page.getByRole('button', { name: '승인 기록' }).click()
 await page.getByText('자동 승인', { exact: false }).first().waitFor()
 check('승인 기록에 자동 승인으로 남는다', true)

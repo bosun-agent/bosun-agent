@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { READ_CHOICES, type AgentConfigSummary, type AgentMode, type ApprovalMode, type AuditRecord, type BackupRecord, type ReadChoice, type SessionUsage, type Settings, type SystemInfo, type UsageTotals } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 import { agentStateText, restartAgent, useAgentStatus } from '../lib/agentStatus'
@@ -91,11 +91,21 @@ const HOOKS: Record<string, string> = {
   session_start: '대화를 시작할 때 지금 있는 앱 요약을 AI에게 알려 줘요.',
 }
 
-function RuleList({ title, tone, rules, empty }: { title: string; tone: string; rules: string[]; empty: string }) {
+// extra: Agent 설정이 아니라 WEB 설정(바로 볼 조회)으로 더해진 항목
+function RuleList({ title, tone, rules, empty, extra = [] }: { title: string; tone: string; rules: string[]; empty: string; extra?: string[] }) {
   return (
     <Box title={title}>
+      {extra.length > 0 && (
+        <ul className="mb-1 space-y-1 text-sm">
+          {extra.map((label) => (
+            <li key={label} className={tone}>
+              {label} <span className="ml-1 rounded-full bg-navy-50 px-1.5 py-0.5 text-[11px] text-navy-700">WEB 설정</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {rules.length === 0 ? (
-        <p className="text-xs text-neutral-500">{empty}</p>
+        extra.length === 0 && <p className="text-xs text-neutral-500">{empty}</p>
       ) : (
         <>
           {/* 같은 뜻의 규칙이 여러 줄이어도(exec 패턴 24줄 등) 사람이 읽는 항목은 한 번만 보여 준다. */}
@@ -124,17 +134,23 @@ function RuleList({ title, tone, rules, empty }: { title: string; tone: string; 
 
 export function PolicySection({ onApprovalModeChange }: { onApprovalModeChange?: (mode: ApprovalMode) => void }) {
   const { data, failed } = useLoad<SystemInfo>(agent.getSystem)
+  // 승인 방식·바로 볼 조회·아래 정책 목록이 같은 설정을 본다. 한쪽에서 바꾸면 다른 쪽 표시도 바로 바뀐다.
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [settingsFailed, setSettingsFailed] = useState(false)
+  useEffect(() => {
+    agent.getSettings?.().then(setSettings, () => setSettingsFailed(true))
+  }, [])
   return (
     <div className="space-y-2">
-      <ApprovalModeBox onChange={onApprovalModeChange} />
+      <ApprovalModeBox settings={settings} setSettings={setSettings} loadFailed={settingsFailed} onChange={onApprovalModeChange} />
       <AgentModeBox />
-      <AutoReadBox />
+      <AutoReadBox settings={settings} setSettings={setSettings} />
       {!data ? (
         <Unavailable failed={failed} />
       ) : !data.config ? (
         <p className="px-1 text-sm text-red-600">AI Agent 설정을 읽지 못했어요. Agent가 켜져 있는지 확인해주세요.</p>
       ) : (
-        <PolicyView cfg={data.config} approvalTimeoutSec={data.web.approvalTimeoutSec} />
+        <PolicyView cfg={data.config} approvalTimeoutSec={data.web.approvalTimeoutSec} settings={settings} />
       )}
     </div>
   )
@@ -149,13 +165,17 @@ const APPROVAL_MODE_TEXT: Record<ApprovalMode, { label: string; help: string }> 
   },
 }
 
-function ApprovalModeBox({ onChange }: { onChange?: (mode: ApprovalMode) => void }) {
-  const [settings, setSettings] = useState<Settings | null>(null)
-  const [failed, setFailed] = useState(false)
+type SettingsProps = { settings: Settings | null; setSettings: Dispatch<SetStateAction<Settings | null>> }
+
+function ApprovalModeBox({
+  settings,
+  setSettings,
+  loadFailed,
+  onChange,
+}: SettingsProps & { loadFailed: boolean; onChange?: (mode: ApprovalMode) => void }) {
+  const [saveFailed, setFailed] = useState(false)
   const [saving, setSaving] = useState(false)
-  useEffect(() => {
-    agent.getSettings?.().then(setSettings, () => setFailed(true))
-  }, [])
+  const failed = saveFailed || loadFailed
 
   async function choose(mode: ApprovalMode) {
     if (!agent.saveApprovalMode || saving || settings?.approvalMode === mode) return
@@ -272,31 +292,44 @@ const READ_TEXT: Record<ReadChoice, string> = {
 }
 
 // 비밀값이 섞일 수 있어 기본은 승인이다. 켜면 WEB이 대신 승인한다. 바꾸는 작업은 여기서 고를 수 없다.
-function AutoReadBox() {
-  const [settings, setSettings] = useState<Settings | null>(null)
+function AutoReadBox({ settings, setSettings }: SettingsProps) {
   const [failed, setFailed] = useState(false)
-  useEffect(() => {
-    agent.getSettings?.().then(setSettings, () => undefined)
-  }, [])
 
   async function toggle(choice: ReadChoice, on: boolean) {
     if (!settings || !agent.saveAutoReads) return
     const next = on ? [...settings.autoReads, choice] : settings.autoReads.filter((c) => c !== choice)
+    // 고른 것을 바로 보여주고, 저장하지 못하면 되돌린다.
+    const before = settings
+    setSettings({ ...settings, autoReads: next })
     setFailed(false)
     try {
       setSettings(await agent.saveAutoReads(next))
     } catch {
+      setSettings(before)
       setFailed(true)
     }
   }
 
   if (!settings || !agent.saveAutoReads) return null
+  // 묻지 않기에서는 어차피 전부 대신 승인한다. 고른 값은 남겨 두고, 매번 묻기로 돌아가면 다시 쓴다.
+  const never = settings.approvalMode === 'never'
   return (
     <Box title="승인 없이 바로 볼 조회">
+      {never && (
+        <p className="mb-1.5 text-xs text-red-700">지금은 "묻지 않기"라서 이 조회들도 모두 바로 실행돼요. 아래 선택은 "매번 묻기"로 돌아가면 다시 쓰여요.</p>
+      )}
       <div className="grid gap-x-3 gap-y-1 sm:grid-cols-2">
         {READ_CHOICES.map((choice) => (
-          <label key={choice} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-neutral-50">
-            <input type="checkbox" checked={settings.autoReads.includes(choice)} onChange={(e) => void toggle(choice, e.target.checked)} />
+          <label
+            key={choice}
+            className={`flex items-center gap-2 rounded-lg px-2 py-1 text-sm ${never ? 'cursor-not-allowed text-neutral-400' : 'cursor-pointer hover:bg-neutral-50'}`}
+          >
+            <input
+              type="checkbox"
+              checked={settings.autoReads.includes(choice)}
+              disabled={never}
+              onChange={(e) => void toggle(choice, e.target.checked)}
+            />
             {READ_TEXT[choice]}
           </label>
         ))}
@@ -309,13 +342,20 @@ function AutoReadBox() {
   )
 }
 
-function PolicyView({ cfg, approvalTimeoutSec }: { cfg: AgentConfigSummary; approvalTimeoutSec: number }) {
+function PolicyView({ cfg, approvalTimeoutSec, settings }: { cfg: AgentConfigSummary; approvalTimeoutSec: number; settings: Settings | null }) {
+  // Agent 설정에는 없지만 WEB이 대신 승인해서 실제로는 바로 실행되는 것. 목록만 보면 승인이 필요해 보이지 않게 같이 적는다.
+  const webAuto = settings?.approvalMode === 'never' ? [] : (settings?.autoReads ?? []).map((c) => READ_TEXT[c])
   return (
     <div className="space-y-2">
       <Note>
         아래는 AI Agent 설정에 적힌 정책이에요. 실제로 막고 허용하는 건 Agent 정책이고, WEB은 그 결과를 승인 카드와 차단 안내로 보여줘요.
         거부 규칙은 안전을 위해 Agent 설정 파일에서만 바꿀 수 있어요.
       </Note>
+      {settings?.approvalMode === 'never' && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          지금은 승인 방식이 "묻지 않기"라서, 아래 "항상 거부"와 정책 훅이 막는 것 말고는 모두 승인 없이 바로 실행돼요.
+        </p>
+      )}
       {cfg.agents.map((a) => (
         <Box key={a.name} title={`안전 모드: ${a.safety ?? '지정 안 함'}`}>
           <p className="text-sm text-neutral-700">
@@ -327,7 +367,7 @@ function PolicyView({ cfg, approvalTimeoutSec }: { cfg: AgentConfigSummary; appr
           </p>
         </Box>
       ))}
-      <RuleList title="자동 허용 (승인 없이 실행)" tone="text-neutral-800" rules={cfg.permissions.allow} empty="없어요." />
+      <RuleList title="자동 허용 (승인 없이 실행)" tone="text-neutral-800" rules={cfg.permissions.allow} empty="없어요." extra={webAuto} />
       <RuleList title="항상 묻기" tone="text-amber-700" rules={cfg.permissions.ask} empty="따로 정한 것은 없어요. 자동 허용에 없는 호출은 안전 모드에 따라 물어요." />
       <RuleList title="항상 거부 (승인해도 안 됨)" tone="text-red-700" rules={cfg.permissions.deny} empty="없어요." />
       {cfg.agents.map((a) =>
