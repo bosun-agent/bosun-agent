@@ -1,0 +1,37 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 실제 연동용 비밀값(server/dev/dev.env는 개발용이라 커밋한다)
+.env
+.env.*
+!.env.http
+!.env.demo
+server/*.env
+
+# WEB 백엔드 SQLite(승인·차단 카드, 승인 감사 기록)
+server/data/
+
+# 로컬 문서
+docs/
