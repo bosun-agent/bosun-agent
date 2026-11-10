@@ -275,7 +275,7 @@ app.get('/api/sessions/:id/export', async (c) => {
     }
     lines.push('## BOSUN', '')
     for (const card of m.cards ?? []) {
-      if (card.kind === 'rejected') lines.push(`> ${card.code === 'RESULT_HIDDEN' ? '안내' : '정책 차단'}: ${card.reason}${card.detail ? ` (${card.detail})` : ''}`, '')
+      if (card.kind === 'rejected') lines.push(`> ${card.code === 'RESULT_HIDDEN' || card.code === 'TOOLS_MISSING' ? '안내' : '정책 차단'}: ${card.reason}${card.detail ? ` (${card.detail})` : ''}`, '')
       else if (card.auto) lines.push(`> 자동 승인: ${card.summary}`, '')
       else lines.push(`> 승인 요청: ${card.summary} — ${DECISION_LABEL[card.status] ?? card.status}`, '')
     }

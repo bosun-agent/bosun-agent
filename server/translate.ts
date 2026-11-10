@@ -28,13 +28,20 @@ const DENY_GUIDE = /①\s*막힌 것:\s*([\s\S]*?)\s*②\s*이유:\s*([\s\S]*?)\
 const GUIDE_MAX = 300
 
 const asSentence = (s: string) => (/[.!?]$/.test(s) ? s : `${s}.`)
+// 스택 검사 훅의 "막힌 것"은 규칙 문장 뒤에 예시(예: …)와 결과 설명이 붙어 있고, 결과 설명은 "이유"와 겹친다(2026-11-11 실측).
+// 화면에는 첫 문장만, 예시 괄호는 빼고 보여준다. 예시와 대안은 Agent가 이어서 설명한다.
+const firstSentence = (s: string) =>
+  s
+    .split(/(?<=[.!?])\s/)[0]
+    .replace(/\s*\(예[:\s][^()]*\)/g, '')
+    .trim()
 
 export function policyDeniedDetail(response: string): string | undefined {
   const reason = /\bReason: ([\s\S]*)/.exec(response)?.[1]
   if (!reason) return undefined
   const guide = DENY_GUIDE.exec(reason)
   if (guide) {
-    const masked = maskText(`${asSentence(guide[1])} ${asSentence(guide[2])}`)
+    const masked = maskText(`${asSentence(firstSentence(guide[1]))} ${asSentence(guide[2])}`)
     return masked.length > GUIDE_MAX ? `${masked.slice(0, GUIDE_MAX - 1)}…` : masked
   }
   const first = reason
@@ -50,6 +57,15 @@ export function policyDeniedDetail(response: string): string | undefined {
 // 비밀값 가리기 훅이 실패하면 도구 결과 전체를 안내 문구로 바꾼다(Agent 담당 tool_response_transform_secret_mask.py의 HIDDEN).
 const RESULT_HIDDEN_PREFIX = '[비밀값을 가리는 중 오류가 나서'
 const RESULT_HIDDEN_REASON = '비밀값을 가리는 중 오류가 나서 이 조회 결과는 보여주지 않았어요. 다시 시도해 보고, 계속되면 관리자에게 알려주세요.'
+
+// Agent가 Portainer 도구(MCP)를 불러오지 못한 채 떠 있으면 도구 호출마다 이 문구가 돌아온다(docker-agent).
+// 2026-11-11 실측: Portainer가 꺼진 상태에서 Agent가 켜지면 Portainer를 나중에 켜도 Agent를 다시 시작할 때까지 그대로다.
+// 모델이 없는 도구 이름을 지어낸 경우와 구분하려고 Portainer 도구 이름일 때만 안내한다.
+const TOOL_UNAVAILABLE = /^Tool '([^']+)' is not available\./
+const PORTAINER_TOOL = /^(docker_proxy|Endpoint\w*|Stack\w*)$/
+export const TOOLS_MISSING = 'TOOLS_MISSING'
+const TOOLS_MISSING_REASON =
+  'AI Agent가 Portainer 도구를 불러오지 못했어요. Portainer가 켜져 있는지 확인한 뒤 AI Agent를 다시 시작해주세요(npm start 다시 실행).'
 
 const HOOK_BLOCKED_REASON = '보안 규칙에 걸려 요청을 처리하지 않았어요.'
 const POLICY_DENIED_REASON = '보안 정책에 따라 이 작업은 실행하지 않았어요.'
@@ -198,6 +214,15 @@ export class Translator {
           }
         }
         const status = isError ? 'failed' : 'succeeded'
+        const missing = isError ? TOOL_UNAVAILABLE.exec(res.response)?.[1] : undefined
+        if (missing && PORTAINER_TOOL.test(missing)) {
+          return {
+            events: [
+              { type: 'tool_status', tool: missing, status: 'failed', summary: 'Portainer 도구 없음', callId: res.tool_call_id },
+              { type: 'rejected', code: TOOLS_MISSING, reason: TOOLS_MISSING_REASON },
+            ],
+          }
+        }
         return {
           events: [{ type: 'tool_status', tool: name, status, summary: toolSummary(label, status), callId: res.tool_call_id }],
         }

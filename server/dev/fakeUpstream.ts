@@ -146,11 +146,29 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
-    // 훅의 거부 안내 형식(deny_guide.py)
+    // Portainer가 꺼진 채 Agent가 켜져 Portainer 도구가 없는 경우(2026-11-11 실측 문구). 지어낸 도구 이름은 안내하지 않는다.
+    match: /도구 없음/,
+    run: async (r) => {
+      await r.tool('get_guidance', {}, { deny: "Tool 'get_guidance' is not available. You can only use the tools provided to you." })
+      await r.tool('docker_proxy', { environment_id: 1, method: 'GET', path: '/containers/json' }, {
+        deny: "Tool 'docker_proxy' is not available. You can only use the tools provided to you.",
+      })
+      await r.say('지금은 도구를 쓸 수 없어요.')
+    },
+  },
+  {
+    // 줄 하나만 바꾼 답(모델이 ①②③을 이렇게 쓴다)
+    match: /줄바꿈/,
+    run: async (r) => {
+      await r.say('① 막힌 것: 첫 줄\n② 이유: 둘째 줄')
+    },
+  },
+  {
+    // 훅의 거부 안내 형식(deny_guide.py). 스택 검사 훅은 막힌 것 뒤에 예시와 결과 설명을 붙인다.
     match: /안내 형식/,
     run: async (r) => {
       await r.tool('StackCreateDockerStandaloneString', { Name: 'web8000' }, {
-        hookBlock: '스택 검사 훅이 이 요청을 거부했습니다. ① 막힌 것: 서비스 web: 호스트 포트 8000는 Portainer가 쓰는 포트라 쓸 수 없습니다. ② 이유: 관리 도구가 쓰는 포트입니다 ③ 대신 할 수 있는 것: 다른 포트를 쓰세요.',
+        hookBlock: '스택 검사 훅이 이 요청을 거부했습니다. ① 막힌 것: 서비스 web: 호스트 포트 8000는 Portainer가 쓰는 포트라 쓸 수 없습니다(예: "8080:80"과 최상위 {a: {}}). 쓰면 Portainer 접속이 끊깁니다. ② 이유: 관리 도구가 쓰는 포트입니다 ③ 대신 할 수 있는 것: 다른 포트를 쓰세요.',
       })
       await r.say('다른 포트를 골라 주세요.')
     },

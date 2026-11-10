@@ -296,8 +296,9 @@ function App() {
               updateMessage(id, (m) => ({ notice: event.reason, steps: markTargetChanged(m.steps ?? [], event.detail) }))
               break
             }
-            // 차단이 아니라 훅이 결과를 숨긴 것이다. 처리 과정 줄은 tool_status로 이미 남았다.
-            if (event.code === 'RESULT_HIDDEN') {
+            // 차단이 아니라 훅이 결과를 숨겼거나(RESULT_HIDDEN) Agent에 Portainer 도구가 없는 것이다(TOOLS_MISSING).
+            // 처리 과정 줄은 tool_status로 이미 남았다.
+            if (event.code === 'RESULT_HIDDEN' || event.code === 'TOOLS_MISSING') {
               updateMessage(id, () => ({ notice: event.reason }))
               break
             }

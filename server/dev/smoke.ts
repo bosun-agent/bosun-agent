@@ -777,6 +777,19 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
     rej?.type === 'rejected' && rej.detail?.includes('포트 8000') === true && rej.detail.includes('관리 도구가 쓰는 포트입니다.') && !rej.detail.includes('③') && !rej.detail.includes('다른 포트를'),
     rej,
   )
+  check(
+    '막힌 것은 첫 문장만, 예시 괄호는 빼고 보여준다',
+    rej?.type === 'rejected' && rej.detail === '서비스 web: 호스트 포트 8000는 Portainer가 쓰는 포트라 쓸 수 없습니다. 관리 도구가 쓰는 포트입니다.',
+    rej,
+  )
+  const s3 = await newSession()
+  const m = await post(`/api/sessions/${s3}/messages`, { text: '도구 없음 테스트' })
+  const missing = m.events.filter((e) => e.type === 'rejected')
+  check(
+    'Portainer 도구가 없으면 한 번만 TOOLS_MISSING 안내(지어낸 도구 이름은 안내 안 함)',
+    missing.length === 1 && missing[0].type === 'rejected' && missing[0].code === 'TOOLS_MISSING' && missing[0].reason.includes('Portainer') && last(m.events) === 'done',
+    m.events,
+  )
   const s2 = await newSession()
   const f = await post(`/api/sessions/${s2}/messages`, { text: '파일 카드 보여줘' })
   check('스택 파일 보기 카드 제목에 스택 이름', approvalOf(f.events)?.summary === '스택 shop 파일 조회', approvalOf(f.events)?.summary)

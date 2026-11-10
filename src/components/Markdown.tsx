@@ -1,7 +1,10 @@
 import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 
 // Agent 답은 마크다운(표, 굵은 글씨, 코드)으로 온다. 원본 HTML은 그리지 않는다(react-markdown 기본값).
+// 줄 하나만 바꾼 것도 줄바꿈으로 보여준다(remark-breaks). 모델은 ①②③ 같은 줄을 빈 줄 없이 이어 쓰는데,
+// 마크다운 기본값이면 한 문단으로 붙는다(2026-11-11).
 // 이미지는 그리지 않는다. 도구 결과에 섞인 외부 문자열이 이미지 주소로 들어오면
 // 브라우저가 그 주소로 바로 요청을 보내서 대화 내용이 밖으로 샐 수 있다.
 const components: Components = {
@@ -44,7 +47,7 @@ const components: Components = {
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="min-w-0 break-words">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
         {text}
       </ReactMarkdown>
     </div>

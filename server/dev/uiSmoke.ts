@@ -92,6 +92,18 @@ await page.getByText('AI가 빈 답을 보냈어요', { exact: false }).waitFor(
 check('빈 답이면 오류와 다시 시도', await page.getByRole('button', { name: '다시 시도' }).last().isVisible())
 check('오류의 다시 시도는 마우스를 올리지 않아도 보인다', (await page.getByRole('button', { name: '다시 시도' }).last().evaluate((el) => getComputedStyle(el.parentElement!).opacity)) === '1')
 
+// 줄 하나만 바꾼 답도 줄을 나눠 보여준다(2026-11-11: ①②③이 한 문단으로 붙었다)
+await newChat()
+await send('줄바꿈 보여줘')
+await page.getByText('② 이유: 둘째 줄', { exact: false }).waitFor()
+check('한 줄 바꿈도 화면에서 줄이 나뉜다', (await page.locator('p:has-text("① 막힌 것") br').count()) === 1)
+
+// Agent에 Portainer 도구가 없으면 답 아래에 다시 시작하라는 안내(차단 안내 아님)
+await newChat()
+await send('도구 없음 확인')
+await page.getByText('Portainer 도구를 불러오지 못했어요', { exact: false }).waitFor()
+check('Portainer 도구 없음 안내, 빨간 차단 안내는 없다', (await page.getByText('차단됨', { exact: true }).count()) === 0)
+
 // 중간에 막힌 뒤 다시 만들어 승인하면 차단 안내가 회색으로 낮아진다(2026-10-28 리허설)
 await newChat()
 await send('설정 없이 만들어줘')
