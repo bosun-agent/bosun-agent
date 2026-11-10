@@ -581,6 +581,8 @@ function restorePrompt(r: BackupRecord): string {
   const lines = (RESTORE_KEYS[r.kind] ?? [])
     .filter((k) => r.summary[k] && r.summary[k] !== RESTORE_DEFAULTS[k])
     .map((k) => `- ${k}: ${r.summary[k]}`)
+  // 데이터 저장 앱(redis·mysql 등)은 이름 있는 볼륨이 없으면 스택 검사 훅이 거부한다(agent 브랜치 11-09).
+  if (r.summary.마운트?.includes('(volume)')) lines.push('- 데이터 볼륨은 이름 있는 볼륨으로 연결해줘.')
   // 컨테이너를 직접 만드는 요청은 막혀 있어서 스택으로 만들어 달라고 쓴다.
   return [`지운 ${kind} ${r.summary.이름 ?? r.target}를 같은 설정의 스택으로 다시 만들어줘.`, ...lines].join('\n')
 }
@@ -642,6 +644,7 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
                   {r.kind === 'container' && (
                     <p className="mt-1 text-[11px] text-neutral-500">
                       이미지·포트 같은 기본 설정만 넣어서 스택으로 다시 만들어요. 비밀번호·토큰은 정책상 설정에 적을 수 없어요.
+                      볼륨 안 데이터는 이 백업에 없어요. DB처럼 데이터를 남기는 앱은 이름 있는 볼륨을 붙여야 만들 수 있어요.
                     </p>
                   )}
                 </>
