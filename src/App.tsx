@@ -39,6 +39,9 @@ const REFRESH_MS = 15_000
 // 빌드 값(VITE_PORTAINER_URL)을 쓴다. 둘 다 없으면 버튼을 비활성으로 둔다.
 const BUILD_PORTAINER_URL: string | undefined = import.meta.env.VITE_PORTAINER_URL
 
+// ?setup=1 로 열면 값이 다 차 있어도 연결 설정 페이지를 연다(주소·키를 바꿀 때).
+const OPEN_SETUP = new URLSearchParams(window.location.search).get('setup') === '1'
+
 // 좁은 화면에서는 사이드바가 채팅 위에 겹치므로, 대화를 고르면 닫는다. Tailwind md 기준과 같다.
 const isNarrowScreen = () => !window.matchMedia('(min-width: 768px)').matches
 
@@ -97,12 +100,27 @@ function App() {
     )
   }, [])
   // 첫 실행 설정(server/setup.ts). 값이 비어 있으면 채팅 대신 설정 페이지를 보여준다.
+  // ?setup=1 이면 값이 다 차 있어도 보여준다(나중에 주소·키를 바꿀 때).
   // 목업·데모 빌드에는 백엔드가 없으므로 건너뛴다. 값을 못 받아도 화면을 막지 않는다.
   const [setup, setSetup] = useState<SetupStatus | null>(null)
+  // 화면에서 직접 연 경우(설정 → 연결 설정 열기). 채팅으로 돌아갈 수 있게 닫기 버튼을 보여준다.
+  const [setupManual, setSetupManual] = useState(OPEN_SETUP)
   useEffect(() => {
     if (usingMock) return
     getSetupStatus().then(
-      (s) => setSetup(s && s.needsSetup ? s : null),
+      (s) => setSetup(s && (s.needsSetup || OPEN_SETUP) ? s : null),
+      () => undefined,
+    )
+  }, [])
+  // 설정 화면의 "연결 설정 열기". 값이 다 차 있어도 연다.
+  const openSetup = useCallback(() => {
+    setSettingsOpen(false)
+    getSetupStatus().then(
+      (s) => {
+        if (!s) return
+        setSetup(s)
+        setSetupManual(true)
+      },
       () => undefined,
     )
   }, [])
@@ -655,8 +673,10 @@ function App() {
     </div>
   )
 
-  // 넣을 값이 비어 있으면 채팅 화면 대신 첫 설정 페이지를 보여준다.
-  if (setup) return <SetupPage status={setup} onDone={() => setSetup(null)} />
+  // 값이 비어 있으면 채팅 화면 대신 첫 설정 페이지를 보여준다(화면에서 직접 열 수도 있다).
+  if (setup) {
+    return <SetupPage status={setup} onDone={() => setSetup(null)} {...(setupManual ? { onClose: () => setSetup(null) } : {})} />
+  }
 
   return (
     <div className="flex h-dvh bg-white text-neutral-900">
@@ -754,6 +774,7 @@ function App() {
           activeServerId={active.serverId}
           onClose={() => setSettingsOpen(false)}
           onApprovalModeChange={setApprovalMode}
+          {...(usingMock ? {} : { onOpenSetup: openSetup })}
           onDraft={(text) => {
             // 백업 복원 요청은 새 대화에서 쓴다. 지금 대화가 처리 중이어도 보낼 수 있게.
             setSettingsOpen(false)

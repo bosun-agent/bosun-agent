@@ -81,6 +81,7 @@ cd portainer && docker compose -f portainer-compose.yaml up -d
 - 하나라도 실패하면 **저장하지 않고** 그 칸 아래에 이유가 뜬다. 저장되면 `agent.env`에 기록되고(권한 600) Agent가 다시 시작된다.
 - 값이 하나라도 남아 있으면 저장이 됐더라도 설정 페이지에 머문다.
 - 화면 대신 `container/.env`의 `PORTAINER_URL_INTERNAL`·`PORTAINER_API_KEY`에 넣고 `docker compose up -d` 해도 같다(그때는 화면에 "이미 설정됨"으로 뜬다).
+- **나중에 다시 열려면**: 화면 오른쪽 위 ⚙(설정) → **API 키** → "연결 설정 열기", 또는 주소 끝에 `?setup=1`을 붙인다(예: <http://localhost:3001/?setup=1>). 저장된 값은 "이미 설정됨"으로 표시되고, 바꿀 칸만 채워 저장하면 된다(넣지 않은 칸은 그대로 둔다).
 
 ## 4. 접속
 

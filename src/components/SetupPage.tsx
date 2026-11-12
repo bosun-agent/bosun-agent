@@ -12,6 +12,8 @@ import { applySetup, type SetupCheck, type SetupStatus } from '../lib/setup'
 type Props = {
   status: SetupStatus
   onDone: () => void
+  // 화면에서 직접 연 경우에만 있다(채팅으로 돌아가기). 첫 실행일 때는 없다.
+  onClose?: () => void
 }
 
 type FieldKey = 'openrouterKey' | 'portainerUrl' | 'portainerApiKey'
@@ -73,7 +75,7 @@ function Field({
   )
 }
 
-export function SetupPage({ status, onDone }: Props) {
+export function SetupPage({ status, onDone, onClose }: Props) {
   const [current, setCurrent] = useState(status)
   const [openrouterKey, setOpenrouterKey] = useState('')
   const [portainerUrl, setPortainerUrl] = useState('')
@@ -115,7 +117,7 @@ export function SetupPage({ status, onDone }: Props) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
         <div className="w-full max-w-lg rounded-lg border border-neutral-200 p-6 text-sm">
-          <h1 className="text-base font-semibold text-neutral-900">설정을 저장했어요</h1>
+          <h1 className="text-base font-semibold text-neutral-900">{onClose ? '연결 설정' : '처음 설정'}을 저장했어요</h1>
           <p className="mt-2 text-neutral-600">
             {saved.ready
               ? 'Agent가 새 값으로 다시 시작했고 준비됐어요. 이제 대화를 시작할 수 있어요.'
@@ -127,7 +129,7 @@ export function SetupPage({ status, onDone }: Props) {
             onClick={onDone}
             className="mt-4 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
           >
-            시작하기
+            {onClose ? '닫기' : '시작하기'}
           </button>
         </div>
       </div>
@@ -137,7 +139,14 @@ export function SetupPage({ status, onDone }: Props) {
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-lg rounded-lg border border-neutral-200 p-6">
-        <h1 className="text-base font-semibold text-neutral-900">처음 설정</h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="text-base font-semibold text-neutral-900">{onClose ? '연결 설정' : '처음 설정'}</h1>
+          {onClose && (
+            <button type="button" onClick={onClose} className="shrink-0 text-sm text-neutral-500 hover:text-neutral-800">
+              돌아가기
+            </button>
+          )}
+        </div>
         <p className="mt-2 text-sm text-neutral-600">
           BOSUN은 열쇠를 만들어 주지 않아요. 아래 값은 직접 발급받아 넣어 주세요.
         </p>

@@ -21,12 +21,15 @@ export function SettingsModal({
   onClose,
   onDraft,
   onApprovalModeChange,
+  onOpenSetup,
 }: {
   activeServerId?: string
   onClose: () => void
   onApprovalModeChange?: (mode: ApprovalMode) => void
   // 입력창에 글을 채우고 설정을 닫는다(백업 복원 요청).
   onDraft?: (text: string) => void
+  // 첫 접속 설정 페이지(연결 설정)를 다시 연다. Portainer 주소·API 키를 바꿀 때.
+  onOpenSetup?: () => void
 }) {
   const [sectionId, setSectionId] = useState<SectionId>('model')
   const section = SECTIONS.find((s) => s.id === sectionId) ?? SECTIONS[0]
@@ -76,7 +79,7 @@ export function SettingsModal({
             </button>
           </div>
           {sectionId === 'model' && <ModelSection />}
-          {sectionId === 'api-key' && <ApiKeySection />}
+          {sectionId === 'api-key' && <ApiKeySection onOpenSetup={onOpenSetup} />}
           {sectionId === 'policy' && <PolicySection onApprovalModeChange={onApprovalModeChange} />}
           {sectionId === 'audit' && <AuditSection />}
           {sectionId === 'backup' && <BackupSection onDraft={onDraft} />}
@@ -200,7 +203,8 @@ const SAVED_TEXT: Record<NonNullable<Settings['agentRestart']> | 'saved', string
 }
 
 // 키는 Agent env 파일에 저장된다. 화면은 키 값을 다시 받지 않고 저장 여부만 보여준다.
-function ApiKeySection() {
+// Portainer 주소·API 키는 여기서 다루지 않는다(첫 접속 설정 페이지에서 바꾼다).
+function ApiKeySection({ onOpenSetup }: { onOpenSetup?: () => void }) {
   const { settings, setSettings, failed } = useSettings()
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
@@ -251,6 +255,20 @@ function ApiKeySection() {
       </div>
       {saved && <p className="px-1 text-sm text-neutral-700">{SAVED_TEXT[saved]}</p>}
       {saveFailed && <p className="px-1 text-sm text-red-600">저장하지 못했어요. 키를 확인하고 다시 시도해주세요.</p>}
+      {onOpenSetup && (
+        <div className="mt-1 border-t border-neutral-200 pt-2">
+          <p className="px-1 text-xs text-neutral-500">
+            Portainer 주소와 API 키는 연결 설정 페이지에서 바꿔요.
+          </p>
+          <button
+            type="button"
+            onClick={onOpenSetup}
+            className="mt-1 rounded-md bg-neutral-200 px-3 py-1.5 text-sm text-neutral-800 hover:bg-neutral-300"
+          >
+            연결 설정 열기
+          </button>
+        </div>
+      )}
     </form>
   )
 }
