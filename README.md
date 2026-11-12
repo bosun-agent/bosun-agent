@@ -30,6 +30,27 @@
 | Python 3 + PyYAML, uv(`uvx`) | agent.yaml이 정책·백업 훅(Python)과 `mcp-portainer`(uvx)를 실행한다 |
 | OpenRouter API 키 | 모델 호출 |
 
+## 빠른 실행 (스크립트)
+
+값을 한 파일에 모아 두고 스크립트가 나머지를 만든다. 손으로 `agent.yaml` 경로를 치환할 필요가 없다.
+
+```bash
+./scripts/bootstrap.sh            # 1) 없는 프로그램 설치(Node 22 · docker-agent · uv · PyYAML)
+cp bosun.env.example bosun.env    # 2) 키 2개 채우기(OpenRouter, Portainer)
+./scripts/setup.sh                # 3) 실행 폴더·agent.yaml·server/real.env 생성 + 검사
+./scripts/up.sh                   # 4) Portainer → 백엔드 → 화면 한 번에 (Ctrl+C로 전체 종료)
+```
+
+각 단계에 `--check`를 붙이면 **아무것도 바꾸지 않고** 빠진 것만 확인한다.
+
+| 스크립트 | 하는 일 |
+|---|---|
+| `scripts/bootstrap.sh` | Node 22 · docker-agent v1.148.0 · uv(`uvx`) · PyYAML · docker/compose 설치(있으면 건너뜀) |
+| `scripts/setup.sh` | `agent.env`(600) · `agent.yaml` 경로 치환 · `agents/*.yaml` 생성 · `server/real.env` 생성 · 설정 검사 |
+| `scripts/up.sh` | Portainer 기동 → `npm start`(백엔드+Agent) → 화면. 백엔드 로그는 `.bosun/backend.log` |
+
+`setup.sh`가 하는 검사(실패하면 실행 전에 멈춘다): Node 22.18 이상 · PyYAML · `uvx` · docker-agent 실행 파일 · 경로가 붙어버린 곳(`agent-runagent.env`) · 남은 자리표시자 · 모델 이름(agent.yaml `models` 또는 `provider/model`).
+
 ## 실행
 
 화면만 볼 때(Node만 필요):

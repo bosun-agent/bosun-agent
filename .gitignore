@@ -23,6 +23,9 @@ server/*.env
 # 웹 백엔드 SQLite(승인·차단 카드, 승인 감사 기록)
 server/data/
 
+# scripts/up.sh의 실행 로그
+.bosun/
+
 # 실제 실행 설정(경로가 PC마다 다름) — 예시(.example)만 올린다
 /agent.yaml
 /agents/*.yaml
