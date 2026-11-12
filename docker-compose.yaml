@@ -18,7 +18,13 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:9443:9443"                     # UI(HTTPS)
-    # 주의(11-12 확인): Portainer는 첫 기동 후 **5분 안에** 관리자 계정이 없으면 API를 막는다
+    # 초기 설정 자동화: Portainer는 미초기화 인스턴스를 아무나 차지하지 못하도록 setup token을 요구한다
+    #   (POST /api/users/admin/init 에 X-Setup-Token 헤더가 없으면 403). 토큰은 기동 로그에
+    #   `setup_token=...` 로 찍힌다(api/http/security/setuptoken). 여기서는 게이트를 끄고 진행한다.
+    #   게이트를 켜 두려면 이 command를 지우고, 로그에서 토큰을 복사해 .env의 PORTAINER_SETUP_TOKEN에
+    #   넣으면 bootstrap이 그 값을 헤더로 보낸다. UI에 9443을 루프백으로만 발행하므로 노출은 호스트로 제한된다.
+    command: ["--no-setup-token"]
+    # 주의(11-12 확인): Portainer는 첫 기동 후 **5분 안에** 관리자 계정이 없으면 API도 막는다
     #   (303 Redirect-Reason: AdminInitTimeout). 그래서 스택을 올린 뒤 5분 안에 bootstrap을 돌리거나,
     #   놓쳤으면 `docker compose restart portainer` 로 창을 다시 연 뒤 곧바로 실행해야 한다.
     #   관리자를 미리 만들려면 --admin-password-file(평문 파일) 또는 --admin-password(bcrypt)를 쓴다.

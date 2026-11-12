@@ -57,12 +57,14 @@ docker compose logs -f bosun          # 진입점 로그(agent.yaml 생성·경�
 
 새로 설치한 경우에만 필요하다. **스택을 올린 뒤 5분 안에 실행해야 한다**(Portainer가 첫 기동 후 5분 안에 관리자를 만들지 않으면 API를 막는다). 놓쳤으면 `docker compose restart portainer` 후 곧바로 실행한다.
 
+Portainer는 미초기화 인스턴스를 아무나 차지하지 못하도록 **setup token**(기동 로그의 `setup_token=…`, `X-Setup-Token` 헤더)을 요구한다. compose 기본값은 `portainer.command: ["--no-setup-token"]`으로 이 게이트를 끄고 자동 설정이 한 번에 끝나게 했다(9443을 루프백으로만 발행하므로 노출은 호스트로 제한된다). 게이트를 켜 두려면 그 command를 지우고 로그의 토큰을 `.env`의 `PORTAINER_SETUP_TOKEN`에 넣는다.
+
 ```bash
 docker compose exec bosun /usr/local/bin/portainer-bootstrap
 docker compose restart bosun
 ```
 
-`portainer-bootstrap`은 관리자 계정 생성(`POST /api/users/admin/init`) → 로그인(`POST /api/auth`) → 키 발급(`POST /api/users/{id}/tokens`) → `/opt/bosun/agent.env`에 기록까지 한다. 키 값은 화면에 찍지 않는다. 관리자를 미리 만들고 싶으면 Portainer의 `--admin-password-file`(평문 파일) 또는 `--admin-password`(bcrypt 해시)를 쓸 수도 있다.
+`portainer-bootstrap`은 관리자 계정 생성(`POST /api/users/admin/init`) → 로그인(`POST /api/auth`) → 키 발급(`POST /api/users/{id}/tokens`) → `/opt/bosun/agent.env`에 기록까지 한다. 키 값은 화면에 찍지 않는다. 관리자를 미리 만들고 싶으면 Portainer의 `--admin-password-file`(평문 파일, `.gitignore`에 등록됨) 또는 `--admin-password`(bcrypt 해시)를 쓸 수도 있다.
 
 이미 Portainer를 쓰고 있다면 화면(My account → Access tokens)에서 키를 만들어 `container/.env`의 `PORTAINER_API_KEY`에 넣고 `docker compose up -d`만 하면 된다.
 
@@ -114,7 +116,8 @@ docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -
 | Portainer API 401/403 | API 키 없음 | `portainer-bootstrap` 실행 또는 `PORTAINER_API_KEY` 입력 |
 | `dependency failed to start: container bosun-portainer is unhealthy` | compose에 헬스체크를 두면 이 이미지에서 unhealthy로 굳는다 | 헬스체크를 쓰지 않는다(수정됨). 그래도 나오면 로컬 `docker-compose.yaml`이 최신인지 확인(`git pull`) |
 | `volume "portainer_data" already exists but was created for project …` 경고 | 다른 프로젝트가 만든 볼륨 | 이 스택은 자기 볼륨(`bosun_portainer_data`)을 쓴다(수정됨). 기존 볼륨을 일부러 쓰려면 `external: true`로 바꾸고 그 Portainer의 관리자 비밀번호를 `.env`에 넣는다 |
-| `[0/4] … HTTP 303` / `admin init: HTTP 303` / `Redirect-Reason: AdminInitTimeout` | Portainer 첫 기동 후 5분 안에 관리자 계정이 만들어지지 않아 API가 막혔다 | `docker compose restart portainer` 로 창을 다시 연 뒤 곧바로 bootstrap 실행(스크립트가 이 상황을 알아서 안내한다) |
+| `admin init: HTTP 403` | 미초기화 인스턴스의 **setup token 게이트**가 켜져 있다(헤더 `X-Setup-Token` 필요) | compose 기본값(`--no-setup-token`)에서는 나오지 않는다. 게이트를 켜 둔 경우 `docker logs --tail=40 bosun-portainer \| grep setup_token` 값을 `.env`의 `PORTAINER_SETUP_TOKEN`에 넣는다 |
+| `[0/4] … HTTP 303` / `Redirect-Reason: AdminInitTimeout` | Portainer 첫 기동 후 5분 안에 관리자 계정이 만들어지지 않아 API가 막혔다 | `docker compose restart portainer` 로 창을 다시 연 뒤 곧바로 bootstrap 실행(스크립트가 이 상황을 알아서 안내한다) |
 | `curl: (60) SSL certificate problem: self-signed certificate` 가 bootstrap에서 | 컨테이너가 **옛 이미지**로 돌고 있다(고친 스크립트에 `-k`가 들어 있음) | `docker compose up -d --build` 로 이미지를 다시 빌드한 뒤 bootstrap을 다시 실행한다 |
 | bootstrap 단계 번호가 `[1/4]`부터 시작한다 | 위와 같은 이유(옛 스크립트) | 같은 조치. 최신 스크립트는 `[0/4] Portainer 응답 대기`로 시작한다 |
 | `portainer:9443` 연결 실패 | Portainer가 아직 기동 전이거나 스택 밖 주소 | `[0/4]` 단계가 재시도한다. 계속 실패하면 `docker compose ps` / `logs bosun-portainer` |

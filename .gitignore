@@ -20,6 +20,10 @@ real.env
 !.env.example
 server/*.env
 
+# 컨테이너 설치: 관리자를 미리 만들 때 쓰는 평문 비밀번호 파일(portainer --admin-password-file)
+container/portainer-admin-password
+container/*.env
+
 # 웹 백엔드 SQLite(승인·차단 카드, 승인 감사 기록)
 server/data/
 

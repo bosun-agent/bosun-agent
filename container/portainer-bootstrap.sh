@@ -43,10 +43,21 @@ if [ "$status" = "303" ] || [ "$status" = "307" ]; then
 fi
 
 echo "[1/4] 관리자 계정 확인/생성: $P"
-# /api/users/admin/init 는 관리자가 아직 없을 때만 성공한다(이미 있으면 409) → 실패해도 계속한다.
-api -o /dev/null -w '  admin init: HTTP %{http_code}\n' \
-  -X POST "$P/api/users/admin/init" \
-  -d "{\"Username\":\"$U\",\"Password\":\"$PW\"}" || true
+# /api/users/admin/init 는 관리자가 아직 없을 때만 성공한다(있으면 409) → 실패해도 계속한다.
+# 미초기화 인스턴스는 X-Setup-Token 헤더를 요구한다(없으면 403). compose 기본값은 --no-setup-token이라
+# 이 헤더가 필요 없지만, 게이트를 켜 둔 경우를 위해 PORTAINER_SETUP_TOKEN을 지원한다.
+setup_header=()
+[ -n "${PORTAINER_SETUP_TOKEN:-}" ] && setup_header=(-H "X-Setup-Token: $PORTAINER_SETUP_TOKEN")
+init_status="$(api -o /dev/null -w '%{http_code}' -X POST "$P/api/users/admin/init" \
+  -d "{\"Username\":\"$U\",\"Password\":\"$PW\"}" "${setup_header[@]}")"
+echo "  admin init: HTTP $init_status"
+if [ "$init_status" = "403" ]; then
+  echo "  Portainer가 관리자 생성을 거부했습니다(403 = setup token 필요 또는 불일치)" >&2
+  echo "  → 토큰 확인:  docker logs --tail=40 bosun-portainer | grep setup_token" >&2
+  echo "  → 그 값을 container/.env 의 PORTAINER_SETUP_TOKEN 에 넣고 다시 실행하거나," >&2
+  echo "    docker-compose.yaml 의 portainer.command 를 --no-setup-token 으로 두세요." >&2
+  exit 1
+fi
 
 echo "[2/4] 로그인(JWT)"
 JWT="$(api -X POST "$P/api/auth" -d "{\"Username\":\"$U\",\"Password\":\"$PW\"}" \
