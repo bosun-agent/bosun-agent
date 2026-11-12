@@ -11,15 +11,15 @@
 # 두지 않는 이유 — 그 이미지에 wget/curl이 없으면 healthcheck가 unhealthy로 굳어 bosun이 못 뜬다).
 set -euo pipefail
 
-P="${PORTAINER_URL_INTERNAL:-http://portainer:9000}"
+P="${PORTAINER_URL_INTERNAL:-https://portainer:9443}"
 U="${PORTAINER_ADMIN_USER:-admin}"
 PW="${PORTAINER_ADMIN_PASSWORD:?PORTAINER_ADMIN_PASSWORD를 container/.env에 넣으세요}"
 ENVF="${AGENT_ENV_FILE:-/opt/bosun/agent.env}"
 DESC="${PORTAINER_TOKEN_DESC:-bosun-agent}"
 
-api() { curl -sS -H 'Content-Type: application/json' "$@" ; }
+api() { curl -sSk -H 'Content-Type: application/json' "$@" ; }
 # 연결 거부면 최대 ~60초까지 재시도한다(HTTP 오류는 재시도하지 않는다).
-api_retry() { curl -sS --retry 20 --retry-connrefused --retry-delay 3 -H 'Content-Type: application/json' "$@"; }
+api_retry() { curl -sSk --retry 20 --retry-connrefused --retry-delay 3 -H 'Content-Type: application/json' "$@"; }
 
 echo "[0/4] Portainer 응답 대기: $P"
 api_retry -o /dev/null -w '  api/system/status: HTTP %{http_code}\n' "$P/api/system/status" \

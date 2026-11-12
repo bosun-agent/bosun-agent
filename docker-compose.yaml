@@ -17,7 +17,7 @@ services:
     container_name: bosun-portainer
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9443:9443"                     # UI(HTTPS). 9000(HTTP)은 스택 내부에서만 쓴다
+      - "127.0.0.1:9443:9443"                     # UI(HTTPS). 9000(HTTP)은 API를 처리하지 않고 HTTPS로 넘긴다(11-12 확인)
     # healthcheck를 두지 않는다(11-12 첫 실행에서 확인):
     #   이 이미지에 wget/curl이 없거나 9000이 막혀 있으면 컨테이너가 unhealthy로 굳고,
     #   depends_on: service_healthy 때문에 bosun이 아예 시작되지 않는다.
@@ -49,9 +49,12 @@ services:
       AGENT_NAME: agent
       AGENT_URL: http://127.0.0.1:8080
       # 화면의 "Portainer 열기" 링크는 브라우저가 여는 주소다
-      PORTAINER_URL: http://localhost:9443
-      # Agent·정책 훅이 쓰는 주소는 스택 내부 주소다(HTTP 9000 → TLS·자체 서명 CA 설정 불필요)
-      PORTAINER_URL_INTERNAL: http://portainer:9000
+      PORTAINER_URL: https://localhost:9443
+      # Agent·정책 훅이 쓰는 주소는 스택 내부 주소다.
+      # 9000(HTTP)은 이 Portainer 버전에서 API를 처리하지 않고 303으로 HTTPS로 넘긴다(11-12 실측)
+      # → 9443(HTTPS)을 쓴다. 자체 서명 인증서라 훅·MCP 도구는 PORTAINER_TLS_VERIFY=0으로 검증을 끈다
+      # (ai-agent-hooks/agent.yaml.example에 이미 들어 있다).
+      PORTAINER_URL_INTERNAL: https://portainer:9443
     ports:
       - "127.0.0.1:3001:3001"      # 웹에는 로그인이 없다 → 루프백으로만 발행한다
     volumes:
