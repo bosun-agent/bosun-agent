@@ -180,6 +180,17 @@ function pipe(stream: NodeJS.ReadableStream | null, write: (line: string) => voi
   })
 }
 
+// 컨테이너 환경변수에 빈 값이 들어 있으면(예: container/.env의 `PORTAINER_API_KEY=`) docker-agent의
+// 공급자 체인이 그 빈 값을 "찾은 값"으로 보고 그대로 쓴다(pkg/environment/multi.go — 첫 found 채택).
+// env-file에 값이 있으면 그쪽이 1순위라 무관하지만, 값이 없을 때는 빈 값이 조용히 통과해
+// "A valid authorization token is missing"으로만 보인다. 그래서 Agent를 띄울 때 빈 값을 없애
+// "없음"으로 만든다(그러면 ${env.X}가 치환되지 않아 "값 없음"이 드러난다).
+export function cleanAgentEnv(names: readonly string[], source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...source }
+  for (const name of names) if (out[name] === '') delete out[name]
+  return out
+}
+
 async function spawnAgent(): Promise<void> {
   const cmd = agentCommand()
   if (typeof cmd === 'string') {
@@ -190,7 +201,11 @@ async function spawnAgent(): Promise<void> {
   }
   console.info(`[agent] ${cmd.describe}`)
   readBinVersion(cmd)
-  const proc = spawn(cmd.bin, cmd.args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+  const proc = spawn(cmd.bin, cmd.args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    env: cleanAgentEnv([config.agentKeyName, 'PORTAINER_URL', 'PORTAINER_API_KEY']),
+  })
   child = proc
   spawnedAt = Date.now()
   savePid(proc.pid)
