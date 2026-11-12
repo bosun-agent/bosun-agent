@@ -148,18 +148,18 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 
 ### 컨테이너로 한 번에 설치 (권장)
 
-화면·WEB 백엔드·Docker Agent·정책 훅을 **한 이미지**로 묶고, Portainer까지 compose 스택으로 함께 띄운다. 절차·확인 체크리스트·진단표는 `container/README.md`, 설계 근거는 `docs/컨테이너_설치_설계_11-12.md`에 있다.
+화면·WEB 백엔드·Docker Agent·정책 훅을 **한 이미지**로 묶어 compose 스택으로 띄운다. **Portainer는 따로 있는 것을 그대로 쓴다**(주소·API 키는 첫 접속 설정 페이지에서 넣는다). 절차·확인 체크리스트·진단표는 `container/README.md`, 설계 근거는 `docs/컨테이너_설치_설계_11-12.md`, 설정 페이지는 `docs/첫실행_설정페이지_11-12.md`에 있다.
 
 ```bash
-cp container/.env.example container/.env     # 모델 키·Portainer 관리자 값 채우기
-docker compose up -d --build                 # 화면 http://127.0.0.1:3001 · Portainer https://127.0.0.1:9443
+cp container/.env.example container/.env     # 값 채우기(모델 키·Portainer 주소)
+docker compose up -d --build                 # 화면 http://127.0.0.1:3001
 ```
 
 - 첫 접속 화면이 **설정 페이지**다. BOSUN은 열쇠를 만들어 주지 않으므로, 사용자가 직접 발급받아 넣는다(OpenRouter 키 · Portainer 주소 · Portainer API 키). 넣은 값은 저장 전에 실제로 확인한다(OpenRouter 401 / Portainer `/api/endpoints`). 자세한 내용은 `docs/첫실행_설정페이지_11-12.md`.
 - 컨테이너가 첫 기동 때 `agent.env`와 `agent.yaml`을 만든다(기준 설정의 `/절대경로/`·`/실행폴더/` 자리표시자를 컨테이너 경로로 치환). 사용자가 손댄 파일은 덮어쓰지 않는다.
 - 웹·Agent 컨테이너에는 **도커 소켓이 없다**. 소켓을 가진 컨테이너는 Portainer 하나뿐이다.
-- Portainer는 스택 내부에서 `https://portainer:9443`으로 붙는다(자체 서명 인증서는 도구가 검증을 끄고 처리). Agent가 붙는 주소는 설정 페이지에서 바꿀 수 있다.
-- 값을 화면 대신 스크립트로 넣고 싶으면 `docker compose exec bosun /usr/local/bin/portainer-bootstrap`(관리자 계정 생성 + 키 발급 + `agent.env` 기록). 이 경로는 스택을 올린 뒤 5분 안에 돌려야 한다.
+- Portainer는 **따로 있는 것을 그대로 쓴다**. Agent가 붙는 주소는 `container/.env`의 `PORTAINER_URL_INTERNAL`에 적거나 설정 페이지에서 넣는다(자체 서명 인증서는 도구가 검증을 끄고 처리).
+- 값을 화면 대신 스크립트로 넣고 싶은 경우는 이 스택에 Portainer를 함께 띄울 때(`docker compose --profile portainer up -d`)뿐이다: `docker compose exec bosun /usr/local/bin/portainer-bootstrap`. 이 경로는 스택을 올린 뒤 5분 안에 돌려야 한다.
 - 볼륨 백업은 앱이 생긴 뒤에만 만들 수 있다(볼륨 이름 필요). 자세한 내용은 `container/README.md` 7절.
 
 ## WEB 백엔드 구조 (`server/`)

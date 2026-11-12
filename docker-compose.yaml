@@ -1,23 +1,31 @@
-# BOSUN 전체 스택 — 웹(화면+백엔드+Agent) + Portainer.
+# BOSUN 전체 스택 — 웹(화면+백엔드+Agent).
 #
-#   cp container/.env.example container/.env    # 값 채우기(모델 키, Portainer 관리자)
+#   cp container/.env.example container/.env    # 값 채우기(모델 키 등)
 #   docker compose up -d --build
-#   docker compose exec bosun /usr/local/bin/portainer-bootstrap   # 최초 1회: API 키 자동 발급
+#   → 브라우저(http://127.0.0.1:3001) 첫 화면이 설정 페이지다. 거기서 Portainer 주소·API 키를 넣는다.
 #
-# 화면  http://127.0.0.1:3001
-# Portainer  https://127.0.0.1:9443
+# 화면  http://127.0.0.1:3001  (웹에는 로그인이 없어 루프백으로만 발행한다 → 다른 PC에서는 SSH 터널로 접속)
+#
+# Portainer는 **따로 있는 것을 그대로 쓴다**(기본). 그 Portainer 주소·API 키는 설정 페이지에서 넣는다.
+# 이 스택에 Portainer를 함께 띄우고 싶을 때만 프로필을 켠다:
+#   docker compose --profile portainer up -d
+#   (기본 `docker compose up -d`에서는 아래 portainer 서비스가 뜨지 않는다. 9443을 이미 쓰는
+#    Portainer가 있으면 포트가 충돌하므로 기본에서 뺐다.)
 #
 # 설계 메모: 웹·Agent 컨테이너는 도커 소켓을 쓰지 않는다(도커 조작은 Portainer 경유).
-# 소켓을 가진 컨테이너는 portainer 하나뿐이고, 그 소켓 때문에 Portainer만 호스트 권한을 갖는다.
+# 소켓을 가진 컨테이너는 Portainer 하나뿐이고, 그 소켓 때문에 Portainer만 호스트 권한을 갖는다.
 name: bosun
 
 services:
+  # ── 선택: Portainer를 이 스택에 함께 띄운다 (기본은 꺼짐) ───────────────────────
+  # 이미 Portainer를 쓰고 있으면 이 서비스를 쓰지 않는다. 켜려면 --profile portainer.
   portainer:
     image: portainer/portainer-ce:2.45.1          # 팀 고정 버전(portainer/portainer-compose.yaml과 동일)
     container_name: bosun-portainer
+    profiles: ["portainer"]
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9443:9443"                     # UI(HTTPS)
+      - "9443:9443"                               # UI(HTTPS). 팀 기본 compose와 같이 모든 인터페이스에 발행한다(로그인 있음)
     # 초기 설정 자동화: Portainer는 미초기화 인스턴스를 아무나 차지하지 못하도록 setup token을 요구한다
     #   (POST /api/users/admin/init 에 X-Setup-Token 헤더가 없으면 403). 토큰은 기동 로그에
     #   `setup_token=...` 로 찍힌다(api/http/security/setuptoken). 여기서는 게이트를 끄고 진행한다.
@@ -58,19 +66,14 @@ services:
       AGENT_ENV_FILE: /opt/bosun/agent.env
       AGENT_NAME: agent
       AGENT_URL: http://127.0.0.1:8080
-      # 화면의 "Portainer 열기" 링크는 브라우저가 여는 주소다
-      PORTAINER_URL: https://localhost:9443
-      # Agent·정책 훅이 쓰는 주소는 스택 내부 주소다(HTTPS + 자체 서명 → 훅·MCP 도구가
-      # PORTAINER_TLS_VERIFY=0으로 검증을 끈다. ai-agent-hooks/agent.yaml.example에 이미 있다).
-      PORTAINER_URL_INTERNAL: https://portainer:9443
+      # Portainer 주소 두 개는 container/.env에서 온다(env_file). 기본값은 .env.example에 있다.
+      #   PORTAINER_URL           화면의 "Portainer 열기" 링크(브라우저가 여는 주소)
+      #   PORTAINER_URL_INTERNAL  Agent·정책 훅이 붙는 주소
     ports:
-      - "127.0.0.1:3001:3001"      # 웹에는 로그인이 없다 → 루프백으로만 발행한다
+      - "127.0.0.1:3001:3001"      # 웹에는 로그인이 없다 → 루프백으로만 발행한다(다른 PC는 SSH 터널)
     volumes:
       - bosun_data:/opt/bosun       # agent.env · agent.yaml · session.db · backups.sqlite3
       - bosun_web_data:/data        # web.db(승인·차단 기록, 설정)
-    depends_on:
-      portainer:
-        condition: service_started
 
   # ── 선택: 볼륨 백업 ────────────────────────────────────────────────────────────
   # 앱이 생긴 뒤에만 만들 수 있다(볼륨 이름이 필요하다). 두 가지 방법:
