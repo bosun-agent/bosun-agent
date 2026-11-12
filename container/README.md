@@ -37,6 +37,8 @@ docker compose up -d --build          # 첫 빌드: node 이미지 + docker-agen
 docker compose logs -f bosun          # 진입점 로그(agent.yaml 생성·경고)를 본다
 ```
 
+> **저장소를 갱신했다면 반드시 `--build`를 붙인다**: `container/entrypoint.sh`·`container/portainer-bootstrap.sh`는 **이미지 안에** 들어간다. `docker compose up -d`만 하면 예전 이미지가 계속 돌아, 고친 스크립트가 컨테이너에 반영되지 않는다(증상: 로그 단계가 옛 번호로 나오거나 옛 명령이 실행됨).
+
 > `portainer` 서비스에는 **헬스체크를 두지 않았다**(11-12 첫 실행에서 확인): 그 이미지에 `wget`이 없으면(또는 HTTP 9000이 HTTPS로 넘겨 응답하지 않으면) unhealthy로 굳고, `depends_on: service_healthy` 때문에 `bosun`이 아예 뜨지 않는다. 기동 대기는 `portainer-bootstrap.sh`가 재시도로 처리한다.
 
 첫 기동에서 컨테이너가 하는 일(`container/entrypoint.sh`):
@@ -108,6 +110,8 @@ docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -
 | `dependency failed to start: container bosun-portainer is unhealthy` | compose에 헬스체크를 두면 이 이미지에서 unhealthy로 굳는다 | 헬스체크를 쓰지 않는다(수정됨). 그래도 나오면 로컬 `docker-compose.yaml`이 최신인지 확인(`git pull`) |
 | `volume "portainer_data" already exists but was created for project …` 경고 | 다른 프로젝트가 만든 볼륨 | 이 스택은 자기 볼륨(`bosun_portainer_data`)을 쓴다(수정됨). 기존 볼륨을 일부러 쓰려면 `external: true`로 바꾸고 그 Portainer의 관리자 비밀번호를 `.env`에 넣는다 |
 | `admin init: HTTP 303` / `[0/4] HTTP 303` | Portainer가 9000(HTTP) 요청을 HTTPS로 넘긴다(API를 처리하지 않음) | 내부 주소를 `https://portainer:9443`으로 쓰고 curl에 `-k`를 붙인다(기본값·스크립트에 반영됨). 로컬 compose가 최신인지 `git pull`로 확인 |
+| `curl: (60) SSL certificate problem: self-signed certificate` 가 bootstrap에서 | 컨테이너가 **옛 이미지**로 돌고 있다(고친 스크립트에 `-k`가 들어 있음) | `docker compose up -d --build` 로 이미지를 다시 빌드한 뒤 bootstrap을 다시 실행한다 |
+| bootstrap 단계 번호가 `[1/4]`부터 시작한다 | 위와 같은 이유(옛 스크립트) | 같은 조치. 최신 스크립트는 `[0/4] Portainer 응답 대기`로 시작한다 |
 | `portainer:9443` 연결 실패 | Portainer가 아직 기동 전이거나 스택 밖 주소 | `[0/4]` 단계가 재시도한다. 계속 실패하면 `docker compose ps` / `logs bosun-portainer` |
 | 9443 이미 사용 중 | 기존 Portainer 스택(컨테이너 이름 `portainer`)이 떠 있음 | 그 스택을 `docker compose -f portainer/portainer-compose.yaml down` 으로 내린다. 통합하지 않으려면 이 스택의 `portainer` 서비스를 지우고 `PORTAINER_URL_INTERNAL`/`PORTAINER_API_KEY`만 기존 Portainer에 맞춘다 |
 | 빌드 실패(바이너리 다운로드) | 네트워크/버전 태그 | `docker compose build --no-cache bosun`, `DOCKER_AGENT_VERSION` 값 확인 |
