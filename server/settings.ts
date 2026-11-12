@@ -123,8 +123,29 @@ export function agentEnvIsSet(name: string): boolean {
   return agentEnvValue(name) !== null
 }
 
+// 이름만 있고 값이 빈 줄(예: `PORTAINER_API_KEY=`). docker-agent는 이런 줄을 "값이 있는 항목"으로 읽어
+// (pkg/environment/env_files.go) 공급자 체인 1순위에서 **빈 문자열**을 그대로 쓴다 → MCP 도구까지 빈 값이 가고
+// Portainer는 "A valid authorization token is missing"을 돌려준다. 조용한 실패라 따로 찾아낸다.
+export function agentEnvBlankKeys(names: readonly string[]): string[] {
+  if (!config.agentEnvFile) return []
+  const blank = new Set<string>()
+  for (const line of readEnvLines()) {
+    const trimmed = line.trim()
+    if (trimmed === '' || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq < 0) continue
+    const name = trimmed.slice(0, eq).trim()
+    if (names.includes(name) && trimmed.slice(eq + 1).trim() === '') blank.add(name)
+  }
+  return [...blank]
+}
+
 // 보낸 값을 한 번에 쓴다. 다른 줄(주석·다른 키)은 그대로 두고, 같은 이름의 줄은 지우고 새로 붙인다.
-// 반쯤 쓴 파일을 Agent가 읽지 않게 옆 파일에 쓰고 바꿔 끼운다. 권한은 소유자만(600).
+// **빈 값은 줄을 만들지 않는다**: docker-agent의 env 파일 파서는 `KEY=`(빈 값)를 "값이 있는 항목"으로
+// 읽고(`pkg/environment/env_files.go` ReadEnvFile), 공급자 체인은 첫 번째로 찾은 값을 그대로 쓴다
+// (`pkg/environment/multi.go` MultiProvider.Get). 그래서 빈 줄이 남아 있으면 컨테이너 환경변수보다
+// 우선해서 **빈 문자열이 MCP 도구까지 전달**되고, Portainer는 `A valid authorization token is missing`을
+// 돌려준다(값이 아예 없으면 `${env.X}`가 치환되지 않아 다른 오류가 난다 — 조용한 실패를 만드는 쪽이 빈 줄이다).
 export function saveAgentEnvValues(values: Record<string, string>): void {
   if (!config.agentEnvFile) throw new Error('AGENT_ENV_FILE이 없어요. Agent env 파일 경로를 넣어주세요.')
   const names = new Set(Object.keys(values))
@@ -134,7 +155,10 @@ export function saveAgentEnvValues(values: Record<string, string>): void {
     return !names.has(trimmed.split('=')[0].trim())
   })
   while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop()
-  for (const [name, value] of Object.entries(values)) lines.push(`${name}=${value}`)
+  for (const [name, value] of Object.entries(values)) {
+    if (value === '') continue
+    lines.push(`${name}=${value}`)
+  }
   const tmp = `${config.agentEnvFile}.tmp`
   writeFileSync(tmp, `${lines.join('\n')}\n`, { mode: 0o600 })
   renameSync(tmp, config.agentEnvFile)
@@ -143,4 +167,24 @@ export function saveAgentEnvValues(values: Record<string, string>): void {
 
 export function saveApiKey(apiKey: string): void {
   saveAgentEnvValues({ [config.agentKeyName]: apiKey })
+}
+
+// 값이 빈 줄을 지운다. 빈 줄은 "없음"이 아니라 "빈 문자열"로 전달되어(위 설명) 조용히 도구를 망가뜨린다.
+// 저장할 때마다 세 이름을 청소해 두면, 컨테이너 환경변수로 넘어가거나 최소한 "값 없음"으로 보인다.
+export function pruneBlankAgentEnvKeys(names: readonly string[]): string[] {
+  const blank = agentEnvBlankKeys(names)
+  if (blank.length === 0 || !config.agentEnvFile) return []
+  const drop = new Set(blank)
+  const lines = readEnvLines().filter((line) => {
+    const trimmed = line.trim()
+    if (trimmed === '' || trimmed.startsWith('#')) return true
+    const eq = trimmed.indexOf('=')
+    if (eq < 0) return true
+    return !(drop.has(trimmed.slice(0, eq).trim()) && trimmed.slice(eq + 1).trim() === '')
+  })
+  const tmp = `${config.agentEnvFile}.tmp`
+  writeFileSync(tmp, `${lines.join('\n')}`, { mode: 0o600 })
+  renameSync(tmp, config.agentEnvFile)
+  chmodSync(config.agentEnvFile, 0o600)
+  return blank
 }

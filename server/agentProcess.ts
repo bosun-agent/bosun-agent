@@ -99,6 +99,9 @@ let restarts = 0
 let crashes: number[] = []
 let pendingRestart = false
 let stopping = false
+// 마지막으로 Agent 프로세스를 띄운 시각. 설정 저장 쪽이 "정말 새 프로세스인지" 확인하는 데 쓴다
+// (/health는 누가 응답해도 ok라서, 다시 시작하는 동안 옛 프로세스를 새 것으로 착각할 수 있다).
+let spawnedAt = 0
 let isIdle: () => boolean = () => true
 // 다시 띄우기를 기다리는 중에 화면에서 다시 시작을 누르면 앞의 기다림은 버린다.
 let generation = 0
@@ -111,6 +114,12 @@ export function agentStatus(): AgentProcessStatus {
     ...(pendingRestart ? { pendingRestart } : {}),
     ...(lastError && state !== 'running' ? { error: lastError } : {}),
   }
+}
+
+// 마지막으로 띄운 시각(0이면 WEB이 띄운 적 없음). 밖에서는 이 값이 "요청 시각보다 큰지"로
+// 새 프로세스가 실제로 떴는지 판단한다(server/setup.ts).
+export function agentSpawnedAt(): number {
+  return spawnedAt
 }
 
 // 실제 docker-agent의 /health는 version을 빈 값으로 준다. 그래서 WEB이 띄우는 실행 파일에 `version`을 한 번 물어 둔다.
@@ -183,6 +192,7 @@ async function spawnAgent(): Promise<void> {
   readBinVersion(cmd)
   const proc = spawn(cmd.bin, cmd.args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
   child = proc
+  spawnedAt = Date.now()
   savePid(proc.pid)
   pipe(proc.stdout, (line) => console.info(`[agent] ${line}`))
   pipe(proc.stderr, (line) => {

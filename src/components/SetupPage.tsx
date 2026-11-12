@@ -82,7 +82,7 @@ export function SetupPage({ status, onDone, onClose }: Props) {
   const [portainerApiKey, setPortainerApiKey] = useState('')
   const [fields, setFields] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState<{ ready: boolean; note: string } | null>(null)
+  const [saved, setSaved] = useState<{ ready: boolean; note: string; notice?: string } | null>(null)
 
   const missing = missingValues(current)
 
@@ -108,7 +108,7 @@ export function SetupPage({ status, onDone, onClose }: Props) {
       setPortainerApiKey('')
       return
     }
-    setSaved({ ready: outcome.ready, note: noteFor(outcome.checks) })
+    setSaved({ ready: outcome.ready, note: noteFor(outcome.checks), ...(outcome.notice ? { notice: outcome.notice } : {}) })
     setOpenrouterKey('')
     setPortainerApiKey('')
   }
@@ -124,6 +124,7 @@ export function SetupPage({ status, onDone, onClose }: Props) {
               : 'Agent를 다시 시작하는 중이에요. 화면 위쪽 상태 표시가 준비됨으로 바뀌면 대화를 시작할 수 있어요.'}
           </p>
           {saved.note && <p className="mt-2 text-xs text-neutral-500">{saved.note}</p>}
+          {saved.notice && <p className="mt-2 text-xs text-amber-700">{saved.notice}</p>}
           <button
             type="button"
             onClick={onDone}
@@ -153,6 +154,12 @@ export function SetupPage({ status, onDone, onClose }: Props) {
         {missing.length > 0 && (
           <p className="mt-2 text-xs text-neutral-500">
             아직 없는 값: <span className="font-mono">{missing.join(', ')}</span>
+          </p>
+        )}
+        {current.warnings && current.warnings.length > 0 && (
+          <p className="mt-2 text-xs text-amber-700">
+            값이 빈 줄로 남아 있어요: <span className="font-mono">{current.warnings.join(', ')}</span> — 이대로면 도구가 빈 값을
+            보내 401이 납니다. 저장하면 그 줄은 지워집니다.
           </p>
         )}
         {!current.portainer.keySet && current.browserUrl && (

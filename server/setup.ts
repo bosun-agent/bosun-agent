@@ -15,10 +15,10 @@
 
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { agentStatus, restartAgent } from './agentProcess.ts'
+import { agentSpawnedAt, agentStatus, restartAgent } from './agentProcess.ts'
 import * as agent from './agentClient.ts'
 import { config } from './config.ts'
-import { agentEnvIsSet, agentEnvValue, saveAgentEnvValues, validEnvValue } from './settings.ts'
+import { agentEnvBlankKeys, agentEnvIsSet, agentEnvValue, pruneBlankAgentEnvKeys, saveAgentEnvValues, validEnvValue } from './settings.ts'
 
 // Portainer 주소로 받는 모양. 뒤에 경로가 붙는 것을 막는다.
 const URL_SHAPE = /^https?:\/\/[A-Za-z0-9._~-]+(:\d{1,5})?\/?$/
@@ -44,12 +44,15 @@ export type SetupStatus = {
   agent: { state: string }
   // 화면 안내문에 쓰는 기본값. 컨테이너 스택이면 이 주소다.
   portainerUrlHint: string
+  // 값이 빈 줄로 남아 있는 이름들(예: ["PORTAINER_API_KEY"]). docker-agent가 빈 문자열을 그대로 쓰기 때문에
+  // 이 상태로 저장하면 도구가 빈 키를 보낸다. 화면이 경고로 보여준다.
+  warnings: string[]
 }
 
 export type SetupCheck = { ok: boolean; message: string }
 
 export type SetupResult =
-  | { ok: true; status: SetupStatus; restart: string; ready: boolean; checks: Record<string, SetupCheck> }
+  | { ok: true; status: SetupStatus; restart: string; ready: boolean; checks: Record<string, SetupCheck>; notice?: string }
   | { ok: false; errors: Record<string, string> }
 
 export type FieldErrors = Record<string, string>
@@ -74,6 +77,7 @@ export function setupStatus(): SetupStatus {
     browserUrl: config.portainerUrl || null,
     agent: { state: agentStatus().state },
     portainerUrlHint: process.env.PORTAINER_URL_INTERNAL || 'https://<Portainer 호스트>:9443',
+    warnings: agentEnvBlankKeys([config.agentKeyName, PORTAINER_URL_NAME, PORTAINER_API_KEY_NAME]),
   }
 }
 
@@ -225,20 +229,44 @@ export async function applySetup(input: SetupInput): Promise<SetupResult> {
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
   saveAgentEnvValues(values)
+  // 값이 빈 줄이 남아 있으면 지운다(그 줄이 있으면 docker-agent가 빈 문자열을 도구까지 넘긴다).
+  const pruned = pruneBlankAgentEnvKeys([config.agentKeyName, PORTAINER_URL_NAME, PORTAINER_API_KEY_NAME])
+  if (pruned.length > 0) console.info(`[setup] removed blank value line(s): ${pruned.join(', ')}`)
   // 값은 로그에 남기지 않는다. 무엇을 넣었는지만 남긴다.
   console.info(`[setup] stored ${Object.keys(values).join(', ')}`)
 
+  // 다시 시작은 "새 프로세스가 실제로 떴는지"까지 봐야 한다. Agent는 값을 시작할 때 한 번만 읽으므로,
+  // 옛 프로세스가 계속 응답하면 저장한 값이 반영되지 않은 채로 대화가 시작된다.
+  const restartAt = Date.now()
   const restart = restartAgent()
-  const ready = restart === 'manual' ? false : await waitForAgent()
+  if (restart === 'manual') {
+    const notice =
+      '이 Agent는 WEB이 띄운 것이 아니라 자동으로 다시 시작할 수 없어요. 값을 적용하려면 컨테이너를 다시 시작하세요: docker compose restart bosun'
+    console.warn('[setup] agent is not managed by WEB; manual restart required')
+    return { ok: true, status: setupStatus(), restart, ready: false, checks, notice }
+  }
+  const ready = await waitForAgent(restartAt)
   console.info(`[setup] agent restart: ${restart}, ready: ${ready}`)
-  return { ok: true, status: setupStatus(), restart, ready, checks }
+  return {
+    ok: true,
+    status: setupStatus(),
+    restart,
+    ready,
+    checks,
+    ...(ready
+      ? {}
+      : { notice: 'Agent가 아직 새 값으로 뜨지 않았어요(처리 중인 대화가 있으면 끝난 뒤에 다시 시작합니다). 화면 위쪽 상태가 준비됨이 되면 대화를 시작하세요.' }),
+  }
 }
 
-// Agent가 다시 시작해 요청을 받을 때까지 기다린다. 화면은 이 값으로 "준비 중" 안내를 정한다.
-async function waitForAgent(timeoutMs = timeoutEnv('SETUP_AGENT_WAIT_MS', 30_000)): Promise<boolean> {
+// Agent가 다시 시작해 요청을 받을 때까지 기다린다.
+// startedAfter보다 **나중에 띄워진** 프로세스여야 한다: /health는 누가 응답해도 ok라서,
+// 다시 시작하는 동안 옛 프로세스가 응답하면 새 값이 반영되지 않은 것을 "준비됨"으로 착각한다.
+async function waitForAgent(startedAfter: number, timeoutMs = timeoutEnv('SETUP_AGENT_WAIT_MS', 30_000)): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
-    const health = await agent.health().catch(() => null)
+    const fresh = agentSpawnedAt() >= startedAfter
+    const health = fresh ? await agent.health().catch(() => null) : null
     if (health?.status === 'ok') return true
     if (Date.now() >= deadline) return false
     await new Promise((resolve) => setTimeout(resolve, 1_000))

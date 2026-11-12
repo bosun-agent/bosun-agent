@@ -130,6 +130,8 @@ docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -
 | 조회까지 전부 차단 | 정책 훅이 실패(fail-closed) | 3번 체크리스트(pyyaml)와 `agent.yaml`의 `AGENT_ENV_FILE` 경로. 훅은 `--env-from-file` 값을 받지 못하므로 경로가 agent.yaml 안에 있어야 한다 |
 | 모델 호출만 실패 | 키 없음/모델 이름 | `container/.env`의 `OPENROUTER_API_KEY`, `AGENT_MODELS` 형식(`provider/model`) |
 | Portainer API 401/403 | API 키 없음/만료 | 설정 페이지에서 그 칸을 다시 저장하거나 `container/.env`의 `PORTAINER_API_KEY`에 넣고 `docker compose up -d` |
+| 도구가 `A valid authorization token is missing`(401) | agent.env에 `PORTAINER_API_KEY=` **빈 줄**이 남아 있다(docker-agent가 그 줄을 "값 있음"으로 읽어 빈 문자열을 도구까지 넘긴다). 또는 에이전트가 키 저장 **전**의 환경으로 떠 있다 | 설정 페이지에서 그 칸을 다시 저장하면 빈 줄이 지워진다. 그래도 같은 오류면 `docker compose restart bosun`(Agent는 값을 시작할 때만 읽는다) |
+| 도구가 `Invalid JWT token`(401) | 키 이름이 아예 없어 `${env.PORTAINER_API_KEY}`가 치환되지 않았다 | 설정 페이지에서 키를 넣어 저장 |
 | 설정 페이지에서 "Portainer에 연결하지 못했어요" | 주소가 틀렸거나, 그 주소가 컨테이너에서 보이지 않는다 | 주소를 확인한다(기존 Portainer면 호스트 LAN 주소). 컨테이너에서 확인: `docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -sk "$PORTAINER_URL/api/endpoints"'` |
 | 설정 페이지에서 "Docker 환경(endpoint)이 아직 없어요" | 그 Portainer에 Docker 환경이 등록되지 않았다 | Portainer 화면에서 Get Started(local)로 등록한 뒤 다시 저장한다 |
 | 빌드 실패(바이너리 다운로드) | 네트워크/버전 태그 | `docker compose build --no-cache bosun`, `DOCKER_AGENT_VERSION` 값 확인 |

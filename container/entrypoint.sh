@@ -44,6 +44,13 @@ fi
 
 missing=""
 for key in OPENROUTER_API_KEY PORTAINER_URL PORTAINER_API_KEY; do
+  # 값이 빈 줄(`KEY=`)은 지운다: docker-agent는 그 줄을 "값이 있는 항목"으로 읽고 빈 문자열을
+  # MCP 도구까지 넘긴다(그래서 Portainer가 "A valid authorization token is missing"을 돌려준다).
+  # 지워 두면 컨테이너 환경변수로 넘어가거나, 최소한 "값 없음"으로 드러난다.
+  if grep -qE "^${key}=[[:space:]]*$" "$ENV_FILE" 2>/dev/null; then
+    log "빈 값 줄을 지웁니다: $key="
+    sed -i -E "/^${key}=[[:space:]]*$/d" "$ENV_FILE"
+  fi
   grep -q "^${key}=." "$ENV_FILE" || missing="$missing $key"
 done
 if [ -n "$missing" ]; then

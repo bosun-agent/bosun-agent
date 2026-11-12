@@ -16,6 +16,8 @@ export type SetupStatus = {
   browserUrl: string | null
   agent: { state: string }
   portainerUrlHint: string
+  // 값이 빈 줄로 남아 있는 이름들. docker-agent가 빈 문자열을 그대로 도구에 넘기기 때문에 경고로 보여준다.
+  warnings?: string[]
 }
 
 export type SetupInput = {
@@ -25,7 +27,7 @@ export type SetupInput = {
 }
 
 export type SetupOutcome =
-  | { ok: true; status: SetupStatus; restart: string; ready: boolean; checks: Record<string, SetupCheck> }
+  | { ok: true; status: SetupStatus; restart: string; ready: boolean; checks: Record<string, SetupCheck>; notice?: string }
   // 항목 이름(openrouterKey·portainerUrl·portainerApiKey·form) → 이유
   | { ok: false; fields: Record<string, string> }
 
@@ -53,12 +55,20 @@ export async function applySetup(input: SetupInput): Promise<SetupOutcome> {
         restart?: string
         ready?: boolean
         checks?: Record<string, SetupCheck>
+        notice?: string
         message?: string
         fields?: Record<string, string>
       }
     | null
   if (res.ok && body?.ok && body.status) {
-    return { ok: true, status: body.status, restart: body.restart ?? 'started', ready: body.ready === true, checks: body.checks ?? {} }
+    return {
+      ok: true,
+      status: body.status,
+      restart: body.restart ?? 'started',
+      ready: body.ready === true,
+      checks: body.checks ?? {},
+      ...(body.notice ? { notice: body.notice } : {}),
+    }
   }
   if (body?.fields) return { ok: false, fields: body.fields }
   return { ok: false, fields: { form: body?.message ?? `저장하지 못했어요 (HTTP ${res.status}).` } }
