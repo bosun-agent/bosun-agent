@@ -20,12 +20,13 @@ agent 브랜치
 │   └─ expert.yaml.example     계획 없이 바로 승인 카드로 확인
 ├─ ai-agent-hooks/           훅(검사 프로그램)·공용 모듈·도구·테스트
 │   ├─ agent.yaml.example      기준 설정(권한·안내문·도구·훅·모델). 두 Agent의 원본
-│   ├─ *.py                    훅 10개 + 공용 모듈 4개 (파일별 설명은 ai-agent-hooks/README.md)
-│   ├─ tools/                  make_agents.py(두 Agent 만들기), check_merged_config.py(설정 검사)
+│   ├─ *.py                    훅 12개 + 공용 모듈 5개 (파일별 설명은 ai-agent-hooks/README.md)
+│   ├─ tools/                  make_agents.py(두 Agent 만들기), check_merged_config.py(설정 검사), soteria_setup.py(백업 창구 만들기)
 │   ├─ tests/                  훅 단위 테스트(원할 때만, 7절)
 │   └─ yq-split/               설정을 세 파일로 나눈 것과 합치는 스크립트
 ├─ portainer/portainer-compose.yaml    Portainer 실행(2.45.1 고정)
-├─ backup/bosun-backup-compose.yaml    볼륨 백업 컨테이너 예시(offen/docker-volume-backup v2.50.1)
+├─ backup/bosun-backup-compose.yaml    정시 볼륨 백업 컨테이너 예시(offen/docker-volume-backup v2.50.1)
+├─ tools/bin/mcp-soteria      "지금 백업" MCP 프로그램(6절에서 만든다, 커밋 안 함)
 └─ docs/                     동작 기준·테스트 목록, 설계·구현 정리, 복원 절차서
 ```
 
@@ -37,6 +38,7 @@ agent 브랜치
 | docker-agent v1.148.0 | `docker-agent version`으로 확인 |
 | Python 3 + PyYAML, uv(`uvx`) | 훅이 Python, mcp-portainer는 uvx로 실행 |
 | OpenRouter API 키 | 모델 호출 |
+| soteria 이미지·MCP | "지금 백업"용(팀원 soteria 저장소). 만드는 법은 6절 |
 
 ## 3. 설치
 
@@ -109,9 +111,37 @@ TELEMETRY_ENABLED=false
 
 ## 6. 볼륨 백업
 
-- `backup/bosun-backup-compose.yaml`은 현재 쓰는 설정 예시다. 볼륨 이름은 실제 앱 볼륨으로 바꾸고, 모두 **읽기 전용(`:ro`)**으로 붙인다. Portainer에서 스택 `bosun-backup`으로 만든다.
-- 매일 낮 12시·저녁 6시·밤 11시(한국 시간, `TZ=Asia/Seoul`) 자동 백업, 7일 보관. 그 시간에 서버가 꺼져 있으면 그 회차는 건너뛴다.
-- "지금 백업해줘" → Agent가 승인 1번 받고 `backup` 명령을 실행한다. **정책표 4절(exec 금지)의 유일한 예외**로, bosun-backup 컨테이너의 backup 명령 하나만 허용한다.
+백업은 두 가지가 함께 돈다.
+
+| | 정시 자동 백업 | 지금 백업(soteria) |
+|---|---|---|
+| 언제 | 매일 낮 12시·저녁 6시·밤 11시(한국 시간), 7일 보관 | 사용자가 "지금 백업해줘"라고 할 때, 그리고 데이터가 있는 앱을 **수정하기 전에는 반드시** |
+| 무엇으로 | `bosun-backup` 스택(offen/docker-volume-backup) | `bosun-soteria` 스택(팀원 soteria, 승인 트리거 백업 API) + MCP `backup_volume`·`backup_status` |
+| 대상 | 관리자가 연결한 볼륨 | 데이터(볼륨)가 있는 **모든 앱**. 새 앱은 만들거나 고치면 훅이 자동으로 추가 |
+| 저장 | `bosun_backups` 볼륨, `backup-날짜.tar.gz`(앱 전부 한 파일) | `bosun_soteria_backups` 볼륨, `job-bosun-볼륨-시각-….tar.gz`(볼륨 하나) |
+
+**지금 백업 규칙(훅이 강제)**
+- 앱이 켜져 있으면 거부 → Agent가 정지 → 백업 → 시작 순서로 진행(각각 승인). 쓰는 중 백업은 깨질 수 있어서다.
+- 데이터가 있는 앱의 스택 수정은 그 앱 볼륨 전부에 최근 30분 안 성공 백업이 있어야 통과한다(모델이 순서를 건너뛰어도 막힘).
+- 백업은 볼륨 하나씩(`/backup/<볼륨 이름>`)만, 작업 번호·보관 폴더는 훅이 정한다. 볼륨이 여러 개인 앱은 볼륨마다 한 번씩(앱은 한 번만 정지). 보관 기간 등 다른 인자는 거부(다른 앱 백업이 지워질 수 있음).
+- 컨테이너 안 명령 실행(exec)은 예외 없이 막는다(11/12 팀 결정. 예전의 "백업 명령 exec 예외"는 없앴다).
+
+**처음 한 번 설정(관리자)**
+1. soteria 이미지 만들기(팀원 저장소)
+```bash
+git clone https://github.com/seoulorigin/soteria.git ~/soteria-src && cd ~/soteria-src && docker build -t soteria:test .
+```
+2. MCP 프로그램 만들기(Go 설치 없이 Docker 안에서, 이 브랜치 폴더 `tools/bin/`에 만든다. 맥 Apple Silicon 기준, 인텔 맥은 `GOARCH=amd64`, Windows는 `GOOS=windows`·`mcp-soteria.exe`)
+```bash
+docker run --rm -v ~/soteria-src:/app:ro -v "$PWD/tools/bin":/out -w /app golang:1.27-alpine sh -c 'GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o /out/mcp-soteria ./cmd/mcp'
+```
+3. 백업 파일 볼륨을 만들고, 창구 스택(`bosun-soteria`, 127.0.0.1:18090)을 만든다. 지금 있는 앱 데이터는 자동으로 찾아 읽기 전용으로 붙인다.
+```bash
+docker volume create bosun_soteria_backups
+cd ai-agent-hooks && AGENT_ENV_FILE=<실행 폴더>/agent.env PORTAINER_TLS_VERIFY=0 SOTERIA_ENDPOINT_ID=<환경 ID> SOTERIA_TARGETS_FILE=<실행 폴더>/soteria_targets.json python3 tools/soteria_setup.py
+```
+- 설정의 `SOTERIA_ENDPOINT_ID`(기본 3)를 Portainer 환경 ID에 맞춘다.
+- 정시 자동 백업은 `backup/bosun-backup-compose.yaml`로 Portainer에서 스택 `bosun-backup`을 만든다(볼륨은 실제 앱 볼륨, 모두 `:ro`).
 - 복원은 관리자 작업: `docs/복원절차서_관리자용_11-07.md`
 
 ## 7. (원할 때만) 훅 단위 테스트
@@ -121,10 +151,10 @@ TELEMETRY_ENABLED=false
 
 ```bash
 cd ai-agent-hooks
-for t in tests/policy_1031_test.py tests/policy_1101_test.py tests/policy_1102_test.py tests/policy_1103_test.py tests/policy_1106_test.py tests/policy_1107_test.py tests/policy_1108_test.py tests/policy_1109_test.py tests/policy_1109v_test.py tests/policy_1112_test.py; do python3 $t | tail -1; done
+for t in tests/policy_1031_test.py tests/policy_1101_test.py tests/policy_1103_test.py tests/policy_1106_test.py tests/policy_1107_test.py tests/policy_1108_test.py tests/policy_1109_test.py tests/policy_1109v_test.py tests/policy_1112_test.py tests/policy_1112s_test.py; do python3 $t | tail -1; done
 python3 tests/policy_guard_test.py tool_input_transform_direct_policy_guard.py | tail -1
 ```
-줄마다 `67/67 통과`처럼 모두 통과면 정상(총 401개). 설정 검사:
+줄마다 `67/67 통과`처럼 모두 통과면 정상(총 413개). 설정 검사:
 ```bash
 python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.example
 ```
@@ -134,7 +164,6 @@ python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.examp
 | policy_guard_test | 정책 훅 허용 목록, 경로 꼼수 차단, 강제 삭제·로그 무한 받기 차단, 뺀 기능 거부 |
 | policy_1031_test | 직접 생성 금지, 스택 위험 설정 차단, 비밀값 가리기, 삭제 전 설정 저장 |
 | policy_1101_test | restart·포트·자원 제한, 공식 이미지, ID 고정, 안전 필드, 승인 카드 설명, 거부 안내 |
-| policy_1102_test | 백업 명령 예외(그 밖의 exec 거부) |
 | policy_1103_test | 인젝션 오탐 수정, 네트워크 연결 거부 |
 | policy_1106_test | 스택 수정·파일 보기, 같은 이름 거부, 안전 필드 |
 | policy_1107_test | 대화 시작 앱 요약(이어서 하기) |
@@ -142,6 +171,7 @@ python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.examp
 | policy_1109_test | 비밀번호·토큰을 Compose·Env에 적으면 거부, mysql 자동 비밀번호 설정 허용, entrypoint 거부, command·healthcheck는 허용 목록만(정책표 5.7) |
 | policy_1109v_test | 데이터 저장 앱(redis·mysql 등)은 이름 있는 볼륨 필수, 이름 없는 볼륨을 쓰는 스택은 수정 거부 |
 | policy_1112_test | 컨테이너 삭제의 force·v를 Docker와 같은 기준으로 판단(y·2 등도 참 → 거부) |
+| policy_1112s_test | soteria "지금 백업": exec 전부 거부, 백업 검사·기록·새 앱 자동 추가, 수정 전 백업 확인, BOSUN 포트(17080·3001·18090) 보호, 승인 카드 backup-now |
 
 실제 AI로 하는 시나리오 테스트(T01~T42)는 `docs/동작기준_테스트목록.md`.
 

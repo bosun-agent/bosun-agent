@@ -82,8 +82,8 @@ ALLOW = {
         r"/volumes", rf"/volumes/{SEG}",
         r"/networks", rf"/networks/{SEG}",
     ],
-    "POST": [rf"/containers/{SEG}/(start|stop|restart)", r"/images/create",   # 11/6: pause·unpause·네트워크 변경 뺌(정책표 DENY)
-             rf"/containers/{SEG}/exec", r"/exec/[0-9a-f]{64}/start"],   # 11/2: 백업 명령 예외만(아래 check_backup_exec)
+    "POST": [rf"/containers/{SEG}/(start|stop|restart)", r"/images/create"],   # 11/6: pause·unpause·네트워크 변경 뺌(정책표 DENY)
+    # 11/12: 백업 명령 exec 예외 제거(팀 결정 "exec 예외 허용 X"). "지금 백업"은 soteria 백업 도구(backup_volume)로 한다
     "DELETE": [rf"/containers/{SEG}"],
 }
 ALLOW_RE = {m: [re.compile(rf"^{p}$") for p in pats] for m, pats in ALLOW.items()}
@@ -103,14 +103,6 @@ HOST_KEYS = ["PortBindings", "RestartPolicy", "Memory", "MemoryReservation", "Na
              "Binds", "Mounts", "NetworkMode", "AutoRemove", "ReadonlyRootfs"]
 RESTART_NAMES = {"", "no", "always", "unless-stopped", "on-failure"}
 PROTECTED_VOLUME = re.compile(r"portainer", re.I)    # Portainer 데이터(키·설정) 볼륨은 연결 금지
-# 11/2 백업 명령 예외: exec는 이 컨테이너의 backup 명령 하나만 허용한다(offen/docker-volume-backup, 관리자가 만든 중앙 백업 스택).
-#   1단계 POST /containers/bosun-backup/exec  body {"Cmd": ["backup"], "AttachStdout": true, "AttachStderr": true}  → 승인 필요
-#   2단계 POST /exec/{exec ID}/start           body {"Detach": false, "Tty": false}
-#         2단계 요청에는 명령이 안 들어 있어서, Portainer에 exec 정보를 다시 물어 "백업 컨테이너의 backup 명령"인지 확인한다.
-#   permissions deny는 bosun-backup 말고 모든 컨테이너의 exec를 막도록 적혀 있다(yaml). 그래서 1단계 경로는 ID가 아니라 이름으로 보낸다.
-BACKUP_CONTAINER = "bosun-backup"
-BACKUP_EXEC_BODY = {"Cmd": ["backup"], "AttachStdout": True, "AttachStderr": True}
-BACKUP_START_BODY = {"Detach": False, "Tty": False}
 PROTECTED_CONTAINER = re.compile(r"portainer", re.I)  # Portainer 컨테이너 보호. 11/3부터 실제 대상(조회한 이름) 기준이라 ID로 와도 거른다
 SEARCH_SELECT = "[*].{name:name,official:is_official,stars:star_count}"  # 설명문(외부 작성 글)은 버린다
 # 상세(inspect)는 안전한 필드만 받는다(11/1, 정책표 "inspect 출력: 안전한 필드만"). 모델이 보낸 select는 무시하고 이것으로 바꾼다.
@@ -413,46 +405,6 @@ def _body_dict(body):
     return body if isinstance(body, dict) else {}
 
 
-def check_backup_exec_body(body, cname):
-    """exec 1단계: 백업 컨테이너의 backup 명령만. 고친 body를 돌려준다."""
-    if cname != BACKUP_CONTAINER:
-        raise Reject(f"컨테이너 안 명령 실행(exec)은 백업 컨테이너('{BACKUP_CONTAINER}')의 backup 명령만 허용됩니다('{cname}'은 대상이 아님).")
-    b = _body_dict(body)
-    if not b:  # 11/2: 허용되는 명령이 하나뿐이라, 모델이 body를 비워 보내면 정해진 명령으로 채운다(실제 실행에서 모델이 null로 보냄)
-        return dict(BACKUP_EXEC_BODY)
-    for k in b:
-        if k not in BACKUP_EXEC_BODY:
-            raise Reject(f"백업 실행 요청의 body '{k}'는 허용되지 않습니다(Cmd, AttachStdout, AttachStderr만).")
-    if b.get("Cmd") != ["backup"]:
-        raise Reject("백업 컨테이너에서는 Cmd [\"backup\"] 하나만 실행할 수 있습니다.")
-    for k in ("AttachStdout", "AttachStderr"):
-        if k in b and not isinstance(b[k], bool):
-            raise Reject(f"{k}는 true/false여야 합니다.")
-    return dict(BACKUP_EXEC_BODY)
-
-
-def check_backup_exec_start(env_id, exec_id, body):
-    """exec 2단계: Portainer에 exec 정보를 물어 백업 컨테이너의 backup 명령인지 확인한다."""
-    if isinstance(env_id, bool) or not str(env_id).isdigit():
-        raise Reject("environment_id(환경 번호)가 없거나 숫자가 아닙니다.")
-    b = _body_dict(body)
-    for k, v in b.items():
-        if k not in BACKUP_START_BODY or v is not False:
-            raise Reject("백업 실행 시작 요청의 body는 {\"Detach\": false, \"Tty\": false}만 허용됩니다.")
-    try:
-        info = portainer_api.get(f"/api/endpoints/{env_id}/docker/exec/{exec_id}/json")
-        backup_id, _ = portainer_api.container(env_id, BACKUP_CONTAINER)
-    except portainer_api.PortainerError as e:
-        raise Reject(f"실행하려는 명령이 백업 명령인지 확인하지 못했습니다({e}).") from None
-    pc = info.get("ProcessConfig") or {}
-    if info.get("ContainerID") != backup_id or pc.get("entrypoint") != "backup" or pc.get("arguments") or pc.get("privileged") \
-            or pc.get("user") not in (None, ""):
-        raise Reject("이 실행 번호는 백업 컨테이너의 backup 명령이 아니어서 실행할 수 없습니다.")
-    if info.get("Running") or info.get("Pid"):
-        raise Reject("이 백업 실행은 이미 진행 중이거나 끝났습니다. 다시 하려면 새로 요청하세요.")
-    return dict(BACKUP_START_BODY)
-
-
 def main():
     raw = sys.stdin.read().strip()
     payload = json.loads(raw) if raw else {}
@@ -483,6 +435,10 @@ def main():
         return
     if method == "DELETE" and re.match(r"^/(images|networks)/", clean):
         block("이미지·네트워크 삭제는 이 Agent에서 허용되지 않습니다.")
+        return
+    # 11/12: 컨테이너 안 명령 실행(exec)은 예외 없이 거부(정책표 4절). 백업은 backup_volume
+    if re.search(r"(^|/)exec(/|$)", clean):
+        block("컨테이너 안 명령 실행(exec)은 이 Agent에서 허용되지 않습니다(정책표 4절). 지금 백업은 백업 도구(backup_volume)로 하세요.")
         return
     # 11/6: 보안 정책표 3절 DENY(10/18에 열었던 것). 허용 목록에서도 뺐지만 알기 쉬운 이유로 먼저 막는다
     if method == "POST" and re.fullmatch(rf"/containers/{SEG}/(pause|unpause)", clean):
@@ -515,30 +471,12 @@ def main():
         except portainer_api.PortainerError as e:
             block(f"'{ref}'라는 컨테이너가 없습니다." if e.status == 404 else f"대상 컨테이너를 확인하지 못했습니다({e}).")
             return
-        if op == "/exec":
-            try:
-                body = check_backup_exec_body(args.get("body"), cname)
-            except Reject as r:
-                block(str(r))
-                return
-            out({"hook_specific_output": {"updated_input": {"path": f"/containers/{BACKUP_CONTAINER}/exec", "body": body}}})
-            return
         if PROTECTED_CONTAINER.search(cname) and method != "GET":
             block(f"관리 도구 컨테이너('{cname}')는 끄거나 지우거나 바꿀 수 없습니다.")
             return
         if clean != f"/containers/{full_id}{op}":
             clean = f"/containers/{full_id}{op}"
             updates["path"] = clean
-
-    m_x = re.fullmatch(r"/exec/([0-9a-f]{64})/start", clean)
-    if m_x:
-        try:
-            body = check_backup_exec_start(args.get("environment_id"), m_x.group(1), args.get("body"))
-        except Reject as r:
-            block(str(r))
-            return
-        out({"hook_specific_output": {"updated_input": {**updates, "body": body}}})
-        return
 
     query = args.get("query_params")
     if isinstance(query, str):

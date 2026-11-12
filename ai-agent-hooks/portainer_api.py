@@ -96,3 +96,33 @@ def container(environment_id, ref, timeout=5):
 
 def stack_name(stack_id, timeout=5):
     return str(get(f"/api/stacks/{int(stack_id)}", timeout).get("Name", ""))
+
+
+def request_json(method, path, body=None, timeout=60):
+    """11/12: Portainer REST 요청(PUT·POST 등)의 JSON 결과. 실패하면 PortainerError.
+    soteria 백업 창구 스택에 새 앱 볼륨을 붙일 때(관리 작업, 모델이 아니라 훅만 쓴다) 사용한다."""
+    try:
+        file_values = _read_env_file(os.environ.get("AGENT_ENV_FILE", ""))
+    except OSError as e:
+        raise PortainerError(f"AGENT_ENV_FILE을 읽지 못했습니다: {e}") from None
+    base_url = os.environ.get("PORTAINER_URL") or file_values.get("PORTAINER_URL")
+    api_key = os.environ.get("PORTAINER_API_KEY") or file_values.get("PORTAINER_API_KEY")
+    if not base_url or not api_key:
+        raise PortainerError("PORTAINER_URL 또는 PORTAINER_API_KEY를 찾지 못했습니다(AGENT_ENV_FILE 확인).")
+    verify = str(os.environ.get("PORTAINER_TLS_VERIFY") or file_values.get("PORTAINER_TLS_VERIFY") or "1").strip().lower() \
+        not in {"0", "false", "no", "off"}
+    ctx = ssl.create_default_context()
+    if not verify:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(base_url.rstrip("/") + path, data=data, method=method,
+                                 headers={"X-API-Key": api_key, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            raw = resp.read()
+            return json.loads(raw.decode("utf-8")) if raw.strip() else {}
+    except urllib.error.HTTPError as e:
+        raise PortainerError(f"Portainer 요청 실패(HTTP {e.code})", e.code) from None
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        raise PortainerError(f"Portainer에 연결하지 못했습니다: {getattr(e, 'reason', e)}") from None

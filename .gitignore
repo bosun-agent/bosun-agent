@@ -18,3 +18,5 @@ __pycache__/
 # 실제 실행 설정(경로가 PC마다 다름) — 예시(.example)만 올린다
 /agent.yaml
 /agents/*.yaml
+# soteria MCP 프로그램(빌드 결과, PC마다 만든다)
+/tools/bin/

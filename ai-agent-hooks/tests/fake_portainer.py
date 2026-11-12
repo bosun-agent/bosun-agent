@@ -29,6 +29,10 @@ STACKS = {
 CONTAINERS = ["agent-test", "web-old"]   # 컨테이너 이름 목록
 # 11/9 데이터 볼륨 규칙 테스트용: 스택(프로젝트) → 컨테이너가 쓰는 볼륨 이름 목록
 STACK_MOUNTS = {}
+# 11/12 soteria 정식 결합 테스트용: 볼륨 → [(컨테이너 이름, 상태, 프로젝트)], 볼륨 크기, 받은 PUT 요청 기록
+VOLUME_USERS = {}
+VOLUME_SIZES = {}
+PUTS = []
 PROJECTS = {"outside-app"}               # Portainer 밖에서 만든 Compose 프로젝트 이름
 
 
@@ -76,12 +80,19 @@ class _H(BaseHTTPRequestHandler):
             return self._send(200, {k: v for k, v in st.items() if not k.startswith("_")})
         if path == "/api/endpoints":  # 11/7 이어서 하기 요약용
             return self._send(200, [{"Id": 3, "Name": "local", "Type": 1}])
+        if re.fullmatch(r"/api/endpoints/\d+/docker/system/df", path):
+            return self._send(200, {"Volumes": [{"Name": k, "UsageData": {"Size": v}} for k, v in VOLUME_SIZES.items()]})
         if path == "/api/stacks":
             return self._send(200, [{k: v for k, v in st.items() if not k.startswith("_")} for st in STACKS.values()])
         if re.fullmatch(r"/api/endpoints/\d+/docker/containers/json", path):
             q = parse_qs(urlsplit(self.path).query)
             if "filters" in q:
                 flt = json.loads(q["filters"][0])
+                if "volume" in flt:
+                    vol = flt["volume"][0]
+                    return self._send(200, [{"Id": fake_id(n), "Names": ["/" + n], "State": st,
+                                             "Labels": {"com.docker.compose.project": pj} if pj else {}}
+                                            for n, st, pj in VOLUME_USERS.get(vol, [])])
                 label = flt.get("label", [""])[0]
                 if label.split("=", 1)[-1] in STACK_MOUNTS:
                     proj = label.split("=", 1)[1]
@@ -89,7 +100,12 @@ class _H(BaseHTTPRequestHandler):
                                              "Mounts": [{"Type": "volume", "Name": v} for v in STACK_MOUNTS[proj]]}])
                 proj = label.split("=", 1)[1] if "=" in label else ""
                 return self._send(200, [{"Id": fake_id(proj + "-1"), "Names": ["/" + proj + "-1"]}] if proj in PROJECTS else [])
-            return self._send(200, [{"Id": fake_id(n), "Names": ["/" + n]} for n in CONTAINERS])
+            listed = [{"Id": fake_id(n), "Names": ["/" + n]} for n in CONTAINERS]
+            for proj, vols in STACK_MOUNTS.items():   # 11/12: 전체 목록에도 Compose 라벨·볼륨을 보여 준다(백업 대상 찾기)
+                listed.append({"Id": fake_id(proj + "-1"), "Names": ["/" + proj + "-1"],
+                               "Labels": {"com.docker.compose.project": proj},
+                               "Mounts": [{"Type": "volume", "Name": v, "Destination": "/data"} for v in vols]})
+            return self._send(200, listed)
         return self._send(404, {"message": "unknown"})
 
 
@@ -108,6 +124,17 @@ class _H(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/vnd.docker.raw-stream")
         self.end_headers()
         self.wfile.write(data)
+
+    def do_PUT(self):  # 11/12: 백업 창구 스택 다시 배포(soteria 자동 추가) 요청을 기록만 한다
+        if self.headers.get("X-API-Key") != KEY:
+            return self._send(401, {"message": "bad key"})
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        m = re.fullmatch(r"/api/stacks/(\d+)", urlsplit(self.path).path)
+        if not m or int(m.group(1)) not in STACKS:
+            return self._send(404, {"message": "no stack"})
+        PUTS.append({"id": int(m.group(1)), "query": urlsplit(self.path).query, "body": body})
+        STACKS[int(m.group(1))]["_file"] = body.get("StackFileContent", "")
+        return self._send(200, {k: v for k, v in STACKS[int(m.group(1))].items() if not k.startswith("_")})
 
 
 _srv = HTTPServer(("127.0.0.1", 0), _H)

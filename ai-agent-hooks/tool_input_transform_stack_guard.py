@@ -32,6 +32,8 @@ Compose 검사(허용 항목만)
   command는 CMD_ALLOW(이미지별 프로그램·옵션), healthcheck test는 HEALTH_ALLOW의 ["CMD", ...]만.
   데이터 볼륨(11/9): redis·mysql·mariadb·postgres·mongo는 데이터 위치에 이름 있는 볼륨 필수(DATA_PATHS).
   StackUpdate는 지금 컨테이너가 이름 없는(익명) 볼륨을 쓰면 거부(다시 배포하면 새 빈 볼륨으로 바뀜).
+  soteria(11/12): SOTERIA_GATE=1이면 데이터가 있는 앱의 StackUpdate는 그 앱 볼륨 전부에 최근 30분 안 성공 백업 기록이 있어야 통과.
+  포트(11/12): 17080(Agent)·3001(웹)·18090(백업 창구)도 앱이 못 쓴다. 관리 스택에 bosun-soteria 추가.
   비밀번호(11/9, 정책표 5.7·215·238줄): 이름에 password·secret·token·api_key 등이 들어간 환경변수에 값을 적으면 거부,
   값 안의 user:비밀번호@ 주소도 거부. Env 인자도 같다. 예외: MYSQL_RANDOM_ROOT_PASSWORD·MARIADB_RANDOM_ROOT_PASSWORD="yes"
   (앱이 스스로 비밀번호를 만든다. 로그에 나오는 값은 결과 가리기 훅이 가린다). postgres처럼 비밀번호가 꼭 필요한 이미지는 만들 수 없다.
@@ -85,6 +87,8 @@ PORT_SHORT_RE = r"((\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:]+\]):)?(\d{1,5}(-\d{1,5}
 
 PORT_MIN, PORT_MAX = 1024, 65535
 PORTAINER_PORTS = {9443, 8000}
+# 11/12: BOSUN이 쓰는 포트도 앱이 못 쓰게 한다(Agent API 17080, 웹 3001, soteria 백업 창구 18090). 8080 충돌 사례(웹 담당 11/9)
+BOSUN_PORTS = {17080: "Agent", 3001: "웹", 18090: "백업 창구"}
 MEM_CAP = 2 * 1024 ** 3        # 서비스당 메모리 상한 2GB
 CPU_CAP = 2.0                  # 서비스당 CPU 상한 2개
 MEM_DEFAULT, CPU_DEFAULT = "512m", 1   # 11/1: 안 적었을 때 채우는 기본 상한
@@ -97,7 +101,7 @@ SVC_KEYS = {"image", "command", "entrypoint", "environment", "ports", "expose", 
 CREATE_KEYS = {"endpointId", "Name", "StackFileContent", "Env", "select", "Registries", "FromAppTemplate", "Webhook"}
 UPDATE_KEYS = {"id", "endpointId", "StackFileContent", "Env", "select", "Registries"}
 UPDATE_EXTRA = ("Prune", "PullImage", "RepullImageAndRedeploy", "RollbackTo", "Webhook")  # 정책표 5.7: 값이 false여도 거부
-MANAGED_STACKS = {"bosun-backup"}   # 관리자가 만든 관리 스택(백업). 수정·정지 금지
+MANAGED_STACKS = {"bosun-backup", "bosun-soteria"}   # 관리 스택(정시 백업, 11/12 soteria 백업 창구). 수정·정지 금지
 COMPOSE_STACK_TYPE = 2              # Portainer 스택 종류: 1 Swarm, 2 Compose, 3 Kubernetes
 LOOKUP_TIMEOUT = 5
 MASK = "[REDACTED]"
@@ -264,6 +268,9 @@ def check_host_ports(published, where):
     for pp in PORTAINER_PORTS:
         if lo <= pp <= hi:
             raise Reject(f"{where} 호스트 포트 {pp}는 Portainer가 쓰는 포트라 쓸 수 없습니다.")
+    for pp, who in BOSUN_PORTS.items():
+        if lo <= pp <= hi:
+            raise Reject(f"{where} 호스트 포트 {pp}는 BOSUN {who}이(가) 쓰는 포트라 쓸 수 없습니다.")
 
 
 def check_ports(ports, where):
@@ -697,6 +704,27 @@ def check_anonymous_volumes(st):
                              "수정하면 새 빈 볼륨으로 바뀌어 데이터가 사라진 것처럼 됩니다.")
 
 
+def check_soteria_gate(st):
+    """11/12: SOTERIA_GATE=1(정식 설정)일 때, 데이터(볼륨)가 있는 앱은 스택 수정 전에 최근 성공 백업이 있어야 한다.
+    모델이 백업을 건너뛰고 바로 수정하는 것을 코드로 막는다(MCP만으로는 순서가 보장되지 않음, 팀원 지적)."""
+    if os.environ.get("SOTERIA_GATE") != "1":
+        return
+    import soteria_common as sc
+    name = str(st.get("Name", ""))
+    try:
+        vols = sc.stack_volumes(name)
+    except portainer_api.PortainerError as e:
+        raise Reject(f"스택 수정 전 최근 백업을 확인하지 못했습니다(조회에 실패: {e}).")
+    if not vols:
+        return   # 데이터가 없는 앱은 백업할 것이 없다
+    try:
+        missing = [v for v in vols if not sc.recent_backup(v)]   # 11/12 볼륨 단위: 그 앱 볼륨 전부에 최근 백업이 있어야 한다
+    except OSError as e:
+        raise Reject(f"스택 수정 전 최근 백업을 확인하지 못했습니다(기록 조회에 실패: {e}).")
+    if missing:
+        raise Reject(f"스택 '{name}'의 데이터 볼륨 중 최근 백업이 없습니다: {', '.join(missing)}. 수정 전에 먼저 백업해야 합니다.")
+
+
 def check_update(args):
     for k in args:
         if k in UPDATE_EXTRA:
@@ -710,6 +738,7 @@ def check_update(args):
     st = check_stack_target(args)
     check_env_arg(args)
     check_anonymous_volumes(st)
+    check_soteria_gate(st)
     content = args["StackFileContent"]
     if "REDACTED" in content:
         cur = lookup(f"/api/stacks/{st['Id']}/file", "지금 Compose 읽기").get("StackFileContent", "")

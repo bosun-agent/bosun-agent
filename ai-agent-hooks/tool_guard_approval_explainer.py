@@ -82,16 +82,11 @@ def explain_proxy(a):
             ("POST", "/restart"): (f"{c}를 껐다가 다시 켭니다. 잠깐 서비스가 끊깁니다.", "medium", "container-restart"),
             ("POST", "/pause"): (f"{c}를 일시정지합니다. 상태는 그대로 두고 동작만 멈춥니다.", "medium", "container-pause"),
             ("POST", "/unpause"): (f"일시정지한 {c}를 다시 움직이게 합니다.", "low", "container-unpause"),
-            ("POST", "/exec"): (f"{c}로 지금 볼륨 백업을 한 번 합니다(정해진 백업 명령만 실행). 끝날 때까지 기다리며, 백업 파일은 "
-                                "bosun_backups 볼륨에 저장되고 7일이 지나면 자동으로 지워집니다. 데이터베이스처럼 쓰는 중인 앱은 먼저 정지하는 것이 안전합니다.",
-                                "medium", "backup-now"),
             ("DELETE", ""): (f"멈춰 있는 {c}를 삭제합니다. 삭제 전 설정은 백업되지만, 컨테이너 안에만 있던 파일은 되돌릴 수 없습니다.", "high", "container-delete"),
         }
         if (method, op) in table:
             return table[(method, op)]
 
-    if method == "POST" and re.fullmatch(r"/exec/[0-9a-f]{64}/start", path):
-        return ("준비한 백업 명령을 실행합니다.", "medium", "backup-now")
     m = re.fullmatch(r"/images/(.+)/(json|history)", path)
     if method == "GET" and m:
         what = "상세 정보" if m.group(2) == "json" else "만들어진 과정(이력)"
@@ -175,6 +170,19 @@ def explain(tool, a):
     if tool == "StackFileInspect":
         return (f"{stack_label(a.get('id'))}의 설정 파일(Compose) 내용을 봅니다. 바꾸는 것은 없고, 비밀값은 가려서 보여 줍니다.",
                 "low", "stack-file")
+    if tool == "backup_volume":  # 11/12 soteria(볼륨 단위). 웹 백업 카드는 category "backup-now"로 구분한다(웹 담당 11/11 요청)
+        import soteria_common as sc
+        vol = str(a.get("volume") or a.get("source") or "?").replace("/backup/", "").strip("/")
+        try:
+            app = sc.all_volumes().get(vol)
+        except (OSError, ValueError):
+            app = None
+        est = sc.estimate_text([vol]) if app else ""
+        owner = f"'{app}' 앱의 " if app else ""
+        return (f"{owner}데이터 볼륨 '{vol}'을(를) 지금 백업합니다. 지우거나 바꾸는 것은 없습니다. {est} "
+                "백업하는 동안 그 앱은 꺼져 있어야 합니다. 끝나면 파일 이름과 지문(sha256)을 확인해 알려 드립니다.", "low", "backup-now")
+    if tool == "backup_status":
+        return (f"백업 작업 '{a.get('job_id')}'의 결과를 조회합니다. 바꾸는 것은 없습니다.", "low", "backup-status")
     if tool == "StackStart":
         return (f"{stack_label(a.get('id'))}에 속한 컨테이너를 모두 켭니다.", "low", "stack-start")
     if tool == "StackStop":

@@ -65,10 +65,15 @@ agents:
           healthcheck test: redis ["CMD","redis-cli","ping"], mysql ["CMD","mysqladmin","ping","-h","localhost"], mariadb ["CMD","healthcheck.sh","--connect","--innodb_initialized"]만. 셸(sh -c, CMD-SHELL)은 쓰지 않는다.
           사용자가 다른 옵션을 원하면 허용되지 않는다고 알리고 관리자에게 요청하라고 안내한다.
         이미지는 Docker Hub 공식 이미지(nginx, mysql, redis처럼 슬래시가 없는 이름)만 쓸 수 있다. 스택 생성과 이미지 받기 모두 같다.
-      - 볼륨 백업: 백업 컨테이너(bosun-backup)가 매일 낮 12시·저녁 6시·밤 11시(한국 시간)에 자동으로 백업한다(11/8 변경. 그 시간에 서버가 꺼져 있으면 그 회차는 건너뛴다). 사용자가 지금 백업을 원하면 승인을 받아 한 번 실행한다(11/2).
-        방법: docker_proxy POST /containers/bosun-backup/exec, body {"Cmd": ["backup"], "AttachStdout": true, "AttachStderr": true}를 한 번만 보낸다.
-        승인되면 훅이 백업을 바로 실행하고 결과(백업 로그)를 돌려준다. /exec/…/start는 보내지 않는다. 결과를 쉬운 말로 요약한다. 그 밖의 exec는 하지 않는다.
-        데이터베이스처럼 쓰는 중인 앱은 사용자에게 먼저 정지할지 묻고, 정지 → 백업 → 시작 순서로 진행한다(각각 승인). 복원은 관리자에게 요청하라고 안내한다.
+      - 볼륨 백업: 정시 백업 컨테이너(bosun-backup)가 매일 낮 12시·저녁 6시·밤 11시(한국 시간)에 자동으로 백업한다(그 시간에 서버가 꺼져 있으면 건너뛴다).
+        사용자가 지금 백업을 원하면 backup_volume을 쓴다(승인 1번, 11/12 soteria). 백업은 볼륨 하나씩 한다. source는 "/backup/<볼륨 이름>" 하나만 넣는다.
+        볼륨 이름은 컨테이너 상세나 볼륨 목록으로 확인한다. 볼륨이 하나인 앱은 앱 이름을 넣어도 된다. 볼륨이 여러 개인 앱은 볼륨마다 한 번씩 백업한다(앱은 한 번만 정지).
+        job_id·archive 등은 훅이 채우니 넣지 않는다. 데이터가 있는 앱은 만들거나 고치면 자동으로 "지금 백업" 대상이 된다.
+        주의: 정시 자동 백업(bosun-backup)은 관리자가 연결한 앱만 백업한다. 새 앱이 정시 자동 백업에 들어간다고 말하지 않는다. 새 앱은 사용자가 원할 때 "지금 백업"으로 백업할 수 있다고 안내한다.
+        앱이 켜져 있으면 백업이 거부된다(쓰는 중 백업은 깨질 수 있음). 그래서 순서는 StackStop(정지) → backup_volume → StackStart(시작), 각각 승인. 계획에 이 순서를 넣는다.
+        결과는 파일 이름·크기·지문(sha256) 앞 12글자·성공 여부로 쉬운 말로 요약한다. 큰 데이터는 몇 분 걸릴 수 있고 그동안 앱은 꺼져 있다고 알린다.
+        데이터가 있는 앱의 스택 수정(StackUpdate)은 그 앱 볼륨 전부에 최근 30분 안 백업이 있어야 한다. 수정 요청을 받으면 계획에 정지 → 백업 → 수정을 넣는다(수정하면 앱이 다시 켜진다).
+        이전 백업 결과는 backup_status(job_id)로 조회한다. 복원은 관리자에게 요청하라고 안내한다. 컨테이너 안 명령 실행(exec)은 하지 않는다.
       - 여러 서비스가 이름으로 서로 통신해야 하면 한 스택에 함께 넣는다(새로 만들거나 스택 수정으로 서비스 추가). 같은 스택 안의 서비스는 이름으로 바로 통신한다(11/6).
       - 쓸 이미지를 고를 때는 용도에 맞는 Docker Hub 공식 이미지(nginx, mysql, postgres, redis, mariadb, mongo, httpd, node, python 등)를 제안하고, 사용자가 정하게 한다.
       - 비밀번호·토큰(11/9, 정책표 5.7): 이름에 PASSWORD·SECRET·TOKEN·API_KEY 등이 들어간 환경변수에 값을 적지 않는다. Compose environment와 Env 인자 모두 같다.
@@ -77,7 +82,7 @@ agents:
         이 값은 결과 가리기 훅이 가려서 Agent도 볼 수 없다. 로그 조회로 보여 주겠다고 제안하지 않는다. 관리자가 터미널에서 확인한다고 안내한다.
         계획·설명에는 값 "yes"를 그대로 적는다(비밀번호가 아니라 켜기 설정이다).
         postgres처럼 비밀번호가 꼭 필요한 이미지는 이 Agent로 만들 수 없으니 관리자에게 요청하라고 안내한다(POSTGRES_HOST_AUTH_METHOD: trust 같은 비밀번호 끄기도 쓰지 않는다).
-      - 컨테이너 안 명령 실행(위의 백업 명령 하나만 예외), 컨테이너 안 파일 읽기·내보내기, 이미지 내보내기, 일괄 정리(prune), 강제 종료(kill), 일시정지·재개, 이미지 검색, 네트워크 생성·연결·해제, 볼륨 생성·삭제, 이미지·네트워크 삭제, 컨테이너 직접 생성(/containers/create), 스택 삭제, 관리용 스택(bosun-backup) 수정·정지, 볼륨을 함께 지우는 컨테이너 삭제(v=true), 위 목록에 없는 Compose 설정(build, privileged, 호스트 폴더 연결, host 네트워크, env_file, 변수 치환 ${...} 등), 이미 있는 컨테이너의 설정 변경 등 위에 없는 변경은 이 Agent에서 할 수 없다. 우회하는 다른 방법을 시도하지 않는다.
+      - 컨테이너 안 명령 실행(exec), 컨테이너 안 파일 읽기·내보내기, 이미지 내보내기, 일괄 정리(prune), 강제 종료(kill), 일시정지·재개, 이미지 검색, 네트워크 생성·연결·해제, 볼륨 생성·삭제, 이미지·네트워크 삭제, 컨테이너 직접 생성(/containers/create), 스택 삭제, 관리용 스택(bosun-backup) 수정·정지, 볼륨을 함께 지우는 컨테이너 삭제(v=true), 위 목록에 없는 Compose 설정(build, privileged, 호스트 폴더 연결, host 네트워크, env_file, 변수 치환 ${...} 등), 이미 있는 컨테이너의 설정 변경 등 위에 없는 변경은 이 Agent에서 할 수 없다. 우회하는 다른 방법을 시도하지 않는다.
 
       [도구 사용]
       - docker_proxy를 호출할 때는 method를 항상 명시한다(GET/POST/DELETE 등).
@@ -142,3 +147,13 @@ agents:
           - StackStop # 10/31 추가 — 스택 정지(승인)
           - StackFileInspect # 11/6 추가 — 스택 Compose 보기(승인, 정책표 6절 ASK). 수정 전에 지금 내용을 읽는다
           - StackUpdate # 11/6 추가 — 스택 수정(승인, 정책표 2절·5.7 ASK). StackDelete는 정책표 DENY라 넣지 않는다
+      # 11/12 soteria(팀원 승인 트리거 백업) MCP — "지금 백업". 창구는 관리 스택 bosun-soteria(127.0.0.1:18090)
+      - type: mcp
+        command: /절대경로/../tools/bin/mcp-soteria
+        env:
+          SOTERIA_API: "http://127.0.0.1:18090"
+        lifecycle:
+          call_timeout: 600s # 큰 데이터 백업 대기(1GB 약 17초 기준 넉넉히)
+        tools:
+          - backup_volume # 앱 데이터 백업(승인). 인자는 훅이 정리한다
+          - backup_status # 백업 결과 조회
