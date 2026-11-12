@@ -57,12 +57,11 @@ COPY src/lib/agentProtocol.ts src/lib/sse.ts ./src/lib/
 COPY ai-agent-hooks ./ai-agent-hooks
 COPY agents ./agents
 COPY container/entrypoint.sh /usr/local/bin/bosun-entrypoint
-COPY container/portainer-bootstrap.sh /usr/local/bin/portainer-bootstrap
 COPY --from=build /app/dist ./dist
 
 # 개발용 값(가짜 Agent)은 이미지에 넣지 않는다.
 RUN rm -rf server/dev \
- && chmod +x /usr/local/bin/bosun-entrypoint /usr/local/bin/portainer-bootstrap \
+ && chmod +x /usr/local/bin/bosun-entrypoint \
  && mkdir -p /data "$BOSUN_HOME" \
  && chown -R node:node /data "$BOSUN_HOME" /app
 

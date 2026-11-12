@@ -48,7 +48,8 @@ for key in OPENROUTER_API_KEY PORTAINER_URL PORTAINER_API_KEY; do
 done
 if [ -n "$missing" ]; then
   log "경고: agent.env에 빠진 값 —$missing"
-  log "  container/.env를 채우고 docker compose up -d 로 다시 올리세요(또는 portainer-bootstrap 실행)"
+  log "  container/.env에 값을 넣고 docker compose up -d 로 다시 올리거나,"
+  log "  화면(http://127.0.0.1:3001) 첫 설정 페이지에서 넣으세요"
 fi
 
 # ── 2. agent.yaml ──────────────────────────────────────────────────────────────

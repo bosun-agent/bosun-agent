@@ -159,7 +159,7 @@ docker compose up -d --build                 # 화면 http://127.0.0.1:3001
 - 컨테이너가 첫 기동 때 `agent.env`와 `agent.yaml`을 만든다(기준 설정의 `/절대경로/`·`/실행폴더/` 자리표시자를 컨테이너 경로로 치환). 사용자가 손댄 파일은 덮어쓰지 않는다.
 - 웹·Agent 컨테이너에는 **도커 소켓이 없다**. 소켓을 가진 컨테이너는 Portainer 하나뿐이다.
 - Portainer는 **따로 있는 것을 그대로 쓴다**. Agent가 붙는 주소는 `container/.env`의 `PORTAINER_URL_INTERNAL`에 적거나 설정 페이지에서 넣는다(자체 서명 인증서는 도구가 검증을 끄고 처리).
-- 값을 화면 대신 스크립트로 넣고 싶은 경우는 이 스택에 Portainer를 함께 띄울 때(`docker compose --profile portainer up -d`)뿐이다: `docker compose exec bosun /usr/local/bin/portainer-bootstrap`. 이 경로는 스택을 올린 뒤 5분 안에 돌려야 한다.
+- 값을 화면 대신 `container/.env`의 `PORTAINER_URL_INTERNAL`·`PORTAINER_API_KEY`에 넣어도 된다(그때는 화면에 "이미 설정됨"으로 뜬다). Portainer는 이 스택에 넣지 않는다(사용자가 따로 설치).
 - 볼륨 백업은 앱이 생긴 뒤에만 만들 수 있다(볼륨 이름 필요). 자세한 내용은 `container/README.md` 7절.
 
 ## WEB 백엔드 구조 (`server/`)

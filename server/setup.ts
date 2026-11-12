@@ -73,7 +73,7 @@ export function setupStatus(): SetupStatus {
     portainer: { urlName: PORTAINER_URL_NAME, urlSet, url: portainerUrl, keySet: portainerKeySet },
     browserUrl: config.portainerUrl || null,
     agent: { state: agentStatus().state },
-    portainerUrlHint: process.env.PORTAINER_URL_INTERNAL || 'https://portainer:9443',
+    portainerUrlHint: process.env.PORTAINER_URL_INTERNAL || 'https://<Portainer 호스트>:9443',
   }
 }
 

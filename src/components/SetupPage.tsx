@@ -172,7 +172,7 @@ export function SetupPage({ status, onDone }: Props) {
           <Field
             id="portainerUrl"
             label="Portainer 주소"
-            hint="Agent가 붙는 주소예요. 이 스택 안이면 https://portainer:9443, 다른 곳에 설치했다면 https://호스트:9443."
+            hint="Portainer를 설치한 곳의 주소예요. 컨테이너에서도 닿는 주소여야 해요(예: https://10.0.11.177:9443)."
             placeholder={current.portainer.url ?? current.portainerUrlHint}
             value={portainerUrl}
             onChange={setPortainerUrl}
