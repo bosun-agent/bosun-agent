@@ -1,0 +1,103 @@
+# BOSUN 전체 스택 — 웹(화면+백엔드+Agent) + Portainer.
+#
+#   cp container/.env.example container/.env    # 값 채우기(모델 키, Portainer 관리자)
+#   docker compose up -d --build
+#   docker compose exec bosun /usr/local/bin/portainer-bootstrap   # 최초 1회: API 키 자동 발급
+#
+# 화면  http://127.0.0.1:3001
+# Portainer  https://127.0.0.1:9443
+#
+# 설계 메모: 웹·Agent 컨테이너는 도커 소켓을 쓰지 않는다(도커 조작은 Portainer 경유).
+# 소켓을 가진 컨테이너는 portainer 하나뿐이고, 그 소켓 때문에 Portainer만 호스트 권한을 갖는다.
+name: bosun
+
+services:
+  portainer:
+    image: portainer/portainer-ce:2.45.1          # 팀 고정 버전(portainer/portainer-compose.yaml과 동일)
+    container_name: bosun-portainer
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    ports:
+      - "127.0.0.1:9443:9443"                     # UI(HTTPS). 9000(HTTP)은 스택 내부에서만 쓴다
+    healthcheck:
+      # Portainer 이미지는 busybox wget이 있다. 9000(HTTP)은 기본 바인딩이라 여기서 살아 있으면 기동 완료다.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9000/api/system/status"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  bosun:
+    build:
+      context: .
+      dockerfile: container/Dockerfile
+      args:
+        DOCKER_AGENT_VERSION: "1.148.0"           # 팀 고정 버전(README-agent.md)
+        MCP_PORTAINER_VERSION: "2.45.1"
+    image: bosun-web:local
+    container_name: bosun
+    restart: unless-stopped
+    env_file:
+      - container/.env
+    environment:
+      HOST: 0.0.0.0                # 컨테이너 안에서만. 밖으로는 아래 ports가 127.0.0.1로만 연다
+      HOST_IN_CONTAINER: "1"
+      PORT: "3001"
+      BOSUN_HOME: /opt/bosun
+      # WEB 백엔드가 docker-agent를 자식 프로세스로 띄우고 관리한다(server/agentProcess.ts)
+      AGENT_BIN: /usr/local/bin/docker-agent
+      AGENT_ENV_FILE: /opt/bosun/agent.env
+      AGENT_NAME: agent
+      AGENT_URL: http://127.0.0.1:8080
+      # 화면의 "Portainer 열기" 링크는 브라우저가 여는 주소다
+      PORTAINER_URL: http://localhost:9443
+      # Agent·정책 훅이 쓰는 주소는 스택 내부 주소다(HTTP 9000 → TLS·자체 서명 CA 설정 불필요)
+      PORTAINER_URL_INTERNAL: http://portainer:9000
+    ports:
+      - "127.0.0.1:3001:3001"      # 웹에는 로그인이 없다 → 루프백으로만 발행한다
+    volumes:
+      - bosun_data:/opt/bosun       # agent.env · agent.yaml · session.db · backups.sqlite3
+      - bosun_web_data:/data        # web.db(승인·차단 기록, 설정)
+    depends_on:
+      portainer:
+        condition: service_healthy
+
+  # ── 선택: 볼륨 백업 ────────────────────────────────────────────────────────────
+  # 앱이 생긴 뒤에만 만들 수 있다(볼륨 이름이 필요하다). 두 가지 방법:
+  #   1) Agent 에게 앱과 함께 백업 스택을 만들게 한다(현재 정책 흐름, 권장)
+  #   2) backup/bosun-backup-compose.yaml 을 복사해 볼륨 이름을 채우고 별도 스택으로 올린다
+  # 예시(볼륨 이름은 실제 앱 볼륨으로 바꾼다):
+  #
+  #  backup:
+  #    image: offen/docker-volume-backup:v2.50.1
+  #    container_name: bosun-backup
+  #    restart: unless-stopped
+  #    environment:
+  #      BACKUP_CRON_EXPRESSION: "0 12,18,23 * * *"
+  #      TZ: Asia/Seoul
+  #      BACKUP_RETENTION_DAYS: "7"
+  #      BACKUP_FILENAME: "backup-%Y-%m-%dT%H-%M-%S.tar.gz"
+  #    volumes:
+  #      - <앱 볼륨>:/backup/<앱 볼륨>:ro
+  #      - bosun_backups:/archive
+
+  # ── 선택: soteria 백업 게이트(승인 트리거 백업 API) ────────────────────────────
+  # 삭제 전에 "검증된 아카이브"를 받아 두고 싶을 때만. MCP 도구 등록은 ai-agent-hooks/agent.yaml.example 참고.
+  #
+  #  backup-api:
+  #    image: ghcr.io/<owner>/soteria:latest
+  #    entrypoint: ["/usr/bin/backup"]
+  #    command: ["serve", "-http-addr", ":8080"]
+  #    ports: ["127.0.0.1:18081:8080"]
+  #    volumes:
+  #      - <앱 볼륨>:/backup/target:ro
+  #      - bosun_backups:/archive
+
+volumes:
+  portainer_data:
+    name: portainer_data          # 기존 portainer/portainer-compose.yaml과 같은 볼륨(통합 설치 시 데이터 유지)
+  bosun_data:
+  bosun_web_data:
+  # bosun_backups:               # 백업을 켤 때 주석 해제
