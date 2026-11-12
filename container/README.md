@@ -30,6 +30,10 @@ cp container/.env.example container/.env
 #   (이미 Portainer를 쓴다면 PORTAINER_API_KEY=ptr_... 만 넣으면 된다)
 ```
 
+> **`.env`를 고친 뒤에는 컨테이너를 재생성해야 반영됩니다**: `docker compose up -d` (`restart`는 env를 다시 읽지 않는다).
+> - `PORTAINER_ADMIN_PASSWORD`는 **사용자가 정하는 값**이고(12자 이상) 웹에서 먼저 설정할 필요가 없다. 값이 없으면 bootstrap이 `PORTAINER_ADMIN_PASSWORD를 container/.env에 넣으세요`로 멈춘다.
+> - 웹에서 직접 만들고 싶다면: 터널로 https://localhost:9443 → 초기 설정 화면에서 관리자 생성 → My account → Access tokens에서 키 발급 → `.env`의 `PORTAINER_API_KEY`에 넣고 재생성한다(이 경우 bootstrap은 필요 없다).
+
 ## 2. 올리기
 
 ```bash
