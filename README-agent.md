@@ -115,6 +115,16 @@ TELEMETRY_ENABLED=false
 - "지금 백업해줘" → Agent가 승인 1번 받고 `backup` 명령을 실행한다. **정책표 4절(exec 금지)의 유일한 예외**로, bosun-backup 컨테이너의 backup 명령 하나만 허용한다.
 - 복원은 관리자 작업: `docs/복원절차서_관리자용_11-07.md`
 
+### 6-1. soteria 백업 게이트 (선택)
+
+삭제·교체 전에 **검증된 아카이브**(경로·크기·SHA-256)를 먼저 받아 두고 싶을 때 쓰는 구성이다. 기본 설정에는 넣지 않는다.
+
+- 구성: `bosun-agent/soteria`의 `serve` API를 컨테이너로 띄우고(호스트 발행 `127.0.0.1:18081:8080`), Agent에는 MCP 서버(`cmd/mcp`)를 도구로 붙인다.
+- 준비: ① 스택 실행 ② `go build -o /usr/local/bin/mcp-soteria ./cmd/mcp` ③ `permissions.allow`에 `backup_volume` 추가 — `read_only_hint`가 없어 docker-agent가 unknown으로 분류하고 기본 제한 모드에서 거부한다(`backup_status`는 조회라 불필요).
+- **순서는 도구가 아니라 지시문이 책임진다**: `정지 → backup_volume → sha256 확인 → 삭제·교체 → 재시작`. soteria 컨테이너에는 도커 소켓이 없어 스스로 앱을 멈출 수 없으므로, DB 볼륨이면 먼저 정지하거나 덤프한다.
+- 저장 위치·파일 꺼내는 방법·실패 증상은 `README-backup.md`, 검증 결과와 결정 근거는 `docs/백업게이트_soteria_검증_결정_11-12.md`
+- 복원은 아직 자동화되어 있지 않다(수동 절차서 사용). 도입한다면 볼륨을 비우지 않고 덮어쓰는 방식으로 한다.
+
 ## 7. (원할 때만) 훅 단위 테스트
 
  실행하지 않아도 된다. 웹에서 대화로 확인하면 된다.

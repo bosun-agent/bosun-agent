@@ -5,6 +5,7 @@
 
 - **웹 파트** — 채팅 화면 + 백엔드. 실행·설정 안내는 `README-web.md`
 - **에이전트 파트** — 정책 훅, Agent 설정, Portainer·백업 구성. 안내는 `README-agent.md`
+- **백업 파트** — 볼륨 백업 컨테이너. 저장 위치를 어디에 둘지, 파일을 어떻게 꺼내는지는 `README-backup.md`
 
 버전 고정: docker-agent **v1.148.0** / mcp-portainer **2.45.1** / Portainer CE **2.45.1** / 모델 `deepseek/deepseek-v4.1-flash`(OpenRouter)
 
@@ -71,7 +72,9 @@ Portainer 실행, Agent 실행 폴더·`agent.env` 준비는 `README-web.md`와 
 | `docs/동작기준_테스트목록.md` | 정책표와의 차이·예외, 실제 AI 시나리오 테스트 T01~T42 |
 | `docs/AI_Agent_설계_구현_정리_11-04.md` | 설계·구현 정리 |
 | `docs/복원절차서_관리자용_11-07.md` | 볼륨 복원 절차(관리자 작업) |
+| `docs/백업게이트_soteria_검증_결정_11-12.md` | 백업 게이트(승인 트리거 API·MCP) 실측 검증 결과와 팀 결정 |
 | `README-web.md`, `README-agent.md` | 파트별 실행·설정·문제 해결 |
+| `README-backup.md` | 백업 저장 위치 설정과 soteria 백업 게이트 사용법(사용자용) |
 
 ## 라이선스
 
