@@ -19,6 +19,7 @@
 | `agents/` | Agent | 초보자용·숙련자용 설정 예시(`make_agents.py`가 만든다) |
 | `portainer/`, `backup/` | Agent | Portainer CE 2.45.1, 볼륨 백업 컨테이너 compose |
 | `docs/` | 공통 | 동작 기준·테스트 목록, 설계·구현 정리, 복원 절차서 |
+| `container/`, `docker-compose.yaml` | 공통 | 컨테이너 설치(웹+Agent 이미지, Portainer 포함 스택) |
 
 ## 준비물
 
@@ -71,6 +72,8 @@ Portainer 실행, Agent 실행 폴더·`agent.env` 준비는 `README-web.md`와 
 | `docs/동작기준_테스트목록.md` | 정책표와의 차이·예외, 실제 AI 시나리오 테스트 T01~T42 |
 | `docs/AI_Agent_설계_구현_정리_11-04.md` | 설계·구현 정리 |
 | `docs/복원절차서_관리자용_11-07.md` | 볼륨 복원 절차(관리자 작업) |
+| `docs/컨테이너_설치_설계_11-12.md` | 컨테이너 설치 설계 근거와 검증 항목 |
+| `container/README.md` | 컨테이너 설치 절차·확인 체크리스트·진단표 |
 | `README-web.md`, `README-agent.md` | 파트별 실행·설정·문제 해결 |
 
 ## 라이선스

@@ -146,6 +146,21 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 
 `npm run build`는 목업 화면, `npm run build:demo`는 공개 데모(목업 + 시나리오 버튼)다. 로그인이 없으므로 다른 PC에서 접속하게 열지 않는다. 이미지는 컨테이너 안에서만 `0.0.0.0`(`HOST_IN_CONTAINER=1`)으로 뜨니, 실행할 때 `-p 127.0.0.1:3001:3001`처럼 루프백으로만 내보낸다.
 
+### 컨테이너로 한 번에 설치 (권장)
+
+화면·WEB 백엔드·Docker Agent·정책 훅을 **한 이미지**로 묶고, Portainer까지 compose 스택으로 함께 띄운다. 절차·확인 체크리스트·진단표는 `container/README.md`, 설계 근거는 `docs/컨테이너_설치_설계_11-12.md`에 있다.
+
+```bash
+cp container/.env.example container/.env     # 모델 키·Portainer 관리자 값 채우기
+docker compose up -d --build                 # 화면 http://127.0.0.1:3001 · Portainer https://127.0.0.1:9443
+docker compose exec bosun /usr/local/bin/portainer-bootstrap   # 최초 1회: Portainer API 키 자동 발급
+```
+
+- 컨테이너가 첫 기동 때 `agent.env`와 `agent.yaml`을 만든다(기준 설정의 `/절대경로/`·`/실행폴더/` 자리표시자를 컨테이너 경로로 치환). 사용자가 손댄 파일은 덮어쓰지 않는다.
+- 웹·Agent 컨테이너에는 **도커 소켓이 없다**. 소켓을 가진 컨테이너는 Portainer 하나뿐이다.
+- Portainer는 스택 내부에서 `http://portainer:9000`으로 붙는다 → 자체 서명 인증서·CA 설정이 필요 없다.
+- 볼륨 백업은 앱이 생긴 뒤에만 만들 수 있다(볼륨 이름 필요). 자세한 내용은 `container/README.md` 7절.
+
 ## WEB 백엔드 구조 (`server/`)
 
 | 파일 | 하는 일 |
