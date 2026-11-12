@@ -37,6 +37,8 @@ docker compose up -d --build          # 첫 빌드: node 이미지 + docker-agen
 docker compose logs -f bosun          # 진입점 로그(agent.yaml 생성·경고)를 본다
 ```
 
+> `portainer` 서비스에는 **헬스체크를 두지 않았다**(11-12 첫 실행에서 확인): 그 이미지에 `wget`이 없거나 9000이 막혀 있으면 unhealthy로 굳고, `depends_on: service_healthy` 때문에 `bosun`이 아예 뜨지 않는다. 기동 대기는 `portainer-bootstrap.sh`가 재시도로 처리한다.
+
 첫 기동에서 컨테이너가 하는 일(`container/entrypoint.sh`):
 
 1. `/opt/bosun/agent.env` 생성(없을 때만, 권한 600) — 값은 `container/.env`에서 온다
@@ -85,8 +87,8 @@ docker compose exec bosun sh -lc 'curl -sS http://127.0.0.1:8080/health; echo; c
 # 5) 화면 응답
 curl -s -o /dev/null -w 'web HTTP=%{http_code}\n' http://127.0.0.1:3001
 
-# 6) Portainer 내부 주소(훅이 쓰는 경로)
-docker compose exec bosun sh -lc 'curl -sS http://portainer:9000/api/system/status'
+# 6) Portainer 내부 주소(훅이 쓰는 경로) — 기동 직후면 재시도로 기다린다
+docker compose exec bosun sh -lc 'curl -sS --retry 10 --retry-connrefused --retry-delay 3 http://portainer:9000/api/system/status'
 
 # 7) mcp-portainer가 Portainer에 붙는지(키가 들어간 뒤)
 docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -sS -H "X-API-Key: $PORTAINER_API_KEY" "$PORTAINER_URL/api/stacks" | head -c 200; echo'
@@ -103,8 +105,10 @@ docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -
 | 조회까지 전부 차단 | 정책 훅이 실패(fail-closed) | 3번 체크리스트(pyyaml)와 `agent.yaml`의 `AGENT_ENV_FILE` 경로. 훅은 `--env-from-file` 값을 받지 못하므로 경로가 agent.yaml 안에 있어야 한다 |
 | 모델 호출만 실패 | 키 없음/모델 이름 | `container/.env`의 `OPENROUTER_API_KEY`, `AGENT_MODELS` 형식(`provider/model`) |
 | Portainer API 401/403 | API 키 없음 | `portainer-bootstrap` 실행 또는 `PORTAINER_API_KEY` 입력 |
+| `dependency failed to start: container bosun-portainer is unhealthy` | compose에 헬스체크를 두면 이 이미지에서 unhealthy로 굳는다 | 헬스체크를 쓰지 않는다(수정됨). 그래도 나오면 로컬 `docker-compose.yaml`이 최신인지 확인(`git pull`) |
+| `volume "portainer_data" already exists but was created for project …` 경고 | 다른 프로젝트가 만든 볼륨 | 이 스택은 자기 볼륨(`bosun_portainer_data`)을 쓴다(수정됨). 기존 볼륨을 일부러 쓰려면 `external: true`로 바꾸고 그 Portainer의 관리자 비밀번호를 `.env`에 넣는다 |
 | `portainer:9000` 연결 실패 | HTTP 바인딩이 꺼진 Portainer | `PORTAINER_URL_INTERNAL`을 `https://portainer:9443`으로 바꾸고 인증서를 신뢰시킨다(호스트 설치 문서의 CA 방식) |
-| 9443 이미 사용 중 | 기존 Portainer 스택이 떠 있음 | 이 스택의 `portainer` 서비스를 지우고 `PORTAINER_URL_INTERNAL`/`PORTAINER_API_KEY`만 기존 Portainer에 맞춘다 |
+| 9443 이미 사용 중 | 기존 Portainer 스택(컨테이너 이름 `portainer`)이 떠 있음 | 그 스택을 `docker compose -f portainer/portainer-compose.yaml down` 으로 내린다. 통합하지 않으려면 이 스택의 `portainer` 서비스를 지우고 `PORTAINER_URL_INTERNAL`/`PORTAINER_API_KEY`만 기존 Portainer에 맞춘다 |
 | 빌드 실패(바이너리 다운로드) | 네트워크/버전 태그 | `docker compose build --no-cache bosun`, `DOCKER_AGENT_VERSION` 값 확인 |
 
 ## 7. 백업·게이트 추가

@@ -16,18 +16,15 @@ services:
     image: portainer/portainer-ce:2.45.1          # 팀 고정 버전(portainer/portainer-compose.yaml과 동일)
     container_name: bosun-portainer
     restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
     ports:
       - "127.0.0.1:9443:9443"                     # UI(HTTPS). 9000(HTTP)은 스택 내부에서만 쓴다
-    healthcheck:
-      # Portainer 이미지는 busybox wget이 있다. 9000(HTTP)은 기본 바인딩이라 여기서 살아 있으면 기동 완료다.
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9000/api/system/status"]
-      interval: 10s
-      timeout: 3s
-      retries: 12
-      start_period: 10s
+    # healthcheck를 두지 않는다(11-12 첫 실행에서 확인):
+    #   이 이미지에 wget/curl이 없거나 9000이 막혀 있으면 컨테이너가 unhealthy로 굳고,
+    #   depends_on: service_healthy 때문에 bosun이 아예 시작되지 않는다.
+    #   기동 대기는 portainer-bootstrap.sh가 재시도(--retry-connrefused)로 처리한다.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - bosun_portainer_data:/data
 
   bosun:
     build:
@@ -62,7 +59,7 @@ services:
       - bosun_web_data:/data        # web.db(승인·차단 기록, 설정)
     depends_on:
       portainer:
-        condition: service_healthy
+        condition: service_started
 
   # ── 선택: 볼륨 백업 ────────────────────────────────────────────────────────────
   # 앱이 생긴 뒤에만 만들 수 있다(볼륨 이름이 필요하다). 두 가지 방법:
@@ -96,8 +93,11 @@ services:
   #      - bosun_backups:/archive
 
 volumes:
-  portainer_data:
-    name: portainer_data          # 기존 portainer/portainer-compose.yaml과 같은 볼륨(통합 설치 시 데이터 유지)
+  bosun_portainer_data:
+    # 자기 이름을 쓴다(11-12 첫 실행에서 확인): 다른 프로젝트가 만든 portainer_data가 이미 있으면
+    # compose가 "was created for project ..." 경고를 내고, 그 볼륨에 관리자 계정이 남아 있으면
+    # 최초 설정(portainer-bootstrap)이 로그인 단계에서 막힌다. 기존 볼륨은 건드리지 않는다.
+    name: bosun_portainer_data
   bosun_data:
   bosun_web_data:
   # bosun_backups:               # 백업을 켤 때 주석 해제
