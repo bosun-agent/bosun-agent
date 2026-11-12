@@ -17,7 +17,11 @@ services:
     container_name: bosun-portainer
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9443:9443"                     # UI(HTTPS). 9000(HTTP)은 API를 처리하지 않고 HTTPS로 넘긴다(11-12 확인)
+      - "127.0.0.1:9443:9443"                     # UI(HTTPS)
+    # 주의(11-12 확인): Portainer는 첫 기동 후 **5분 안에** 관리자 계정이 없으면 API를 막는다
+    #   (303 Redirect-Reason: AdminInitTimeout). 그래서 스택을 올린 뒤 5분 안에 bootstrap을 돌리거나,
+    #   놓쳤으면 `docker compose restart portainer` 로 창을 다시 연 뒤 곧바로 실행해야 한다.
+    #   관리자를 미리 만들려면 --admin-password-file(평문 파일) 또는 --admin-password(bcrypt)를 쓴다.
     # healthcheck를 두지 않는다(11-12 첫 실행에서 확인):
     #   이 이미지에 wget/curl이 없거나 9000이 막혀 있으면 컨테이너가 unhealthy로 굳고,
     #   depends_on: service_healthy 때문에 bosun이 아예 시작되지 않는다.
@@ -50,10 +54,8 @@ services:
       AGENT_URL: http://127.0.0.1:8080
       # 화면의 "Portainer 열기" 링크는 브라우저가 여는 주소다
       PORTAINER_URL: https://localhost:9443
-      # Agent·정책 훅이 쓰는 주소는 스택 내부 주소다.
-      # 9000(HTTP)은 이 Portainer 버전에서 API를 처리하지 않고 303으로 HTTPS로 넘긴다(11-12 실측)
-      # → 9443(HTTPS)을 쓴다. 자체 서명 인증서라 훅·MCP 도구는 PORTAINER_TLS_VERIFY=0으로 검증을 끈다
-      # (ai-agent-hooks/agent.yaml.example에 이미 들어 있다).
+      # Agent·정책 훅이 쓰는 주소는 스택 내부 주소다(HTTPS + 자체 서명 → 훅·MCP 도구가
+      # PORTAINER_TLS_VERIFY=0으로 검증을 끈다. ai-agent-hooks/agent.yaml.example에 이미 있다).
       PORTAINER_URL_INTERNAL: https://portainer:9443
     ports:
       - "127.0.0.1:3001:3001"      # 웹에는 로그인이 없다 → 루프백으로만 발행한다

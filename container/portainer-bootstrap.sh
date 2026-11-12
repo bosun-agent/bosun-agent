@@ -22,8 +22,25 @@ api() { curl -sSk -H 'Content-Type: application/json' "$@" ; }
 api_retry() { curl -sSk --retry 20 --retry-connrefused --retry-delay 3 -H 'Content-Type: application/json' "$@"; }
 
 echo "[0/4] Portainer 응답 대기: $P"
-api_retry -o /dev/null -w '  api/system/status: HTTP %{http_code}\n' "$P/api/system/status" \
-  || { echo "  Portainer에 연결하지 못했습니다 — docker compose ps / logs bosun-portainer 를 확인하세요" >&2; exit 1; }
+status="$(api_retry -o /dev/null -w '%{http_code}' "$P/api/system/status")" \
+  || { echo "  Portainer에 연결하지 못했습니다 — docker compose ps / logs portainer 를 확인하세요" >&2; exit 1; }
+echo "  api/system/status: HTTP $status"
+
+# Portainer는 첫 기동 후 5분 안에 관리자 계정이 만들어지지 않으면 API를 303으로 막는다
+# (Redirect-Reason: AdminInitTimeout). 이 상태는 로그인·관리자 생성이 모두 실패하므로,
+# 원인이 드러나지 않는 '로그인 실패' 대신 여기서 바로 조치를 알려 준다.
+if [ "$status" = "303" ] || [ "$status" = "307" ]; then
+  reason="$(api_retry -D - -o /dev/null "$P/api/system/status" | tr -d '\r' \
+            | awk -F': ' 'tolower($1) == "redirect-reason" { print $2 }')"
+  echo "  Portainer가 초기 설정을 거부하고 있습니다 (Redirect-Reason: ${reason:-unknown})" >&2
+  if [ "${reason:-}" = "AdminInitTimeout" ]; then
+    echo "  → 첫 기동 5분 안에 관리자 계정을 만들지 않아 API가 막힌 상태입니다." >&2
+    echo "  → 조치: docker compose restart portainer  하고, 이 스크립트를 곧바로 다시 실행하세요." >&2
+  else
+    echo "  → Portainer 상태를 확인하세요: docker compose ps / logs portainer" >&2
+  fi
+  exit 1
+fi
 
 echo "[1/4] 관리자 계정 확인/생성: $P"
 # /api/users/admin/init 는 관리자가 아직 없을 때만 성공한다(이미 있으면 409) → 실패해도 계속한다.
