@@ -91,28 +91,56 @@ function readEnvLines(): string[] {
   }
 }
 
-function isKeyLine(line: string): boolean {
-  const trimmed = line.trim()
-  return !trimmed.startsWith('#') && trimmed.split('=')[0].trim() === config.agentKeyName
-}
-
 function apiKeySet(): boolean {
-  if (!config.agentEnvFile) return false
-  return readEnvLines().some((line) => isKeyLine(line) && line.slice(line.indexOf('=') + 1).trim() !== '')
+  return agentEnvIsSet(config.agentKeyName)
 }
 
 // 줄바꿈이나 공백이 들어가면 env 파일 줄이 깨진다. 따옴표는 Agent가 앞뒤에서 벗겨 내므로 받지 않는다.
-export function validApiKey(value: unknown): value is string {
+// 키뿐 아니라 주소·토큰도 같은 규칙으로 본다(인쇄 가능한 ASCII, 공백 없음).
+export function validEnvValue(value: unknown): value is string {
   return typeof value === 'string' && /^[\x21-\x7e]{8,512}$/.test(value) && !value.includes('"')
 }
 
-export function saveApiKey(apiKey: string): void {
-  const lines = readEnvLines().filter((line) => !isKeyLine(line))
+export function validApiKey(value: unknown): value is string {
+  return validEnvValue(value)
+}
+
+// ---- Agent env 파일의 여러 값(첫 실행 설정 화면, server/setup.ts) ----
+// 값은 화면으로 돌려주지 않는다(설정 화면과 같은 규칙). 있는지 없는지만 알려준다.
+
+export function agentEnvValue(name: string): string | null {
+  if (!config.agentEnvFile) return null
+  const line = readEnvLines().find((l) => {
+    const trimmed = l.trim()
+    return !trimmed.startsWith('#') && trimmed.split('=')[0].trim() === name
+  })
+  if (line === undefined) return null
+  const value = line.slice(line.indexOf('=') + 1).trim()
+  return value === '' ? null : value
+}
+
+export function agentEnvIsSet(name: string): boolean {
+  return agentEnvValue(name) !== null
+}
+
+// 보낸 값을 한 번에 쓴다. 다른 줄(주석·다른 키)은 그대로 두고, 같은 이름의 줄은 지우고 새로 붙인다.
+// 반쯤 쓴 파일을 Agent가 읽지 않게 옆 파일에 쓰고 바꿔 끼운다. 권한은 소유자만(600).
+export function saveAgentEnvValues(values: Record<string, string>): void {
+  if (!config.agentEnvFile) throw new Error('AGENT_ENV_FILE이 없어요. Agent env 파일 경로를 넣어주세요.')
+  const names = new Set(Object.keys(values))
+  const lines = readEnvLines().filter((line) => {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('#')) return true
+    return !names.has(trimmed.split('=')[0].trim())
+  })
   while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop()
-  lines.push(`${config.agentKeyName}=${apiKey}`)
-  // 반쯤 쓴 파일을 Agent가 읽지 않게 옆 파일에 쓰고 바꿔 끼운다. 권한은 소유자만(600).
+  for (const [name, value] of Object.entries(values)) lines.push(`${name}=${value}`)
   const tmp = `${config.agentEnvFile}.tmp`
   writeFileSync(tmp, `${lines.join('\n')}\n`, { mode: 0o600 })
   renameSync(tmp, config.agentEnvFile)
   chmodSync(config.agentEnvFile, 0o600)
+}
+
+export function saveApiKey(apiKey: string): void {
+  saveAgentEnvValues({ [config.agentKeyName]: apiKey })
 }

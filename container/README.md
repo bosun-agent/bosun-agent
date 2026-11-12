@@ -12,7 +12,8 @@
 - **웹·Agent 컨테이너에는 도커 소켓이 없다.** 도커 조작은 전부 Portainer를 거친다(정책 설계).
 - 웹에는 로그인이 없어 **`127.0.0.1`로만 발행**한다.
 - Portainer는 스택 내부에서 `https://portainer:9443`(HTTPS)으로 붙는다. 자체 서명 인증서는 훅·MCP 도구의 `PORTAINER_TLS_VERIFY=0`(예시에 포함)으로 처리한다.
-- **Portainer는 첫 기동 후 5분 안에 관리자 계정이 없으면 API를 막는다**(303, `Redirect-Reason: AdminInitTimeout`). 스택을 올린 뒤 5분 안에 3절(bootstrap)을 실행하거나, 놓쳤으면 `docker compose restart portainer`로 창을 다시 연 뒤 곧바로 실행한다.
+- **Portainer는 첫 기동 후 5분 안에 관리자 계정이 없으면 API를 막는다**(303, `Redirect-Reason: AdminInitTimeout`). 첫 접속 화면(3절)에서 값을 넣는 방식은 관리자 계정을 만들지 않으므로 이 제한과 무관하다. 스크립트 경로(`portainer-bootstrap`)만 5분 안에 실행한다.
+- 첫 접속 화면(설정 페이지)이 OpenRouter 키·Portainer 주소·Portainer API 키를 받는다. 값은 사용자가 직접 발급하며, 저장 전에 실제로 확인한다.
 
 ---
 
@@ -53,20 +54,32 @@ docker compose logs -f bosun          # 진입점 로그(agent.yaml 생성·경�
 3. `AGENT_TOKEN` 생성(비워 두면 매 기동 새로 생성)
 4. WEB 백엔드 실행 → 백엔드가 `docker-agent`를 자식 프로세스로 띄운다
 
-## 3. 최초 1회: Portainer API 키
+## 3. 최초 1회: 값 넣기 (첫 접속 화면)
 
-새로 설치한 경우에만 필요하다. **스택을 올린 뒤 5분 안에 실행해야 한다**(Portainer가 첫 기동 후 5분 안에 관리자를 만들지 않으면 API를 막는다). 놓쳤으면 `docker compose restart portainer` 후 곧바로 실행한다.
+새로 설치하면 **첫 접속 화면이 설정 페이지**다. BOSUN은 값을 만들어 주지 않는다. 사용자가 직접 발급받아 넣는다.
 
-Portainer는 미초기화 인스턴스를 아무나 차지하지 못하도록 **setup token**(기동 로그의 `setup_token=…`, `X-Setup-Token` 헤더)을 요구한다. compose 기본값은 `portainer.command: ["--no-setup-token"]`으로 이 게이트를 끄고 자동 설정이 한 번에 끝나게 했다(9443을 루프백으로만 발행하므로 노출은 호스트로 제한된다). 게이트를 켜 두려면 그 command를 지우고 로그의 토큰을 `.env`의 `PORTAINER_SETUP_TOKEN`에 넣는다.
+| 칸 | 어디서 받나 |
+|---|---|
+| OpenRouter API 키 | openrouter.ai → Keys (`sk-or-…`) |
+| Portainer 주소 | **Agent가 붙는 주소**. 이 스택 안이면 `https://portainer:9443` |
+| Portainer API 키 | Portainer → My account → Access tokens (`ptr-…`) |
+
+- Portainer 관리자 계정은 **Portainer 화면에서 직접** 만든다(초기 설정). 우리는 관리자 비밀번호를 받지 않는다. compose 기본값은 setup token 게이트를 꺼 두었으므로(`command: ["--no-setup-token"]`) 초기 설정 화면에서 토큰을 붙여넣지 않아도 된다(9443은 루프백 발행). 게이트를 켜 두려면 그 줄을 지우고 초기 설정 화면에 로그의 `setup_token` 값을 붙여넣는다.
+- 넣은 값은 저장 전에 실제로 확인한다: OpenRouter는 `GET /api/v1/key`(401이면 거부), Portainer는 `GET /api/endpoints`(`X-API-Key`; 키 오류·주소 오류·Docker 환경 0개를 구분해 알려준다). 자체 서명 인증서는 검증을 끄고 다시 본다.
+- 하나라도 실패하면 **저장하지 않고** 그 칸 아래에 이유가 뜬다. 저장되면 `agent.env`에 기록되고(권한 600) Agent가 다시 시작된다.
+- 값이 하나라도 남아 있으면 저장이 됐더라도 설정 페이지에 머문다.
+
+값을 화면 대신 스크립트로 넣고 싶으면(관리자 계정 생성 + 키 발급 + `agent.env` 기록까지):
 
 ```bash
 docker compose exec bosun /usr/local/bin/portainer-bootstrap
 docker compose restart bosun
 ```
 
-`portainer-bootstrap`은 관리자 계정 생성(`POST /api/users/admin/init`) → 로그인(`POST /api/auth`) → 키 발급(`POST /api/users/{id}/tokens`) → `/opt/bosun/agent.env`에 기록까지 한다. 키 값은 화면에 찍지 않는다. 관리자를 미리 만들고 싶으면 Portainer의 `--admin-password-file`(평문 파일, `.gitignore`에 등록됨) 또는 `--admin-password`(bcrypt 해시)를 쓸 수도 있다.
+- 이 경로는 스택을 올린 뒤 **5분 안에 실행해야 한다**(Portainer가 첫 기동 후 5분 안에 관리자를 만들지 않으면 API를 막는다). 놓쳤으면 `docker compose restart portainer` 후 곧바로 실행한다.
+- 미초기화 인스턴스의 setup token 게이트는 compose 기본값 `command: ["--no-setup-token"]`으로 꺼 두었다(9443은 루프백 발행). 게이트를 켜 두려면 그 줄을 지우고 로그의 `setup_token` 값을 `.env`의 `PORTAINER_SETUP_TOKEN`에 넣는다.
 
-이미 Portainer를 쓰고 있다면 화면(My account → Access tokens)에서 키를 만들어 `container/.env`의 `PORTAINER_API_KEY`에 넣고 `docker compose up -d`만 하면 된다.
+이미 Portainer를 쓰고 있다면 화면(My account → Access tokens)에서 키를 만들어 위 설정 페이지에 넣으면 된다(`container/.env`의 `PORTAINER_API_KEY`에 넣고 `docker compose up -d`를 해도 같다).
 
 ## 4. 접속
 

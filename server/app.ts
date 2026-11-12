@@ -33,6 +33,7 @@ import {
   validApiKey,
   validModelRef,
 } from './settings.ts'
+import { applySetup, setupStatus, type SetupInput } from './setup.ts'
 import { cardSummaries, cardsFor, copyCards, deleteCards, pinnedSessions, recentDecisions, setPinned, usageSince } from './store.ts'
 import { systemInfo } from './system.ts'
 import {
@@ -382,6 +383,21 @@ app.put('/api/settings/api-key', async (c) => {
   const agentRestart = restartAgent()
   console.info(`[settings] ${config.agentKeyName} updated; agent restart: ${agentRestart}`)
   return c.json({ ...getSettings(), agentRestart })
+})
+
+// 첫 실행 설정(server/setup.ts). 값은 사용자가 직접 발급받아 넣는다(WEB은 만들어 내지 않는다).
+// 값이 다 있는지, 화면에서 저장할 수 있는지 알려준다. 값 자체는 돌려주지 않는다.
+app.get('/api/setup/status', (c) => c.json(setupStatus()))
+
+// 넣은 값이 실제로 쓸 수 있는지 확인한 뒤 Agent env 파일에 저장하고 Agent를 다시 시작한다.
+// 하나라도 못 쓰면 아무것도 저장하지 않고 항목별로 이유를 돌려준다(키 오타로 '설정됨'이 되지 않게).
+app.put('/api/setup', async (c) => {
+  const body = await jsonBody<SetupInput>(c)
+  const result = await applySetup(body)
+  if (!result.ok) {
+    return c.json({ error: 'SETUP_INVALID', message: '입력을 확인해 주세요.', fields: result.errors }, 400)
+  }
+  return c.json(result)
 })
 
 // WEB이 띄운 Docker Agent 상태(server/agentProcess.ts). 화면이 몇 초마다 부른다.

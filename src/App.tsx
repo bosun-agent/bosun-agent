@@ -7,8 +7,11 @@ import { HelpPanel } from './components/HelpPanel'
 import { MessageList } from './components/MessageList'
 import { SessionSidebar, SidebarToggle } from './components/SessionSidebar'
 import { SettingsModal } from './components/SettingsModal'
+import { SetupPage } from './components/SetupPage'
 import type { AgentEvent, ApprovalDecision, ApprovalMode, ApprovalStatus, ProgressStep, SessionSummary } from './lib/agentProtocol'
 import { agent, showScenarios } from './lib/agent'
+import { usingMock } from './lib/agent'
+import { getSetupStatus, type SetupStatus } from './lib/setup'
 import { EXAMPLE_PROMPTS } from './lib/examples'
 import { notifyApproval } from './lib/notify'
 import { addDetail, APPROVED_LABEL, AUTO_APPROVED_LABEL, BLOCKED_LABEL, finishActive, finishToolStep, hasActive, markTargetChanged, startStep, startToolStep, withSummary } from './lib/processSteps'
@@ -90,6 +93,16 @@ function App() {
         setPortainerUrl(s.portainerUrl)
         setApprovalMode(s.approvalMode)
       },
+      () => undefined,
+    )
+  }, [])
+  // 첫 실행 설정(server/setup.ts). 값이 비어 있으면 채팅 대신 설정 페이지를 보여준다.
+  // 목업·데모 빌드에는 백엔드가 없으므로 건너뛴다. 값을 못 받아도 화면을 막지 않는다.
+  const [setup, setSetup] = useState<SetupStatus | null>(null)
+  useEffect(() => {
+    if (usingMock) return
+    getSetupStatus().then(
+      (s) => setSetup(s && s.needsSetup ? s : null),
       () => undefined,
     )
   }, [])
@@ -641,6 +654,9 @@ function App() {
       )}
     </div>
   )
+
+  // 넣을 값이 비어 있으면 채팅 화면 대신 첫 설정 페이지를 보여준다.
+  if (setup) return <SetupPage status={setup} onDone={() => setSetup(null)} />
 
   return (
     <div className="flex h-dvh bg-white text-neutral-900">

@@ -73,6 +73,7 @@ Portainer 실행, Agent 실행 폴더·`agent.env` 준비는 `README-web.md`와 
 | `docs/AI_Agent_설계_구현_정리_11-04.md` | 설계·구현 정리 |
 | `docs/복원절차서_관리자용_11-07.md` | 볼륨 복원 절차(관리자 작업) |
 | `docs/컨테이너_설치_설계_11-12.md` | 컨테이너 설치 설계 근거와 검증 항목 |
+| `docs/첫실행_설정페이지_11-12.md` | 첫 접속 설정 페이지(값 확인·저장 방식)와 검증 결과 |
 | `container/README.md` | 컨테이너 설치 절차·확인 체크리스트·진단표 |
 | `README-web.md`, `README-agent.md` | 파트별 실행·설정·문제 해결 |
 
