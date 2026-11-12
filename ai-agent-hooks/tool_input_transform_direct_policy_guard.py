@@ -66,6 +66,13 @@ REQ = {"method": "GET", "path": "", "select": None}  # 거부 안내를 고를 �
 SEG = r"[A-Za-z0-9][A-Za-z0-9_.\-]*"                 # 컨테이너·네트워크·볼륨 ID/이름
 IMG = r"[A-Za-z0-9][A-Za-z0-9_.\-/:@]*"              # 이미지 이름(레지스트리/경로:태그@digest)
 TRUE_VALUES = {"1", "true", "yes", "on"}
+# 11/12: Docker 엔진은 쿼리의 참·거짓을 "이 다섯 값만 거짓, 나머지는 전부 참"으로 읽는다(force=y, v=2도 참).
+# 위 TRUE_VALUES로만 보면 y·2 같은 값이 검사를 통과해 실제로는 강제 삭제가 된다(웹 담당 11/11 지적). 위험 옵션은 이 기준으로 판단한다.
+DOCKER_FALSE = {"", "0", "no", "false", "none"}
+
+
+def docker_true(v):
+    return str(v).strip().lower() not in DOCKER_FALSE
 
 ALLOW = {
     "GET": [
@@ -625,9 +632,16 @@ def main():
         out({"hook_specific_output": {"updated_input": updates}} if updates else {})
         return
 
-    if method == "DELETE" and clean.startswith("/containers/") and str(query.get("force", "")).strip().lower() in TRUE_VALUES:
-        block("force=true(실행 중인 컨테이너를 강제로 멈추고 삭제)는 허용되지 않습니다. 실행 중이면 먼저 정지한 뒤 삭제하세요(각각 승인 필요).")
-        return
+    if method == "DELETE" and clean.startswith("/containers/"):
+        if "force" in query and docker_true(query["force"]):
+            block("force=true(실행 중인 컨테이너를 강제로 멈추고 삭제)는 허용되지 않습니다. 실행 중이면 먼저 정지한 뒤 삭제하세요(각각 승인 필요).")
+            return
+        if "v" in query and docker_true(query["v"]):  # 11/12: 백업 훅도 막지만 정책 훅에서도 막는다(이중)
+            block("v=true(컨테이너의 익명 볼륨까지 삭제)는 허용되지 않습니다. v 없이 다시 요청하세요.")
+            return
+        if "force" in query or "v" in query:  # 거짓 값은 빼고 보낸다(검사한 것과 보내는 것을 같게)
+            query = {k: v for k, v in query.items() if k not in ("force", "v")}
+            updates["query_params"] = query
     if method == "GET" and clean.endswith("/logs"):
         try:
             query = check_logs_query(query)

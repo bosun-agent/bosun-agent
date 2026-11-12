@@ -61,7 +61,17 @@ Windows는 `python3` 대신 `python`일 수 있다(설정의 `command` 줄).
 
 **4) Portainer가 자체 서명 인증서**면 설정의 `PORTAINER_TLS_VERIFY: "0"`을 그대로 둔다.
 
-## 4. 단독 실행 (터미널)
+## 4. 켜는 순서
+
+Agent는 Portainer를 통해 Docker를 다루므로 **Portainer가 먼저 켜져 있어야** 한다.
+1. Docker Desktop 실행
+2. Portainer 실행(이 브랜치의 `portainer/portainer-compose.yaml`)
+```bash
+docker compose -f portainer/portainer-compose.yaml up -d
+```
+3. Agent 실행 — 터미널 단독(아래 4-1) 또는 웹(5절, 웹 백엔드가 Agent를 띄움)
+
+### 4-1. 단독 실행 (터미널)
 
 ```bash
 cd ~/bosun/agent-run
@@ -78,7 +88,7 @@ AGENT_BIN=<docker-agent 실행 파일 절대경로>
 AGENT_ENV_FILE=<실행 폴더>/agent.env
 AGENT_CONFIG=<실행 폴더>/agents
 AGENT_NAME=beginner            # 또는 expert
-AGENT_URL=http://127.0.0.1:8080
+AGENT_URL=http://127.0.0.1:17080 # Agent API 포트. 앱이 자주 쓰는 8080과 겹치지 않게 17080(11/11 웹 담당 요청)
 AGENT_TOKEN=<아무 긴 값>
 AGENT_MODELS=flash             # 설정에 정의된 모델 이름. 직접 모델 이름을 쓰면 max_tokens 설정이 빠진다
 TELEMETRY_ENABLED=false
@@ -87,14 +97,14 @@ TELEMETRY_ENABLED=false
 - `PORTAINER_URL`은 넣지 않는다. Agent는 막힌 작업을 Portainer에서 직접 하라고 안내하지 않는다(대신 "① 막힌 것 ② 이유 ③ 대신 할 수 있는 것"을 안내).
 - 웹 설정의 "묻지 않기(YOLO)"는 켜도 Agent의 훅과 항상 거부(deny) 규칙은 승인보다 먼저 돌아 그대로 막는다(빠지는 것은 사람 승인 단계뿐).
 
-### 웹 연동 현황 (11/8)
+### 웹 연동 현황 (11/12)
 
 | 항목 | 상태 |
 |---|---|
 | 조회, 계획 → 승인 → 스택 생성, 정책 차단 안내, "지금 백업"(정지 → 백업 → 시작) | ✅ 웹 화면에서 동작 확인 |
-| 승인 카드에 Agent 훅의 쉬운 설명·영향 표시 | 웹 변경 필요. Agent는 `tool_call_confirmation`의 `metadata.reason`(설명), `metadata.blast_radius`(low·medium·high)로 보낸다 |
-| 초보자용/숙련자용 선택 | 웹 변경 필요. Agent는 둘 다 떠 있으니 요청 주소의 Agent 이름(`beginner`/`expert`)만 바꾸면 된다 |
-| 새 대화를 고정 제목(`{"title": "새 대화"}`)으로 만들기 | 웹 변경 필요. 제목이 빈 대화는 docker-agent가 사용자 입력으로 제목을 지으며, 이 호출엔 보안 훅이 걸리지 않는다 |
+| 승인 카드에 Agent 훅의 쉬운 설명·영향 표시 | 웹 반영(web `043a55d`, 11/11 웹 담당 알림). Agent는 `tool_call_confirmation`의 `metadata.reason`(설명), `metadata.blast_radius`(low·medium·high)로 보낸다 |
+| 초보자용/숙련자용 선택 | 웹 반영(web `043a55d`, 11/11 웹 담당 알림). Agent는 둘 다 떠 있으니 요청 주소의 Agent 이름(`beginner`/`expert`)만 바꾸면 된다 |
+| 새 대화를 고정 제목(`{"title": "새 대화"}`)으로 만들기 | 웹 반영(web `043a55d`, 11/11 웹 담당 알림). 제목이 빈 대화는 docker-agent가 사용자 입력으로 제목을 지으며, 이 호출엔 보안 훅이 걸리지 않는다 |
 | 차단 안내의 "Portainer에서 직접 할 수 있어요" 문구·링크 제거 | 웹 변경 필요 | 
 
 ## 6. 볼륨 백업
@@ -111,10 +121,10 @@ TELEMETRY_ENABLED=false
 
 ```bash
 cd ai-agent-hooks
-for t in tests/policy_1031_test.py tests/policy_1101_test.py tests/policy_1102_test.py tests/policy_1103_test.py tests/policy_1106_test.py tests/policy_1107_test.py tests/policy_1108_test.py tests/policy_1109_test.py tests/policy_1109v_test.py; do python3 $t | tail -1; done
+for t in tests/policy_1031_test.py tests/policy_1101_test.py tests/policy_1102_test.py tests/policy_1103_test.py tests/policy_1106_test.py tests/policy_1107_test.py tests/policy_1108_test.py tests/policy_1109_test.py tests/policy_1109v_test.py tests/policy_1112_test.py; do python3 $t | tail -1; done
 python3 tests/policy_guard_test.py tool_input_transform_direct_policy_guard.py | tail -1
 ```
-줄마다 `67/67 통과`처럼 모두 통과면 정상(총 362개). 설정 검사:
+줄마다 `67/67 통과`처럼 모두 통과면 정상(총 401개). 설정 검사:
 ```bash
 python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.example
 ```
@@ -131,6 +141,7 @@ python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.examp
 | policy_1108_test | 변경 요청에는 select를 빼고 보내기 |
 | policy_1109_test | 비밀번호·토큰을 Compose·Env에 적으면 거부, mysql 자동 비밀번호 설정 허용, entrypoint 거부, command·healthcheck는 허용 목록만(정책표 5.7) |
 | policy_1109v_test | 데이터 저장 앱(redis·mysql 등)은 이름 있는 볼륨 필수, 이름 없는 볼륨을 쓰는 스택은 수정 거부 |
+| policy_1112_test | 컨테이너 삭제의 force·v를 Docker와 같은 기준으로 판단(y·2 등도 참 → 거부) |
 
 실제 AI로 하는 시나리오 테스트(T01~T42)는 `docs/동작기준_테스트목록.md`.
 

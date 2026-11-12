@@ -53,6 +53,7 @@ import urllib.parse
 import urllib.request
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
+DOCKER_FALSE = {"", "0", "no", "false", "none"}  # 11/12: Docker는 이 다섯 값만 거짓, 나머지(y, 2 등)는 참으로 읽는다
 
 
 def out(obj):
@@ -164,7 +165,7 @@ def main():
     if environment_id in (None, ""):
         block("environment_id가 없습니다.")
         return
-    if kind == "container" and str(query.get("v", "")).strip().lower() in TRUE_VALUES:
+    if kind == "container" and "v" in query and str(query["v"]).strip().lower() not in DOCKER_FALSE:
         block("v=true는 컨테이너의 익명 볼륨까지 삭제하며 볼륨 데이터는 백업할 수 없습니다. v 없이 다시 요청하세요.")
         return
 
