@@ -157,6 +157,8 @@ check("C2 이름 없는 볼륨 백업 있으면 통과 + v=true + 백업 창구�
       ui(o).get("query_params", {}).get("v") == "true" and len(fp.PUTS) == n + 1)
 check("C3 이름 있는 볼륨(named_vol)은 v=true로 지워지지 않으니 백업 대상 아님(익명만 확인)", True, True)
 check("C4 force는 여전히 거부", proxy("DELETE", "/containers/oldapp", {"force": "true", "v": "true"})[0], "block")
+check("C6 (11/14) link 옵션은 거부(정책표 5.3 link 미지정)", proxy("DELETE", "/containers/oldapp", {"link": "true"})[0], "block")
+check("C7 (11/14) 모르는 옵션은 거부", proxy("DELETE", "/containers/oldapp", {"foo": "1"})[0], "block")
 check("C5 백업 컨테이너(bosun-backup)는 지울 수 없음", proxy("DELETE", "/containers/bosun-backup")[0], "block")
 
 # E: 승인 카드·자동 정리

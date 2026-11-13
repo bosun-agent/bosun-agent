@@ -643,6 +643,10 @@ def main():
         return
 
     if method == "DELETE" and clean.startswith("/containers/"):
+        extra = [k for k in query if k not in ("force", "v")]   # 11/14 정책표 수정본 5.3: link·기타 키는 거부
+        if extra:
+            block(f"컨테이너 삭제의 query_params '{extra[0]}'는 허용되지 않습니다(force·v만, link 삭제 모드도 안 됨).")
+            return
         if "force" in query and docker_true(query["force"]):
             block("force=true(실행 중인 컨테이너를 강제로 멈추고 삭제)는 허용되지 않습니다. 실행 중이면 먼저 정지한 뒤 삭제하세요(각각 승인 필요).")
             return
