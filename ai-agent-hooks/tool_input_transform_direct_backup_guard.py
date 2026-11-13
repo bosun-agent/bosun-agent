@@ -7,9 +7,10 @@
   Portainer REST API에서 직접 조회해 SQLite에 저장한다. 저장에 성공해야 통과시킨다.
   - 컨테이너  DELETE /containers/{id}   → GET /containers/{id}/json
   - (10/31부터) 이미지·네트워크 DELETE는 정책 훅과 deny가 막으므로 백업하지 않고 그냥 넘긴다.
-  - 컨테이너 DELETE에 v=true(익명 볼륨 함께 삭제)가 있으면 백업할 수 없으므로 차단한다.
+  - 컨테이너 DELETE의 v=true(익명 볼륨 함께 삭제)는 11/13부터 정책 훅이 익명 볼륨의 Soteria 백업을 확인한 뒤에만 통과한다.
+  - 볼륨·네트워크 DELETE(11/13 허용)는 설정 기록 없이 넘긴다(볼륨 데이터는 정책 훅이 Soteria 백업을 확인).
   - 대상을 알 수 없는 DELETE, 조회·저장 실패, 예외 → 모두 차단(fail-closed).
-  볼륨 삭제와 prune은 agent.yaml의 deny로 이미 막혀 있다.
+  prune은 agent.yaml의 deny로 막혀 있다.
 
 실행 시점(docker-agent v1.148.0 소스 approveAndRun 기준)
   tool_input_transform → tool_guard → 권한 판정 → 사용자 승인 → 실행.
@@ -96,6 +97,9 @@ def parse_target(path):
     m = re.fullmatch(r"/networks/([^/]+)", clean)
     if m:
         return "network", m.group(1), f"/networks/{m.group(1)}", inline_query
+    m = re.fullmatch(r"/volumes/([^/]+)", clean)
+    if m:  # 11/13: 볼륨 삭제는 정책 훅이 Soteria 백업을 확인한다(데이터 백업). 여기서는 설정 기록이 없다
+        return "volume", m.group(1), f"/volumes/{m.group(1)}", inline_query
     m = re.fullmatch(r"/images/(.+)", clean)
     if m and not m.group(1).endswith("/json"):
         return "image", m.group(1), f"/images/{m.group(1)}/json", inline_query
@@ -159,15 +163,13 @@ def main():
     if kind is None:
         block(f"삭제 대상을 식별할 수 없습니다(path={path}).")
         return
-    if kind in ("image", "network"):
+    if kind in ("image", "network", "volume"):
         out({})  # 10/31: 이미지·네트워크 삭제는 정책 훅과 deny가 막는다. 실행되지 않을 삭제는 백업하지 않는다.
         return
     if environment_id in (None, ""):
         block("environment_id가 없습니다.")
         return
-    if kind == "container" and "v" in query and str(query["v"]).strip().lower() not in DOCKER_FALSE:
-        block("v=true는 컨테이너의 익명 볼륨까지 삭제하며 볼륨 데이터는 백업할 수 없습니다. v 없이 다시 요청하세요.")
-        return
+    # 11/13: v=true(익명 볼륨 함께 삭제)는 정책 훅이 익명 볼륨마다 Soteria 백업을 확인한 뒤에만 넘어온다(정책표 수정본 5.3)
 
     env_file = os.environ.get("AGENT_ENV_FILE", "")
     file_values = read_env_file(env_file)

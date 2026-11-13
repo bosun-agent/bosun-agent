@@ -52,7 +52,7 @@ OLDPW = NEW.replace("MYSQL_RANDOM_ROOT_PASSWORD: \"yes\"", "MYSQL_ROOT_PASSWORD:
 # U: 스택 수정
 k, o = stack("StackUpdate", {"id": 4, "endpointId": 3, "StackFileContent": NEW})
 up = updated(o).get("StackFileContent", "")
-check("U1 정상 수정은 통과하고 검사한 Compose로 다시 씀", k, "rewrite", "8088:80" in up and "mem_limit" in up)
+check("U1 정상 수정은 통과하고 검사한 Compose로 다시 씀", k, "rewrite", "8088:80" in up and "mysql:8" in up)
 k2, o2 = stack("StackUpdate", {"id": 4, "endpointId": 3, "StackFileContent": OLDPW})
 check("U2 (11/9) [REDACTED] 비밀번호를 되살리면 평문이 되므로 거부", k2, "block",
       "평문 비밀번호" in o2.get("reason", "") and "Old-Secret-1106" not in o2.get("reason", ""))
@@ -125,7 +125,7 @@ check("T1 StackStart 통과", stack("StackStart", {"id": 4, "endpointId": 3})[0]
 check("T2 없는 스택 끄기 거부", stack("StackStop", {"id": 99, "endpointId": 3})[0], "block")
 check("T3 관리 스택 끄기 거부", stack("StackStop", {"id": 5, "endpointId": 3})[0], "block")
 check("T4 관리 스택 켜기는 통과", stack("StackStart", {"id": 5, "endpointId": 3})[0], "pass")
-check("T5 StackDelete는 여전히 거부", stack("StackDelete", {"id": 4, "endpointId": 3})[0], "block")
+check("T5 (11/13 정책표 수정본) StackDelete 관리 스택은 거부", stack("StackDelete", {"id": 5, "endpointId": 3})[0], "block")
 
 
 # Q: 안전한 필드

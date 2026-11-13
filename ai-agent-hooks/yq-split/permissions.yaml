@@ -18,7 +18,7 @@ permissions:
   deny:
     - "docker_proxy:method=POST:path=*/containers/create*" # 직접 생성 금지 — 스택으로 만든다(10/31)
     - "docker_proxy:method=DELETE:path=*/images/*" # 이미지 삭제 금지(10/31)
-    - "docker_proxy:method=DELETE:path=*/networks/*" # 네트워크 삭제 금지(10/31)
+    # 11/13: 네트워크 삭제는 정책표 수정본 5.12 ASK로 바뀌어 deny에서 뺐다(연결된 컨테이너가 없을 때만, 정책 훅 검사)
     # 11/6 보안 정책표 3절 DENY: 일시정지·재개, 이미지 검색, 네트워크 생성·연결·해제(10/18에 열었던 것). 정책 훅도 막는다
     - "docker_proxy:path=*/containers/*/pause*"
     - "docker_proxy:path=*/containers/*/unpause*"
@@ -31,7 +31,7 @@ permissions:
     - "docker_proxy:path=*/archive*" # 컨테이너 안 파일 읽기/쓰기 — GET이라 deny가 아니면 승인 없이 실행됨
     - "docker_proxy:path=*/export*" # 컨테이너 파일시스템 전체 내보내기(GET)
     - "docker_proxy:path=*/prune*" # 컨테이너·이미지·볼륨·네트워크 일괄 삭제
-    - "docker_proxy:method=DELETE:path=*/volumes/*" # 볼륨 삭제 — 데이터 복구 수단이 없음
+    # 11/13: 볼륨 삭제는 정책표 수정본 5.11 ASK로 바뀌어 deny에서 뺐다(최근 백업 필수, 정책 훅 검사)
     - "docker_proxy:path=*%*" # 인코딩된 경로(예: arch%69ve)로 deny를 피하는 것 방지
     - "docker_proxy:path=*/images/get*" # 이미지 여러 개 내보내기(GET, tar)
     - "docker_proxy:path=*/images/*/get" # 이미지 내보내기(GET, tar)

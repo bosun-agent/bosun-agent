@@ -8,12 +8,12 @@ tool_response_transform 훅 — 새 앱 볼륨을 백업 대상에 자동으로 
   백업 대상 목록과 창구 스택(bosun-soteria)을 맞춘다(soteria_common.sync_targets).
 
 하는 일
-  StackCreateDockerStandaloneString·StackUpdate가 실행된 뒤(사용자가 승인해 실제로 실행된 뒤에만 불린다)
+  StackCreateDockerStandaloneString·StackUpdate·StackDelete(11/13)가 실행된 뒤(사용자가 승인해 실제로 실행된 뒤에만 불린다)
   그 앱 컨테이너가 보일 때까지 잠깐 기다렸다가 목록을 맞추고, 결과 끝에 한 줄을 덧붙인다.
   실패해도 앱 만들기 결과는 그대로 두고 "백업 대상 추가 실패"를 덧붙인다(이 훅 종류는 결과를 막지 못한다).
   다음에 그 앱 백업을 요청하면 백업 검사 훅이 한 번 더 맞춰 본다.
 
-등록: tool_response_transform, matcher StackCreateDockerStandaloneString·StackUpdate 각각, timeout 150
+등록: tool_response_transform, matcher StackCreateDockerStandaloneString·StackUpdate·StackDelete 각각, timeout 150
 """
 import json
 import os
@@ -30,7 +30,7 @@ def main():
         print("{}")
         return
     tool = payload.get("tool_name")
-    if tool not in ("StackCreateDockerStandaloneString", "StackUpdate"):
+    if tool not in ("StackCreateDockerStandaloneString", "StackUpdate", "StackDelete"):
         print("{}")
         return
     resp = payload.get("tool_response")
@@ -43,8 +43,15 @@ def main():
         except (ValueError, AttributeError):
             name = None
     try:
-        added, removed = sc.sync_targets(wait_for=name)
-        if added:
+        added, removed = sc.sync_targets(wait_for=None if tool == "StackDelete" else name)
+        if tool == "StackDelete":   # 11/13: 지운 앱은 백업 대상에서 빠진다(백업 파일은 남음)
+            note = (f"\n\n[백업 대상] 지운 앱 {', '.join(removed)}을(를) 백업 대상에서 뺐습니다. 이미 만든 백업 파일은 그대로 남습니다."
+                    if removed else "")
+            left = [v for v in sc.pop_pending_delete(a.get("id")) if sc.volume_exists(v)]
+            if left:   # Portainer가 정지된 스택의 볼륨을 남기는 경우(11/13)
+                note += (f"\n\n[남은 볼륨] 데이터까지 지우는 요청이었지만 볼륨 {', '.join(left)}이(가) 아직 남아 있습니다. "
+                         "볼륨마다 docker_proxy DELETE /volumes/<이름>으로 삭제를 요청하세요(승인 1번씩, 백업은 이미 확인됨).")
+        elif added:
             note = f"\n\n[백업 대상] 데이터가 있는 앱 {', '.join(added)}을(를) 백업 대상에 자동으로 넣었습니다."
         elif name and name in sc.targets():
             note = f"\n\n[백업 대상] '{name}'은(는) 백업 대상입니다."

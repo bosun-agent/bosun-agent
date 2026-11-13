@@ -306,3 +306,93 @@ def recent_backup(vol, max_age_min=None, now=None):
                 if not best or r["recorded_at"] > best["recorded_at"]:
                     best = r
     return best
+
+
+# ---------- 삭제 전 확인(11/13 정책표 수정본 5.3·5.10·5.11) ----------
+
+def holders(vol):
+    """이 볼륨을 연결한 모든 컨테이너 [(이름, 프로젝트, 상태)]. 조회 실패면 PortainerError."""
+    out = []
+    for c in _containers({"volume": [vol]}):
+        name = str((c.get("Names") or ["?"])[0]).lstrip("/")
+        proj = (c.get("Labels") or {}).get("com.docker.compose.project", "")
+        out.append((name, proj, c.get("State", "")))
+    return out
+
+
+def is_backup_container(name, proj):
+    return proj in MANAGED_STACKS or name.startswith("bosun-backup") or name.startswith(stack_name())
+
+
+def scheduled_backup_holders(vol):
+    """정시 백업(bosun-backup)이 잡고 있으면 그 컨테이너 이름들. 이 볼륨은 Agent가 떼지 못한다(관리자 관리, 11/13 ㉠)."""
+    return [n for n, p, _ in holders(vol) if p == "bosun-backup" or n.startswith("bosun-backup")]
+
+
+def missing_backups(vols):
+    """최근 성공 백업이 없는 볼륨 목록. 기록을 못 읽으면 OSError."""
+    return [v for v in vols if not recent_backup(v)]
+
+
+def detach(vols):
+    """백업 창구(bosun-soteria)에서 이 볼륨들을 떼고 다시 배포한다(삭제 직전, 자동 추가의 반대).
+    떼야 Docker가 볼륨을 지울 수 있다. 바뀐 게 없으면 False. 실패하면 PortainerError/OSError."""
+    t = targets()
+    drop = set(vols)
+    new = {app: [v for v in vs if v not in drop] for app, vs in t.items()}
+    new = {app: vs for app, vs in new.items() if vs}
+    if new == t:
+        return False
+    st = find_stack()
+    if not st:
+        raise portainer_api.PortainerError(f"백업 창구 스택 '{stack_name()}'을 찾지 못했습니다.")
+    redeploy(st["Id"], build_compose(new))
+    write_targets(new)
+    return True
+
+
+# ---------- 11/13 스택 삭제 뒤 남은 볼륨 확인 ----------
+# Portainer는 스택을 정지(StackStop)하면 컨테이너를 지운다. 그 뒤 StackDelete(removeVolumes)는
+# 지울 것을 찾지 못해 볼륨을 남긴다(11/13 웹 시험, Portainer 기록 "No resource found to remove").
+# 그래서 삭제 검사 때 볼륨 목록을 적어 두고, 삭제 뒤 결과 훅이 남은 볼륨을 알려 준다(지우기는 AI가 볼륨 삭제로 따로 승인).
+
+def _pending_path():
+    p = record_path()
+    return os.path.join(os.path.dirname(p), "soteria_pending_delete.json") if p else None
+
+
+def set_pending_delete(stack_id, vols):
+    p = _pending_path()
+    if not p:
+        return
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    d[str(stack_id)] = list(vols)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+
+
+def pop_pending_delete(stack_id):
+    p = _pending_path()
+    if not p or not os.path.exists(p):
+        return []
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    vols = d.pop(str(stack_id), [])
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+    return vols
+
+
+def volume_exists(vol):
+    try:
+        portainer_api.get(f"/api/endpoints/{endpoint()}/docker/volumes/{urllib.parse.quote(vol, safe='')}", timeout=10)
+        return True
+    except portainer_api.PortainerError as e:
+        if getattr(e, "status", None) == 404:
+            return False
+        raise

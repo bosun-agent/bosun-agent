@@ -3,7 +3,7 @@
 
 Docker는 쿼리 값 중 "", 0, no, false, none만 거짓이고 나머지(y, 2, True 등)는 모두 참으로 읽는다.
 예전 훅은 1·true·yes·on만 참으로 봐서 force=y, v=2가 검사를 통과했다(웹 담당 11/11 지적).
-  - F: 정책 훅 — 컨테이너 삭제의 force·v
+  - F: 정책 훅 — 컨테이너 삭제의 force·v (11/13: v=true는 정책표 수정본대로 익명 볼륨 백업 확인 후 허용, policy_1113_test)
   - B: 삭제 전 백업 훅 — v
 """
 import json
@@ -49,9 +49,11 @@ FALSY = ["0", "false", "False", "no", "none", ""]
 # F: 정책 훅
 for v in TRUTHY:
     check(f"F1 force={v!r}는 거부", delete("/containers/web", {"force": v})[0], "block")
-    check(f"F2 v={v!r}는 거부", delete("/containers/web", {"v": v})[0], "block")
+    k2, o2 = delete("/containers/web", {"v": v})
+    check(f"F2 (11/13) v={v!r}는 참으로 보고 v=true로 정리(이름 없는 볼륨이 없으면 통과)", k2 == "rewrite"
+          and o2["hook_specific_output"]["updated_input"]["query_params"].get("v") == "true", True)
 check("F3 force=True(값이 불리언)도 거부", delete("/containers/web", {"force": True})[0], "block")
-check("F4 v=2(값이 숫자)도 거부", delete("/containers/web", {"v": 2})[0], "block")
+check("F4 (11/13) v=2(숫자)도 참 → v=true", delete("/containers/web", {"v": 2})[1].get("hook_specific_output", {}).get("updated_input", {}).get("query_params", {}).get("v"), "true")
 check("F5 query_params가 JSON 글자여도 거부", delete("/containers/web", '{"force": "y"}')[0], "block")
 for v in FALSY:
     k, o = delete("/containers/web", {"force": v, "v": v})
@@ -64,7 +66,7 @@ check("F8 다른 경로의 v(예: 이미지 삭제)는 원래대로 거부", del
 
 # B: 삭제 전 백업 훅
 for v in ["y", "2", "True", "abc"]:
-    check(f"B1 백업 훅도 v={v!r}는 거부", delete("/containers/web", {"v": v}, BACKUP)[0], "block")
+    check(f"B1 (11/13) 백업 훅은 v={v!r}를 막지 않음(정책 훅이 익명 볼륨 백업 확인)", delete("/containers/web", {"v": v}, BACKUP)[0] != "block", True)
 for v in ["0", "no", "none", "false"]:
     check(f"B2 백업 훅 v={v!r}(거짓)는 막지 않음", delete("/containers/web", {"v": v}, BACKUP)[0] != "block", True)
 

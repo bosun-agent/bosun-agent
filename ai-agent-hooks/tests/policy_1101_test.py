@@ -70,19 +70,22 @@ for p, want in [('"8080:80"', "rewrite"), ('"80"', "rewrite"), ('"127.0.0.1:8080
 check("P ports long published 8080", create(NGX + "    ports:\n      - target: 80\n        published: 8080\n")[0], "rewrite")
 check("P ports long published 80", create(NGX + "    ports:\n      - target: 80\n        published: 80\n")[0], "block")
 
-# 자원 상한
-for line, want in [("mem_limit: 512m", "rewrite"), ("mem_limit: 2g", "rewrite"), ("mem_limit: 3g", "block"),
-                   ("mem_limit: 4096m", "block"), ("mem_reservation: 3g", "block"), ("cpus: 2", "rewrite"),
-                   ("cpus: '0.5'", "rewrite"), ("cpus: 4", "block")]:
+# 자원(11/13 정책표 수정본: 고정 상한 없음, 값의 유효성만)
+for line, want in [("mem_limit: 512m", "rewrite"), ("mem_limit: 2g", "rewrite"), ("mem_limit: 3g", "rewrite"),
+                   ("mem_limit: 4096m", "rewrite"), ("mem_reservation: 3g", "rewrite"), ("cpus: 2", "rewrite"),
+                   ("cpus: '0.5'", "rewrite"), ("cpus: 4", "rewrite"), ("mem_limit: 0", "block"), ("cpus: 0", "block"),
+                   ("mem_limit: lots", "block")]:
     check(f"M {line}", create(NGX + f"    {line}\n")[0], want)
-check("M deploy limits 4G 거부", create(NGX + "    deploy:\n      resources:\n        limits: {memory: 4G}\n")[0], "block")
-check("M deploy limits cpus 3 거부", create(NGX + "    deploy:\n      resources:\n        limits: {cpus: '3'}\n")[0], "block")
+check("M deploy limits 4G 통과(상한 없음)", create(NGX + "    deploy:\n      resources:\n        limits: {memory: 4G}\n")[0], "rewrite")
+check("M deploy limits cpus 3 통과(상한 없음)", create(NGX + "    deploy:\n      resources:\n        limits: {cpus: '3'}\n")[0], "rewrite")
+check("M mem_reservation이 mem_limit보다 크면 거부", create(NGX + "    mem_limit: 256m\n    mem_reservation: 1g\n")[0], "block")
+check("M deploy 예약이 제한보다 크면 거부", create(NGX + "    deploy:\n      resources:\n        limits: {cpus: '1'}\n        reservations: {cpus: '2'}\n")[0], "block")
 
 # 상한 기본값
 s = svc_after(NGX)
-check("D 상한 안 적으면 기본값(512m, 1) 채움", bool(s), True, bool(s) and s.get("mem_limit") == "512m" and s.get("cpus") == 1)
+check("D (11/13) 자원을 안 적으면 아무것도 채우지 않음", bool(s), True, bool(s) and "mem_limit" not in s and "cpus" not in s)
 s = svc_after(NGX + "    mem_limit: 1g\n")
-check("D 적은 값은 그대로 두고 빠진 cpus만 채움", bool(s), True, bool(s) and s.get("mem_limit") == "1g" and s.get("cpus") == 1)
+check("D (11/13) 적은 값은 그대로, 빠진 값은 채우지 않음", bool(s), True, bool(s) and s.get("mem_limit") == "1g" and "cpus" not in s)
 s = svc_after(NGX + "    deploy:\n      resources:\n        limits: {cpus: '0.5', memory: 256M}\n")
 check("D deploy.limits에 적었으면 mem_limit·cpus를 덧붙이지 않음", bool(s), True,
       bool(s) and "mem_limit" not in s and "cpus" not in s)
@@ -140,7 +143,7 @@ for title, path, tool, ti, frag in [
     ("비공식 이미지 받기", POL, "docker_proxy", {"environment_id": 3, "method": "POST", "path": "/images/create", "query_params": {"fromImage": "bitnami/redis"}}, "공식 이미지를 쓰세요"),
     ("privileged", STACK, "StackCreateDockerStandaloneString", {"endpointId": 3, "Name": "x", "StackFileContent": NGX + "    privileged: true\n"}, "그 설정을 빼고"),
     ("호스트 폴더", STACK, "StackCreateDockerStandaloneString", {"endpointId": 3, "Name": "x", "StackFileContent": NGX + "    volumes: [\"/etc:/data\"]\n"}, "이름 있는 볼륨"),
-    ("StackDelete", STACK, "StackDelete", {"id": 1, "endpointId": 3}, "관리자에게 요청"),
+    ("StackDelete external", STACK, "StackDelete", {"id": 4, "endpointId": 3, "external": True}, "일반 스택만"),
 ]:
     r = reason_of(path, tool, ti)
     check(f"G {title} 거부는 ①②③ 형식 + 알맞은 대안", all(x in r for x in ("① 막힌 것", "② 이유", "③ 대신 할 수 있는 것")), True, frag in r)

@@ -32,6 +32,7 @@ Compose 검사(허용 항목만)
   command는 CMD_ALLOW(이미지별 프로그램·옵션), healthcheck test는 HEALTH_ALLOW의 ["CMD", ...]만.
   데이터 볼륨(11/9): redis·mysql·mariadb·postgres·mongo는 데이터 위치에 이름 있는 볼륨 필수(DATA_PATHS).
   StackUpdate는 지금 컨테이너가 이름 없는(익명) 볼륨을 쓰면 거부(다시 배포하면 새 빈 볼륨으로 바뀜).
+  StackDelete(11/13 정책표 수정본 5.10): ASK. 관리 스택·external 거부. removeVolumes=true는 볼륨 전부 최근 백업 + 정시 백업에 연결 안 됨.
   soteria(11/12): SOTERIA_GATE=1이면 데이터가 있는 앱의 StackUpdate는 그 앱 볼륨 전부에 최근 30분 안 성공 백업 기록이 있어야 통과.
   포트(11/12): 17080(Agent)·3001(웹)·18090(백업 창구)도 앱이 못 쓴다. 관리 스택에 bosun-soteria 추가.
   비밀번호(11/9, 정책표 5.7·215·238줄): 이름에 password·secret·token·api_key 등이 들어간 환경변수에 값을 적으면 거부,
@@ -43,7 +44,7 @@ Compose 검사(허용 항목만)
 restart·포트·자원(11/1, 정책표 5.7)
   restart: no, unless-stopped, on-failure:1~5만. always와 횟수 없는 on-failure는 거부(무제한 재시작 방지)
   ports: 호스트에 공개하는 포트는 1024~65535만, 9443·8000(Portainer)은 거부. 호스트 포트를 안 적으면 Docker가 임의 번호를 고른다(허용)
-  자원: 서비스당 메모리 2GB·CPU 2개까지. 적지 않으면 기본값(mem_limit 512m, cpus 1)으로 채운다
+  자원(11/13 정책표 수정본): 고정 상한·기본값 없음. 적은 값은 형식·0보다 큼·예약값 ≤ 제한값만 검사
 
 이미지 출처(11/1): Docker Hub 공식 이미지와 image_source.py의 ALLOW 목록만 허용
 
@@ -89,9 +90,7 @@ PORT_MIN, PORT_MAX = 1024, 65535
 PORTAINER_PORTS = {9443, 8000}
 # 11/12: BOSUN이 쓰는 포트도 앱이 못 쓰게 한다(Agent API 17080, 웹 3001, soteria 백업 창구 18090). 8080 충돌 사례(웹 담당 11/9)
 BOSUN_PORTS = {17080: "Agent", 3001: "웹", 18090: "백업 창구"}
-MEM_CAP = 2 * 1024 ** 3        # 서비스당 메모리 상한 2GB
-CPU_CAP = 2.0                  # 서비스당 CPU 상한 2개
-MEM_DEFAULT, CPU_DEFAULT = "512m", 1   # 11/1: 안 적었을 때 채우는 기본 상한
+# 11/13 정책표 수정본 5.7: CPU·메모리 고정 상한 제거, 안 적으면 채우지 않음(Docker 기본 동작). 적은 값은 형식·값·설정 간 유효성만 검사
 
 TOP_KEYS = {"services", "volumes", "networks", "name", "version"}
 SVC_KEYS = {"image", "command", "entrypoint", "environment", "ports", "expose", "volumes", "restart",
@@ -306,25 +305,34 @@ def mem_bytes(v, where):
 
 
 def cap_mem(v, where):
-    if mem_bytes(v, where) > MEM_CAP:
-        raise Reject(f"{where} 메모리 {v}는 상한(2GB)을 넘습니다.")
+    """11/13: 상한은 없고 값 유효성만(0보다 커야 함). 바이트 수를 돌려준다."""
+    n = mem_bytes(v, where)
+    if n <= 0:
+        raise Reject(f"{where} 메모리 {v}는 0보다 커야 합니다.")
+    return n
 
 
 def cap_cpu(v, where):
-    if float(v) > CPU_CAP:
-        raise Reject(f"{where} CPU {v}는 상한(2개)을 넘습니다.")
+    """11/13: 상한은 없고 값 유효성만(0보다 커야 함)."""
+    if float(v) <= 0:
+        raise Reject(f"{where} CPU {v}는 0보다 커야 합니다.")
+    return float(v)
 
 
 def check_deploy(d, where):
     only(d, {"resources"}, where)
     r = only(d.get("resources", {}), {"limits", "reservations"}, f"{where}.resources")
+    got = {}
     for k in ("limits", "reservations"):
         if k in r:
             lim = only(r[k], {"cpus", "memory"}, f"{where}.resources.{k}")
             if "cpus" in lim:
-                cap_cpu(s(lim["cpus"], "cpus", r"\d+(\.\d+)?"), f"{where}.resources.{k}")
+                got[(k, "cpus")] = cap_cpu(s(lim["cpus"], "cpus", r"\d+(\.\d+)?"), f"{where}.resources.{k}")
             if "memory" in lim:
-                cap_mem(s(lim["memory"], "memory", MEM_RE), f"{where}.resources.{k}")
+                got[(k, "memory")] = cap_mem(s(lim["memory"], "memory", MEM_RE), f"{where}.resources.{k}")
+    for kind in ("cpus", "memory"):   # 11/13: 설정 간 유효성 — 예약값은 제한값 이하
+        if ("limits", kind) in got and ("reservations", kind) in got and got[("reservations", kind)] > got[("limits", kind)]:
+            raise Reject(f"{where}.resources: {kind} 예약값이 제한값보다 큽니다.")
 
 
 def check_healthcheck(h, where):
@@ -489,9 +497,12 @@ def check_service(name, svc, vol_names, net_names, svc_names):
             v = s(svc[k], f"{where} {k}", SVC_RE)
             if PROTECTED.search(v):
                 raise Reject(f"{where} {k}에 portainer는 쓸 수 없습니다.")
+    mems = {}
     for k in ("mem_limit", "mem_reservation"):
         if k in svc:
-            cap_mem(s(svc[k], f"{where} {k}", MEM_RE), f"{where} {k}")
+            mems[k] = cap_mem(s(svc[k], f"{where} {k}", MEM_RE), f"{where} {k}")
+    if len(mems) == 2 and mems["mem_reservation"] > mems["mem_limit"]:   # 11/13: 설정 간 유효성
+        raise Reject(f"{where}: mem_reservation이 mem_limit보다 큽니다.")
     if "cpus" in svc:
         cap_cpu(s(svc["cpus"], f"{where} cpus", r"\d+(\.\d+)?"), f"{where} cpus")
     if "stop_grace_period" in svc:
@@ -503,12 +514,7 @@ def check_service(name, svc, vol_names, net_names, svc_names):
         check_healthcheck(svc["healthcheck"], f"{where} healthcheck")
     if "deploy" in svc:
         check_deploy(svc["deploy"], f"{where} deploy")
-    # 상한을 적지 않았으면 기본값으로 채운다(11/1). deploy.resources.limits에 적었으면 그쪽을 쓴다
-    limits = ((svc.get("deploy") or {}).get("resources") or {}).get("limits") or {}
-    if "mem_limit" not in svc and "memory" not in limits:
-        svc["mem_limit"] = MEM_DEFAULT
-    if "cpus" not in svc and "cpus" not in limits:
-        svc["cpus"] = CPU_DEFAULT
+    # 11/13: 자원을 적지 않아도 기본값을 채우지 않는다(정책표 수정본 5.7, 11/1의 512MB·CPU 1개 기본값 제거)
 
 
 def check_compose(text):
@@ -725,6 +731,44 @@ def check_soteria_gate(st):
         raise Reject(f"스택 '{name}'의 데이터 볼륨 중 최근 백업이 없습니다: {', '.join(missing)}. 수정 전에 먼저 백업해야 합니다.")
 
 
+def check_stack_delete(args):
+    """11/13 정책표 수정본 5.10. 실제 스택·환경 확인, 관리 스택 거부, external 거부.
+    removeVolumes=true면 그 스택이 쓰는 볼륨(이름 있는 것·없는 것) 전부에 최근 Soteria 백업이 있어야 하고,
+    정시 백업이 잡고 있지 않아야 한다. 통과하면 백업 창구에서 그 볼륨들을 뗀다(그래야 Docker가 지울 수 있다)."""
+    for k in args:
+        if k not in ("id", "endpointId", "external", "removeVolumes", "select"):
+            raise Reject(f"'{k}' 인자는 허용되지 않습니다.")
+    if "external" in args and args["external"] is not False:
+        raise Reject("external 스택(Swarm) 삭제는 허용되지 않습니다. external은 넣지 마세요.")
+    rm = args.get("removeVolumes", False)
+    if not isinstance(rm, bool):
+        raise Reject("removeVolumes는 true/false여야 합니다.")
+    st = check_stack_target(args)   # 실제 스택·환경, 관리 스택(bosun-backup·bosun-soteria·portainer) 거부
+    if rm:
+        import soteria_common as sc
+        name = str(st.get("Name", ""))
+        try:
+            vols = sc.stack_volumes(name)
+            held = [v for v in vols if sc.scheduled_backup_holders(v)]
+            missing = sc.missing_backups(vols)
+        except (portainer_api.PortainerError, OSError) as e:
+            raise Reject(f"스택 삭제 전 볼륨 백업을 확인하지 못했습니다(조회에 실패: {e}).")
+        if held:
+            raise Reject(f"스택 '{name}'의 볼륨 중 정시 백업 컨테이너에 연결된 것이 있어 볼륨까지 지울 수 없습니다: {', '.join(held)}. "
+                         "정시 백업에서 떼는 것은 관리자 작업입니다. 데이터를 남기고 앱만 지우려면 removeVolumes 없이 요청하세요.")
+        if missing:
+            raise Reject(f"스택 '{name}'의 데이터 볼륨 중 최근 백업이 없습니다: {', '.join(missing)}. 볼륨까지 지우기 전에 먼저 백업해야 합니다.")
+        try:
+            sc.detach(vols)
+            sc.set_pending_delete(args["id"], vols)   # 삭제 뒤 남은 볼륨 확인용(soteria_common 참고)
+        except (portainer_api.PortainerError, OSError) as e:
+            raise Reject(f"백업 창구에서 볼륨을 떼지 못해 볼륨까지 지울 수 없습니다(조회에 실패: {e}).")
+    new = {"id": args["id"], "endpointId": args["endpointId"], "select": None}
+    if rm:
+        new["removeVolumes"] = True
+    return new
+
+
 def check_update(args):
     for k in args:
         if k in UPDATE_EXTRA:
@@ -820,6 +864,14 @@ def main():
             new = check_create(args)
         except Reject as r:
             block(str(r))  # 허용 설정 목록은 기본 안내(③)에 들어간다
+            return
+        out({"hook_specific_output": {"updated_input": new}})
+        return
+    if tool == "StackDelete":  # 11/13 정책표 수정본 5.10: ASK, removeVolumes=true는 볼륨 전부의 Soteria 백업 확인
+        try:
+            new = check_stack_delete(args)
+        except Reject as r:
+            block(str(r))
             return
         out({"hook_specific_output": {"updated_input": new}})
         return

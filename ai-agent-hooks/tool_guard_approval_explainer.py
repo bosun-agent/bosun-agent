@@ -84,6 +84,9 @@ def explain_proxy(a):
             ("POST", "/unpause"): (f"일시정지한 {c}를 다시 움직이게 합니다.", "low", "container-unpause"),
             ("DELETE", ""): (f"멈춰 있는 {c}를 삭제합니다. 삭제 전 설정은 백업되지만, 컨테이너 안에만 있던 파일은 되돌릴 수 없습니다.", "high", "container-delete"),
         }
+        if (method, op) == ("DELETE", "") and str(q.get("v", "")).lower() == "true":   # 11/13 v=true
+            return (f"멈춰 있는 {c}와 그 컨테이너의 이름 없는 볼륨까지 삭제합니다. 볼륨은 삭제 직전 백업을 확인했지만, "
+                    "되살리려면 관리자가 백업에서 복원해야 합니다.", "high", "container-delete-volumes")
         if (method, op) in table:
             return table[(method, op)]
 
@@ -99,6 +102,13 @@ def explain_proxy(a):
     m = re.fullmatch(r"/volumes/([^/]+)", path)
     if method == "GET" and m:
         return (f"'{m.group(1)}' 볼륨의 상세 정보를 봅니다.", "low", "volume-inspect")
+    if method == "DELETE" and m:  # 11/13 정책표 수정본 5.11
+        return (f"'{m.group(1)}' 볼륨(앱 데이터)을 영구히 삭제합니다. 삭제 직전 백업을 확인했지만, 되살리려면 관리자가 백업에서 복원해야 합니다.",
+                "high", "volume-delete")
+    m = re.fullmatch(r"/networks/([^/]+)", path)
+    if method == "DELETE" and m:  # 11/13 정책표 수정본 5.12
+        return (f"'{m.group(1)}' 네트워크를 삭제합니다. 연결된 컨테이너는 없습니다. 이 네트워크를 쓰도록 설정된 앱은 다시 켤 때 영향을 받을 수 있습니다.",
+                "medium", "network-delete")
     if method == "POST" and path == "/networks/create":
         name = body.get("Name") or body.get("name") or ""
         return (f"새 네트워크 '{name}'(bridge 방식)을 만듭니다. 이 네트워크에 연결한 컨테이너끼리 이름으로 통신할 수 있게 됩니다.", "low", "network-create")
@@ -183,6 +193,11 @@ def explain(tool, a):
                 "백업하는 동안 그 앱은 꺼져 있어야 합니다. 끝나면 파일 이름과 지문(sha256)을 확인해 알려 드립니다.", "low", "backup-now")
     if tool == "backup_status":
         return (f"백업 작업 '{a.get('job_id')}'의 결과를 조회합니다. 바꾸는 것은 없습니다.", "low", "backup-status")
+    if tool == "StackDelete":  # 11/13 정책표 수정본 5.10
+        if a.get("removeVolumes") is True:
+            return (f"{stack_label(a.get('id'))}를 데이터(볼륨)까지 모두 삭제합니다. 볼륨은 삭제 직전 백업을 확인했지만, "
+                    "되살리려면 관리자가 백업에서 복원해야 합니다.", "high", "stack-delete-volumes")
+        return (f"{stack_label(a.get('id'))}를 삭제합니다(컨테이너·네트워크). 데이터(볼륨)는 남겨 둡니다.", "high", "stack-delete")
     if tool == "StackStart":
         return (f"{stack_label(a.get('id'))}에 속한 컨테이너를 모두 켭니다.", "low", "stack-start")
     if tool == "StackStop":

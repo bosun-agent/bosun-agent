@@ -133,7 +133,7 @@ check("1-29 endpointId 없음 거부", stack("StackCreateDockerStandaloneString"
 check("1-30 StackStart 통과", stack("StackStart", {"id": 4, "endpointId": 3})[0], "pass")
 check("1-31 StackStop id 문자열 거부", stack("StackStop", {"id": "4", "endpointId": 3})[0], "block")
 check("1-32 StackList 통과", stack("StackList", {})[0], "pass")
-check("1-33 StackDelete 거부", stack("StackDelete", {"id": 4, "endpointId": 3})[0], "block")
+check("1-33 (11/13 정책표 수정본) StackDelete는 external이면 거부", stack("StackDelete", {"id": 4, "endpointId": 3, "external": True})[0], "block")
 check("1-34 ports long 형식 통과", create("services:\n  a:\n    image: nginx\n    ports:\n      - target: 80\n        published: 8080\n")[0], "rewrite")
 check("1-35 services 없음 거부", create("version: '3'\n")[0], "block")
 check("1-36 deploy.resources 통과", create("services:\n  a:\n    image: nginx\n    deploy:\n      resources:\n        limits: {cpus: '0.5', memory: 256M}\n")[0], "rewrite")

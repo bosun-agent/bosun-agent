@@ -33,6 +33,10 @@ STACK_MOUNTS = {}
 VOLUME_USERS = {}
 VOLUME_SIZES = {}
 PUTS = []
+# 11/13 삭제 테스트용: 컨테이너 이름 → Mounts, 볼륨 이름 → 상세, 네트워크 이름 → 상세
+CONTAINER_MOUNTS = {}
+VOLUMES = {}
+NETWORKS = {}
 PROJECTS = {"outside-app"}               # Portainer 밖에서 만든 Compose 프로젝트 이름
 
 
@@ -65,8 +69,16 @@ class _H(BaseHTTPRequestHandler):
             if re.fullmatch(r"[0-9a-f]{64}", ref):
                 if ref not in NAMES:
                     return self._send(404, {"message": "No such container"})
-                return self._send(200, {"Id": ref, "Name": "/" + NAMES[ref]})
-            return self._send(200, {"Id": fake_id(ref), "Name": "/" + ref})
+                return self._send(200, {"Id": ref, "Name": "/" + NAMES[ref], "Mounts": CONTAINER_MOUNTS.get(NAMES[ref], [])})
+            return self._send(200, {"Id": fake_id(ref), "Name": "/" + ref, "Mounts": CONTAINER_MOUNTS.get(ref, [])})
+        m = re.fullmatch(r"/api/endpoints/\d+/docker/volumes/([^/]+)", path)   # 11/13
+        if m:
+            v = VOLUMES.get(unquote(m.group(1)))
+            return self._send(200, v) if v else self._send(404, {"message": "no such volume"})
+        m = re.fullmatch(r"/api/endpoints/\d+/docker/networks/([^/]+)", path)  # 11/13
+        if m:
+            n = NETWORKS.get(unquote(m.group(1)))
+            return self._send(200, n) if n else self._send(404, {"message": "no such network"})
         m = re.fullmatch(r"/api/endpoints/\d+/docker/exec/([0-9a-f]{64})/json", path)
         if m:
             return self._send(200, EXECS[m.group(1)]) if m.group(1) in EXECS else self._send(404, {"message": "No such exec instance"})

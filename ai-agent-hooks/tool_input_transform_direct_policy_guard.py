@@ -54,6 +54,7 @@
 import json
 import os
 import re
+import urllib.parse
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -84,7 +85,7 @@ ALLOW = {
     ],
     "POST": [rf"/containers/{SEG}/(start|stop|restart)", r"/images/create"],   # 11/6: pause·unpause·네트워크 변경 뺌(정책표 DENY)
     # 11/12: 백업 명령 exec 예외 제거(팀 결정 "exec 예외 허용 X"). "지금 백업"은 soteria 백업 도구(backup_volume)로 한다
-    "DELETE": [rf"/containers/{SEG}"],
+    "DELETE": [rf"/containers/{SEG}", rf"/volumes/{SEG}", rf"/networks/{SEG}"],   # 11/13 정책표 수정본: 볼륨·네트워크 삭제 ASK(조건부)
 }
 ALLOW_RE = {m: [re.compile(rf"^{p}$") for p in pats] for m, pats in ALLOW.items()}
 
@@ -103,7 +104,7 @@ HOST_KEYS = ["PortBindings", "RestartPolicy", "Memory", "MemoryReservation", "Na
              "Binds", "Mounts", "NetworkMode", "AutoRemove", "ReadonlyRootfs"]
 RESTART_NAMES = {"", "no", "always", "unless-stopped", "on-failure"}
 PROTECTED_VOLUME = re.compile(r"portainer", re.I)    # Portainer 데이터(키·설정) 볼륨은 연결 금지
-PROTECTED_CONTAINER = re.compile(r"portainer", re.I)  # Portainer 컨테이너 보호. 11/3부터 실제 대상(조회한 이름) 기준이라 ID로 와도 거른다
+PROTECTED_CONTAINER = re.compile(r"portainer|^bosun-(backup|soteria)", re.I)  # Portainer 컨테이너 보호. 11/3부터 실제 대상(조회한 이름) 기준이라 ID로 와도 거른다
 SEARCH_SELECT = "[*].{name:name,official:is_official,stars:star_count}"  # 설명문(외부 작성 글)은 버린다
 # 상세(inspect)는 안전한 필드만 받는다(11/1, 정책표 "inspect 출력: 안전한 필드만"). 모델이 보낸 select는 무시하고 이것으로 바꾼다.
 # 뺀 것: 호스트 경로(GraphDriver, LogPath, HostsPath, 볼륨 Mountpoint·마운트 Source), HostConfig 대부분(장치·권한 설정),
@@ -405,6 +406,77 @@ def _body_dict(body):
     return body if isinstance(body, dict) else {}
 
 
+# ---------- 11/13 삭제 조건(정책표 수정본 5.3 v=true, 5.11 VolumeDelete, 5.12 NetworkDelete) ----------
+PROTECTED_VOLUME_DELETE = re.compile(r"portainer|^bosun_backups$|^bosun_soteria_backups$", re.I)
+DEFAULT_NETWORKS = {"bridge", "host", "none", "ingress", "docker_gwbridge"}
+PROTECTED_NETWORK = re.compile(r"portainer|^bosun-(backup|soteria)", re.I)
+ANON_VOLUME = re.compile(r"[0-9a-f]{64}")
+
+
+def soteria_ready(vols):
+    """지울 볼륨들이 지워도 되는 상태인지(최근 Soteria 백업, 정시 백업이 잡고 있지 않음). 괜찮으면 백업 창구에서 떼고 None.
+    안 되면 거부 문구. 실패는 예외(호출한 쪽이 거부)."""
+    if not vols:
+        return None
+    import soteria_common as sc
+    held = {v: sc.scheduled_backup_holders(v) for v in vols}
+    held = {v: h for v, h in held.items() if h}
+    if held:
+        return ("정시 백업 컨테이너에 연결된 볼륨이라 Agent가 지울 수 없습니다: " + ", ".join(held)
+                + ". 정시 백업에서 떼는 것은 관리자 작업입니다.")
+    missing = sc.missing_backups(vols)
+    if missing:
+        return ("지울 볼륨 중 최근 백업이 없습니다: " + ", ".join(missing)
+                + ". 볼륨을 지우기 전에 먼저 backup_volume으로 백업해야 합니다(앱은 먼저 정지).")
+    sc.detach(vols)   # 백업 창구가 잡고 있으면 Docker가 지우지 못하므로 뗀다
+    return None
+
+
+def anonymous_volumes(env_id, cid):
+    c = portainer_api.get(f"/api/endpoints/{env_id}/docker/containers/{cid}/json")
+    return sorted({m.get("Name") for m in c.get("Mounts") or []
+                   if m.get("Type") == "volume" and ANON_VOLUME.fullmatch(str(m.get("Name", "")))})
+
+
+def check_volume_delete(env_id, ref, query):
+    if isinstance(env_id, bool) or not str(env_id).isdigit():
+        return "environment_id(환경 번호)가 없거나 숫자가 아닙니다.", None
+    extra = [k for k in query if k != "force"]
+    if extra:
+        return f"볼륨 삭제의 query_params '{extra[0]}'는 허용되지 않습니다.", None
+    if "force" in query and docker_true(query["force"]):
+        return "볼륨 강제 삭제(force=true)는 허용되지 않습니다.", None
+    try:
+        vol = portainer_api.get(f"/api/endpoints/{env_id}/docker/volumes/{urllib.parse.quote(ref, safe='')}")
+    except portainer_api.PortainerError as e:
+        return (f"'{ref}'라는 볼륨이 없습니다." if e.status == 404 else f"대상 볼륨을 확인하지 못했습니다({e})."), None
+    name = str(vol.get("Name", ""))
+    if not name or PROTECTED_VOLUME_DELETE.search(name):
+        return f"관리용 볼륨('{name}')은 지울 수 없습니다.", None
+    import soteria_common as sc
+    users = [n for n, p, _ in sc.holders(name) if not sc.is_backup_container(n, p)]
+    if users:
+        return (f"볼륨 '{name}'을(를) 쓰는 컨테이너가 있습니다: {', '.join(users)}. 볼륨은 쓰는 컨테이너가 없을 때만 지울 수 있습니다."), None
+    return soteria_ready([name]), name
+
+
+def check_network_delete(env_id, ref, query):
+    if isinstance(env_id, bool) or not str(env_id).isdigit():
+        return "environment_id(환경 번호)가 없거나 숫자가 아닙니다.", None
+    if query:
+        return "네트워크 삭제에는 query_params를 쓰지 않습니다.", None
+    try:
+        net = portainer_api.get(f"/api/endpoints/{env_id}/docker/networks/{urllib.parse.quote(ref, safe='')}")
+    except portainer_api.PortainerError as e:
+        return (f"'{ref}'라는 네트워크가 없습니다." if e.status == 404 else f"대상 네트워크를 확인하지 못했습니다({e})."), None
+    name, nid = str(net.get("Name", "")), str(net.get("Id", ""))
+    if name in DEFAULT_NETWORKS or PROTECTED_NETWORK.search(name) or not nid:
+        return f"기본·관리용 네트워크('{name}')는 지울 수 없습니다.", None
+    if net.get("Containers"):
+        return (f"네트워크 '{name}'에 연결된 컨테이너가 있습니다({len(net['Containers'])}개). 연결된 컨테이너가 없을 때만 지울 수 있습니다."), None
+    return None, nid
+
+
 def main():
     raw = sys.stdin.read().strip()
     payload = json.loads(raw) if raw else {}
@@ -433,8 +505,8 @@ def main():
     if method == "POST" and clean == "/containers/create":
         block("컨테이너 직접 생성은 허용되지 않습니다. 새 컨테이너는 스택(StackCreateDockerStandaloneString)으로 Compose를 보내 만드세요.")
         return
-    if method == "DELETE" and re.match(r"^/(images|networks)/", clean):
-        block("이미지·네트워크 삭제는 이 Agent에서 허용되지 않습니다.")
+    if method == "DELETE" and re.match(r"^/images/", clean):
+        block("이미지 삭제는 이 Agent에서 허용되지 않습니다.")
         return
     # 11/12: 컨테이너 안 명령 실행(exec)은 예외 없이 거부(정책표 4절). 백업은 backup_volume
     if re.search(r"(^|/)exec(/|$)", clean):
@@ -574,12 +646,43 @@ def main():
         if "force" in query and docker_true(query["force"]):
             block("force=true(실행 중인 컨테이너를 강제로 멈추고 삭제)는 허용되지 않습니다. 실행 중이면 먼저 정지한 뒤 삭제하세요(각각 승인 필요).")
             return
-        if "v" in query and docker_true(query["v"]):  # 11/12: 백업 훅도 막지만 정책 훅에서도 막는다(이중)
-            block("v=true(컨테이너의 익명 볼륨까지 삭제)는 허용되지 않습니다. v 없이 다시 요청하세요.")
-            return
+        want_v = "v" in query and docker_true(query["v"])
         if "force" in query or "v" in query:  # 거짓 값은 빼고 보낸다(검사한 것과 보내는 것을 같게)
             query = {k: v for k, v in query.items() if k not in ("force", "v")}
             updates["query_params"] = query
+        if want_v:  # 11/13 정책표 수정본 5.3: v=true는 삭제될 익명 볼륨 각각의 최근 Soteria 백업이 확인될 때만
+            try:
+                anon = anonymous_volumes(args.get("environment_id"), clean.split("/")[2])
+                msg = soteria_ready(anon)
+            except Exception as e:  # noqa: BLE001 — 확인 못 하면 거부
+                msg = f"v=true로 같이 지워질 익명 볼륨을 확인하지 못했습니다({e})."
+            if msg:
+                block(msg)
+                return
+            query = {**query, "v": "true"}
+            updates["query_params"] = query
+    if method == "DELETE" and re.fullmatch(rf"/volumes/({SEG})", clean):  # 11/13 정책표 수정본 5.11
+        try:
+            msg, name = check_volume_delete(args.get("environment_id"), clean.split("/")[2], query)
+        except Exception as e:  # noqa: BLE001
+            msg, name = f"볼륨 삭제 조건을 확인하지 못했습니다({e}).", None
+        if msg:
+            block(msg)
+            return
+        clean = f"/volumes/{name}"
+        updates["path"] = clean
+        updates["query_params"] = {}
+    if method == "DELETE" and re.fullmatch(rf"/networks/({SEG})", clean):  # 11/13 정책표 수정본 5.12
+        try:
+            msg, net_id = check_network_delete(args.get("environment_id"), clean.split("/")[2], query)
+        except Exception as e:  # noqa: BLE001
+            msg, net_id = f"네트워크 삭제 조건을 확인하지 못했습니다({e}).", None
+        if msg:
+            block(msg)
+            return
+        clean = f"/networks/{net_id}"
+        updates["path"] = clean
+        updates["query_params"] = {}
     if method == "GET" and clean.endswith("/logs"):
         try:
             query = check_logs_query(query)

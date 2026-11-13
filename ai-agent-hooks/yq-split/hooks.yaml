@@ -25,11 +25,14 @@ agents:
           hooks:
             - type: command
               command: python3 -X utf8 /절대경로/tool_input_transform_direct_policy_guard.py
-              timeout: 15
+              timeout: 150 # 11/13: 볼륨을 지우기 전 백업 창구에서 떼는(다시 배포) 시간
               on_error: block
               env:
                 AGENT_ENV_FILE: /실행폴더/agent.env   # 11/1: Portainer 조회(컨테이너 ID 고정·이름 표시)
                 PORTAINER_TLS_VERIFY: "0"
+                SOTERIA_TARGETS_FILE: /실행폴더/soteria_targets.json
+                SOTERIA_ENDPOINT_ID: "3"
+                SOTERIA_RECORD: /실행폴더/soteria_runs.jsonl
             - type: command
               command: python3 -X utf8 /절대경로/tool_input_transform_direct_backup_guard.py
               timeout: 30
@@ -86,6 +89,18 @@ agents:
                 AGENT_ENV_FILE: /실행폴더/agent.env # 11/6: 같은 이름·대상 스택을 Portainer에 물어 확인
                 PORTAINER_TLS_VERIFY: "0"
                 SOTERIA_GATE: "1"
+                SOTERIA_TARGETS_FILE: /실행폴더/soteria_targets.json
+                SOTERIA_ENDPOINT_ID: "3"
+                SOTERIA_RECORD: /실행폴더/soteria_runs.jsonl
+        - matcher: "StackDelete" # 11/13 — 정책표 수정본 5.10: 관리 스택·external 거부, 볼륨까지 지우면 볼륨마다 최근 백업
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_input_transform_stack_guard.py
+              timeout: 150
+              on_error: block
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env
+                PORTAINER_TLS_VERIFY: "0"
                 SOTERIA_TARGETS_FILE: /실행폴더/soteria_targets.json
                 SOTERIA_ENDPOINT_ID: "3"
                 SOTERIA_RECORD: /실행폴더/soteria_runs.jsonl
@@ -181,6 +196,18 @@ agents:
                 SOTERIA_ENDPOINT_ID: "3"
                 SOTERIA_RECORD: /실행폴더/soteria_runs.jsonl
         - matcher: "StackUpdate"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_response_transform_soteria_sync.py
+              timeout: 150
+              on_error: warn
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env
+                PORTAINER_TLS_VERIFY: "0"
+                SOTERIA_TARGETS_FILE: /실행폴더/soteria_targets.json
+                SOTERIA_ENDPOINT_ID: "3"
+                SOTERIA_RECORD: /실행폴더/soteria_runs.jsonl
+        - matcher: "StackDelete" # 11/13: 지운 앱을 백업 대상에서 뺀다
           hooks:
             - type: command
               command: python3 -X utf8 /절대경로/tool_response_transform_soteria_sync.py
