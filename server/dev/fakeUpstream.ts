@@ -542,6 +542,14 @@ agentApp.post('/api/sessions/:id/fork', async (c) => {
 })
 // FAKE_HEALTH_VERSION=''이면 진짜 docker-agent처럼 빈 버전을 준다.
 agentApp.get('/health', (c) => c.json({ status: 'ok', version: process.env.FAKE_HEALTH_VERSION ?? 'v1.148.0-fake' }))
+// 가짜 OpenRouter(dev.env OPENROUTER_API_BASE=/fake-openrouter/api/v1). 키 확인과 남은 크레딧. "bad"가 든 키는 401.
+const fakeOpenRouterKey = (auth: string | undefined) => !!auth && auth.startsWith('Bearer ') && !auth.includes('bad')
+agentApp.get('/fake-openrouter/api/v1/key', (c) =>
+  fakeOpenRouterKey(c.req.header('authorization')) ? c.json({ data: { label: 'fake', usage: 2.5, limit: null } }) : c.json({ error: { code: 401 } }, 401),
+)
+agentApp.get('/fake-openrouter/api/v1/credits', (c) =>
+  fakeOpenRouterKey(c.req.header('authorization')) ? c.json({ data: { total_credits: 10, total_usage: 2.5 } }) : c.json({ error: { code: 401 } }, 401),
+)
 agentApp.get('/ready', (c) => c.json({ ready: true, active_sessions: sessions.size, store_connected: true }))
 // agent.yaml JSON 모양(pkg/config/latest). 이름 필드는 JSON 태그가 없어서 Name이다.
 agentApp.get('/api/agents/:id', (c) =>

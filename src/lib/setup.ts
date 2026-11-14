@@ -43,6 +43,23 @@ export async function getSetupStatus(): Promise<SetupStatus | null> {
   }
 }
 
+// 설정 > API 키 탭: 저장된 키가 지금 쓸 수 있는지와 OpenRouter 남은 크레딧(server/setup.ts keyStatus).
+export type KeyState = 'ok' | 'error' | 'unset'
+export type KeyStatus = {
+  openrouter: { state: KeyState; message?: string; credits?: { remaining?: number; total?: number; usage?: number; limitRemaining?: number | null } }
+  portainer: { state: KeyState; message?: string; endpoints?: number; field?: 'portainerUrl' | 'portainerApiKey' }
+}
+
+export async function getKeyStatus(): Promise<KeyStatus | null> {
+  try {
+    const res = await apiFetch('/api/setup/keys')
+    if (!res.ok) return null
+    return (await res.json()) as KeyStatus
+  } catch {
+    return null
+  }
+}
+
 export async function applySetup(input: SetupInput): Promise<SetupOutcome> {
   const res = await apiFetch('/api/setup', {
     method: 'PUT',
