@@ -15,7 +15,6 @@
 |---|---|---|
 | `src/`, `index.html`, `vite.config.ts` | 웹 | 채팅 화면(React) |
 | `server/` | 웹 | 백엔드. Agent를 띄우고 대화·승인 카드·정책 차단을 중계 |
-| `Dockerfile` | 웹 | 웹 이미지. SQLite는 `/data`(볼륨) |
 | `ai-agent-hooks/` | Agent | 정책 훅 10개·공용 모듈·테스트, 기준 설정 `agent.yaml.example` |
 | `agents/` | Agent | 초보자용·숙련자용 설정 예시(`make_agents.py`가 만든다) |
 | `portainer/`, `backup/` | Agent | Portainer CE 2.45.1, 볼륨 백업 컨테이너 compose |

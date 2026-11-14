@@ -88,8 +88,7 @@ Agent 상태는 화면 위쪽 안내와 **설정 > 정보**에 나온다. 무엇
 
 ### 더 알아둘 것
 
-`npm start`는 화면을 빌드하고 `server/real.env`를 읽어 백엔드가 화면까지 내보낸다. 화면을 고치면서 볼 때만 터미널을 하나 더 열어 `npm run dev:http`(5173, `/api`는 백엔드 3001로 넘긴다)를 쓴다. `AGENT_BIN`이 있으면 `npm start`가 Docker Agent를 같이 띄우고 관리한다(`server/agentProcess.ts`). Agent가 죽으면 다시 띄우고, 설정 화면에서 API 키를 바꾸면 다시 시작한다(처리 중인 대화가 있으면 끝난 뒤). 백엔드가 강제로 꺼져 Agent가 남았으면 다음 `npm start`가 그 Agent를 끝내고 새로 띄운다. `npm run agent`는 Agent 로그만 따로 보고 싶을 때 쓴다. 그렇게 띄운 Agent가 먼저 떠 있으면 `npm start`는 그것을 쓰고, API 키를 바꿔도 다시 시작하지 못한다.
-
+`npm start`는 화면을 빌드하고 `server/real.env`를 읽어 백엔드가 화면까지 내보낸다. 화면을 고치면서 볼 때만 터미널을 하나 더 열어 `npm run dev:http`(5173, `/api`는 백엔드 3001로 넘긴다)를 쓴다. `AGENT_BIN`이 있으면 `npm start`가 Docker Agent를 같이 띄우고 관리한다(`server/agentProcess.ts`). Agent가 죽으면 다시 띄우고, 설정 화면에서 API 키를 바꾸면 다시 시작한다(처리 중인 대화가 있으면 끝난 뒤). 백엔드가 강제로 꺼져 Agent가 남았으면 다음 `npm start`가 그 Agent를 끝내고 새로 띄운다.
 (선택) `real.env`에 더 넣을 수 있는 값: `MAX_TURNS`(동시에 처리할 대화 수, 기본 3), `BACKUP_DB`(백업 훅 DB가 다른 곳에 있을 때), `AGENT_SESSION_DB`(session.db를 다른 폴더에 둘 때), `AGENT_KEY_NAME`(OpenRouter가 아닌 모델을 쓸 때 API 키 이름).
 
 `PORTAINER_URL`의 Portainer가 자체 서명 인증서를 쓰면 링크를 처음 열 때 브라우저가 경고를 띄운다. 주소가 맞으면 계속 진행하면 된다.
@@ -151,10 +150,9 @@ npm run test:agent   # 백엔드가 Agent를 띄우고 다시 시작하는 흐�
 ```bash
 npm run build:web                        # 실제 백엔드에 붙는 화면 빌드 → dist/
 STATIC_DIR=dist node --env-file=<env> server/main.ts   # 백엔드가 화면도 내보낸다(한 포트)
-docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는 /data(볼륨)
 ```
 
-`npm run build`는 목업 화면, `npm run build:demo`는 공개 데모(목업 + 시나리오 버튼)다. 로그인이 없으므로 다른 PC에서 접속하게 열지 않는다. 이미지는 컨테이너 안에서만 `0.0.0.0`(`HOST_IN_CONTAINER=1`)으로 뜨니, 실행할 때 `-p 127.0.0.1:3001:3001`처럼 루프백으로만 내보낸다.
+`npm run build:demo`는 공개 데모(목업 + 시나리오 버튼)다. 로그인이 없으므로 다른 PC에서 접속하게 열지 않는다.
 
 ### 컨테이너로 한 번에 설치 (권장)
 
@@ -193,7 +191,6 @@ docker compose up -d --build                 # 화면 http://127.0.0.1:3001
 | `models.ts` | 입력창 모델 선택의 전체 목록(`docker-agent models --format json`, 10분 기억, API 키를 바꾸면 다시 받음) |
 | `config.ts` | 환경변수 읽기 |
 | `agentProcess.ts` | Docker Agent를 자식 프로세스로 띄우고 관리: 죽으면 다시 띄우기, API 키를 바꾸면 다시 시작, 남은 Agent 정리(PID 파일) |
-| `runAgent.ts` | `npm run agent`: Agent만 따로 띄운다(로그를 따로 볼 때) |
 | `dev/` | 개발용 값(`dev.env`), 가짜 Docker Agent(`fakeUpstream.ts`), 백엔드 스모크 테스트(`smoke.ts`), 화면 테스트(`uiSmoke.ts`), Agent 관리 테스트(`agentSmoke.ts`, 가짜 실행 파일 `fakeAgentBin.ts`), 연동 확인용 `agent.yaml` |
 
 ## 목업으로 화면 상태 테스트하기
