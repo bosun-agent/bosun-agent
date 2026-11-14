@@ -52,6 +52,7 @@ npm start              # 화면 빌드 + 백엔드(3001) + Docker Agent(17080)
 
 브라우저에서 http://localhost:3001 을 연다. `npm start`는 `server/real.env`가 있어야 Agent를 띄운다.
 Portainer를 먼저 켜 둔다(꺼진 채 Agent가 뜨면 도구를 못 불러온다).
+키가 없으면 첫 화면이 **처음 설정**이다. OpenRouter 키, Portainer 키, 모델만 정하면 된다(칸 옆 **?** 에 받는 법). 자세한 표는 `README-web.md`의 "키 넣기".
 Portainer 실행, Agent 실행 폴더·`agent.env` 준비는 `README-web.md`와 `README-agent.md`에 있다.
 
 ## 올리면 안 되는 것

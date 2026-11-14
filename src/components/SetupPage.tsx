@@ -6,7 +6,8 @@
 // 넣은 값은 백엔드가 실제로 확인한다(OpenRouter 401, Portainer /api/endpoints). 틀린 키는 저장되지 않는다.
 // 값이 하나라도 남아 있으면 저장이 됐더라도 이 화면에 머문다(빈 채로 대화를 시작하지 않게).
 
-import { useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { agent } from '../lib/agent'
 import { applySetup, type SetupCheck, type SetupStatus } from '../lib/setup'
 
 type Props = {
@@ -27,6 +28,45 @@ function missingValues(status: SetupStatus): string[] {
   ].filter((v): v is string => v !== null)
 }
 
+// 칸 이름 옆 ? 버튼. 누르면 받는 법과 어떻게 전달되는지를 칸 아래에 펼친다(폰에서도 되게 마우스 올리기 대신 누르기).
+function HelpButton({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={`${label} 받는 법`}
+      aria-expanded={open}
+      title="어디서 받고 어디로 가나요?"
+      className={`flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors ${
+        open ? 'border-navy-700 bg-navy-700 text-white' : 'border-neutral-400 text-neutral-600 hover:border-navy-600 hover:text-navy-700'
+      }`}
+    >
+      ?
+    </button>
+  )
+}
+
+type Help = { steps: ReactNode[]; delivery: ReactNode }
+
+function HelpBox({ steps, delivery }: Help) {
+  return (
+    <div className="mt-2 space-y-2 rounded-lg bg-sky-50 px-3 py-2.5 text-xs leading-relaxed text-neutral-700">
+      <div>
+        <p className="font-semibold text-navy-900">받는 법</p>
+        <ol className="mt-0.5 list-decimal space-y-0.5 pl-4">
+          {steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+      </div>
+      <div>
+        <p className="font-semibold text-navy-900">어떻게 전달되나요</p>
+        <p className="mt-0.5">{delivery}</p>
+      </div>
+    </div>
+  )
+}
+
 function Field({
   id,
   label,
@@ -38,6 +78,7 @@ function Field({
   alreadySet,
   secret,
   disabled,
+  help,
 }: {
   id: FieldKey
   label: string
@@ -49,14 +90,18 @@ function Field({
   alreadySet: boolean
   secret?: boolean
   disabled: boolean
+  help?: Help
 }) {
+  const [helpOpen, setHelpOpen] = useState(false)
   return (
-    <label htmlFor={id} className="block">
+    <div>
       <span className="flex items-center gap-2 text-sm font-medium text-neutral-800">
-        {label}
+        <label htmlFor={id}>{label}</label>
+        {help && <HelpButton label={label} open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} />}
         {alreadySet && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-700">이미 설정됨</span>}
       </span>
       <span className="mt-1 block text-xs text-neutral-500">{hint}</span>
+      {help && helpOpen && <HelpBox steps={help.steps} delivery={help.delivery} />}
       <input
         id={id}
         type={secret ? 'password' : 'text'}
@@ -71,14 +116,78 @@ function Field({
         }`}
       />
       {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
-    </label>
+    </div>
   )
 }
+
+// 모델 고르기. 권장 모델(AGENT_MODELS)만 보여준다. 다른 모델은 키를 저장한 뒤 입력창 오른쪽에서 고른다.
+function ModelField({
+  models,
+  value,
+  onChange,
+  disabled,
+}: {
+  models: string[]
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
+}) {
+  const [helpOpen, setHelpOpen] = useState(false)
+  return (
+    <div>
+      <span className="flex items-center gap-2 text-sm font-medium text-neutral-800">
+        <label htmlFor="model">모델</label>
+        <HelpButton label="모델" open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} />
+      </span>
+      <span className="mt-1 block text-xs text-neutral-500">AI가 생각할 때 쓰는 모델이에요. 모르면 맨 위(권장)를 그대로 두세요.</span>
+      {helpOpen && (
+        <HelpBox
+          steps={[
+            '따로 받을 것은 없어요. OpenRouter 키 하나로 OpenRouter의 모델을 모두 쓸 수 있어요.',
+            '맨 위(권장) 모델은 BOSUN의 정책·승인 흐름을 시험한 모델이에요. 시연이나 처음 쓸 때는 이걸 쓰세요.',
+            '다른 모델은 저장한 뒤 입력창 오른쪽 모델 이름을 눌러 언제든 바꿀 수 있어요(전체 목록·검색).',
+          ]}
+          delivery="고른 모델 이름은 이 PC의 WEB 설정에 저장되고, 메시지를 보낼 때마다 AI Agent에 같이 넘어가요. 키와 달리 Agent를 다시 시작하지 않아도 바로 적용돼요."
+        />
+      )}
+      <select
+        id="model"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-neutral-500 disabled:bg-neutral-50"
+      >
+        {models.map((m, i) => (
+          <option key={m} value={m}>
+            {i === 0 ? `${m} (권장)` : m}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+// 이 PC에 Portainer를 띄운 기본 설치(portainer/portainer-compose.yaml)의 주소. 브라우저용 주소(PORTAINER_URL)가 있으면 그걸 쓴다.
+const DEFAULT_PORTAINER_URL = 'https://localhost:9443'
 
 export function SetupPage({ status, onDone, onClose }: Props) {
   const [current, setCurrent] = useState(status)
   const [openrouterKey, setOpenrouterKey] = useState('')
-  const [portainerUrl, setPortainerUrl] = useState('')
+  // 주소가 아직 없으면 미리 채워 둔다. 보통 이 PC의 Portainer라 키 두 개와 모델만 고르면 된다.
+  const [portainerUrl, setPortainerUrl] = useState(() => (status.portainer.urlSet ? '' : (status.browserUrl ?? DEFAULT_PORTAINER_URL)))
+  const [models, setModels] = useState<string[]>([])
+  const [model, setModel] = useState('')
+  const [savedModel, setSavedModel] = useState('')
+  useEffect(() => {
+    agent.getSettings?.().then(
+      (s) => {
+        setModels(s.models)
+        setModel(s.model && s.models.includes(s.model) ? s.model : (s.models[0] ?? ''))
+        setSavedModel(s.model ?? '')
+      },
+      () => undefined,
+    )
+  }, [])
   const [portainerApiKey, setPortainerApiKey] = useState('')
   const [fields, setFields] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
@@ -100,6 +209,13 @@ export function SetupPage({ status, onDone, onClose }: Props) {
       return
     }
     setCurrent(outcome.status)
+    // 키·주소가 통과했을 때만 모델도 저장한다(모델은 Agent를 다시 시작하지 않아도 된다).
+    if (model && model !== savedModel && agent.saveModel) {
+      await agent.saveModel(model).then(
+        () => setSavedModel(model),
+        () => undefined,
+      )
+    }
     const left = missingValues(outcome.status)
     // 넣은 값이 저장되긴 했지만 아직 빈 값이 남았으면 여기서 더 받는다.
     if (left.length > 0) {
@@ -153,7 +269,7 @@ export function SetupPage({ status, onDone, onClose }: Props) {
           )}
         </div>
         <p className="mt-2 text-sm text-neutral-600">
-          BOSUN은 열쇠를 만들어 주지 않아요. 아래 값은 직접 발급받아 넣어 주세요.
+          키 두 개와 모델만 정하면 바로 쓸 수 있어요. 키는 직접 발급받아 넣어 주세요. 받는 법은 칸 옆 물음표(?)를 누르면 나와요.
         </p>
         {missing.length > 0 && (
           <p className="mt-2 text-xs text-neutral-500">
@@ -188,30 +304,66 @@ export function SetupPage({ status, onDone, onClose }: Props) {
             alreadySet={current.openrouter.set}
             secret
             disabled={busy || !current.writable}
+            help={{
+              steps: [
+                <>
+                  <a href="https://openrouter.ai" target="_blank" rel="noreferrer" className="underline">
+                    openrouter.ai
+                  </a>
+                  에 가입하고 로그인해요.
+                </>,
+                '오른쪽 위 메뉴 → Keys → Create Key를 눌러요. 이름은 아무거나(예: bosun), 사용 한도(credit limit)를 정해 두면 안전해요.',
+                'sk-or-v1-로 시작하는 키가 한 번만 보여요. 바로 복사해서 여기에 붙여 넣어요.',
+                '유료 모델은 OpenRouter에 크레딧을 충전해야 해요. 이름에 :free가 붙은 무료 모델은 충전 없이도 돼요(사용량 제한 있음).',
+              ],
+              delivery:
+                '저장하기 전에 WEB이 OpenRouter에 이 키가 맞는지 먼저 물어봐요. 맞으면 이 PC의 Agent 설정 파일(agent.env)에만 저장하고, AI Agent가 모델을 부를 때만 OpenRouter로 보내요. 화면에 다시 보여주지 않고 저장소(git)에도 올라가지 않아요.',
+            }}
           />
           <Field
             id="portainerUrl"
             label="Portainer 주소"
-            hint="Portainer를 설치한 곳의 주소예요. 컨테이너에서도 닿는 주소여야 해요(예: https://10.0.11.177:9443)."
+            hint="Portainer 화면이 열리는 주소예요. 이 PC에 띄웠다면 그대로 두세요."
             placeholder={current.portainer.url ?? current.portainerUrlHint}
             value={portainerUrl}
             onChange={setPortainerUrl}
             error={fields.portainerUrl}
             alreadySet={current.portainer.urlSet}
             disabled={busy || !current.writable}
+            help={{
+              steps: [
+                '이 PC에 Portainer를 띄웠다면 미리 채워 둔 https://localhost:9443 그대로 두면 돼요.',
+                '브라우저에서 Portainer 화면이 열리는 주소예요. 다른 PC의 Portainer면 그 PC의 주소(예: https://192.168.0.10:9443)를 넣어요.',
+                'Portainer가 직접 만든 인증서라 브라우저가 "주의 요함"을 띄워도 정상이에요.',
+                'BOSUN을 컨테이너로 설치했다면(docker compose) localhost 대신 Portainer가 있는 PC의 IP 주소를 넣어요. 컨테이너 안에서 localhost는 자기 자신이에요.',
+              ],
+              delivery:
+                '저장하기 전에 이 주소로 Portainer가 응답하는지 확인해요. agent.env의 PORTAINER_URL로 저장되고, AI Agent의 Portainer 도구와 정책 검사가 이 주소로 요청을 보내요.',
+            }}
           />
           <Field
             id="portainerApiKey"
             label="Portainer API 키"
-            hint="Portainer → My account → Access tokens에서 만든 키(ptr-…)."
-            placeholder="ptr-…"
+            hint="Portainer → My account → Access tokens에서 만든 키(ptr_…)."
+            placeholder="ptr_…"
             value={portainerApiKey}
             onChange={setPortainerApiKey}
             error={fields.portainerApiKey}
             alreadySet={current.portainer.keySet}
             secret
             disabled={busy || !current.writable}
+            help={{
+              steps: [
+                'Portainer 화면에 로그인해요(처음이면 관리자 계정을 먼저 만들어요).',
+                '오른쪽 위 사용자 이름 → My account로 가요.',
+                'Access tokens에서 Add access token을 누르고, 이름(예: bosun)과 지금 비밀번호를 넣어요.',
+                'ptr_로 시작하는 키가 한 번만 보여요. 바로 복사해서 여기에 붙여 넣어요.',
+              ],
+              delivery:
+                '저장하기 전에 이 키로 Portainer의 환경 목록을 불러와 확인해요. agent.env의 PORTAINER_API_KEY로 저장되고, AI Agent가 Docker를 다룰 때마다 Portainer에 이 키를 붙여 보내요. 이 키는 만든 계정의 권한을 그대로 가져서, 위험한 작업은 BOSUN 정책 검사와 승인 카드가 한 번 더 막아요.',
+            }}
           />
+          {models.length > 0 && <ModelField models={models} value={model} onChange={setModel} disabled={busy || !current.writable} />}
         </div>
 
         {fields.form && <p className="mt-3 text-xs text-neutral-600">{fields.form}</p>}
