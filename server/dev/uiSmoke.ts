@@ -45,15 +45,19 @@ if (envFile) {
   await page.goto(URL)
   await page.getByRole('heading', { name: '처음 설정' }).waitFor()
   check(
-    '키가 없으면 첫 설정 페이지에 OpenRouter 키·Portainer 주소·Portainer 키 칸',
-    (await page.getByPlaceholder('sk-or-v1-…').isVisible()) && (await page.getByPlaceholder('ptr_…').isVisible()) && !(await input().count()),
+    '키가 없으면 첫 설정 페이지에 키 두 칸만(주소 칸은 숨김)',
+    (await page.getByPlaceholder('sk-or-v1-…').isVisible()) &&
+      (await page.getByPlaceholder('ptr_…').isVisible()) &&
+      (await page.getByLabel('Portainer 주소', { exact: true }).count()) === 0 &&
+      !(await input().count()),
   )
-  check('Portainer 주소는 미리 채워 둔다(PORTAINER_URL)', (await page.getByLabel('Portainer 주소', { exact: true }).inputValue()) === 'https://localhost:9443')
-  await page.getByRole('button', { name: 'Portainer API 키 받는 법' }).click()
+  check('설명은 처음엔 접혀 있다', !(await page.getByText('키는 어떻게 전달되나요').isVisible()))
+  await page.getByRole('button', { name: '키 받는 법과 전달 방식' }).click()
   check(
-    '? 를 누르면 키 받는 법과 전달 방식',
-    (await page.getByText('Access tokens에서 Add access token', { exact: false }).isVisible()) &&
-      (await page.getByText('AI Agent가 Docker를 다룰 때마다 Portainer에 이 키를', { exact: false }).isVisible()),
+    '제목 옆 ? 하나에 키 받는 법·주소·전달 방식',
+    (await page.getByText('Access tokens → Add access token', { exact: false }).isVisible()) &&
+      (await page.getByText('https://localhost:9443', { exact: true }).isVisible()) &&
+      (await page.getByText('키는 어떻게 전달되나요').isVisible()),
   )
   await shot('00-setup')
   writeFileSync(envFile, 'OPENROUTER_API_KEY=sk-or-v1-uismoke-0000\nPORTAINER_URL=https://127.0.0.1:9443\nPORTAINER_API_KEY=ptr_uismoke_0000\n')
