@@ -16,7 +16,7 @@ const URGENT_MS = 60_000
 // 호스트까지 영향이 가는 사유와 설명할 수 없는 도구는 빨간색으로 보여준다.
 const DANGER_CODES = new Set(['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE', 'UNKNOWN'])
 // 다른 대화가 같은 대상을 기다리는 경우처럼 결정 전에 꼭 봐야 하는 안내
-const WARN_CODES = new Set(['CONCURRENT', 'ORPHANS'])
+const WARN_CODES = new Set(['CONCURRENT', 'ORPHANS', 'MANUAL'])
 
 // 카드 맨 위 위험도 표시. 문장을 읽기 전에 재시작(곧 돌아옴)과 삭제(되돌릴 수 없음)를 구분하게 한다.
 // 카드 머리 띠(연한 색) 위에 놓이므로 흰 바탕에 테두리로 띄운다.

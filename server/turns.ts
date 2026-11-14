@@ -15,7 +15,7 @@ import type { DAEvent } from './agentClient.ts'
 import { config } from './config.ts'
 import { approvalMode, autoReads, currentAgentName, currentModel } from './settings.ts'
 import { addCard, logDecision, logUsage, updateApprovalCard, type ApprovalStatus } from './store.ts'
-import { approvalCard, learnHookName, learnNames, readChoice, targetKeys, withHookExplanation, type ApprovalCard, type StackInfo } from './tools.ts'
+import { approvalCard, describeTool, learnHookName, learnNames, readChoice, targetKeys, withHookExplanation, type ApprovalCard, type StackInfo } from './tools.ts'
 import { Translator, TOOL_CALL_AS_TEXT } from './translate.ts'
 
 export interface Sink {
@@ -406,6 +406,15 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
       },
     ]
   }
+  // 묻지 않기(YOLO)여도 WEB이 설명할 수 없는 도구(새로 붙인 MCP, 모르는 Portainer 도구)는 대신 승인하지 않는다.
+  // 정책 훅(허용 목록·백업)은 Portainer 도구에만 걸려 있어서, 이런 도구는 사람이 보는 것 말고는 막을 곳이 없다(2026-11-14).
+  const manual = approvalMode() === 'never' && !describeTool(tool, args, stacks)?.summary
+  if (manual) {
+    card.reasons = [
+      ...card.reasons,
+      { code: 'MANUAL', message: '묻지 않기(YOLO)여도 BOSUN이 설명할 수 없는 도구는 대신 승인하지 않아요. 직접 확인하고 결정해주세요.' },
+    ]
+  }
   const ap: Approval = {
     id: `ap_${randomUUID()}`,
     sessionId: t.sessionId,
@@ -419,7 +428,7 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
   }
   ap.event.approvalId = ap.id
   // 다른 대화가 같은 대상의 결정을 기다리고 있으면 대신 승인하지 않고 묻는다. 어느 쪽을 먼저 할지는 사람이 정한다.
-  if (!busyWith && autoApproves(tool, args) && (await autoApprove(t, ap, card))) return
+  if (!busyWith && !manual && autoApproves(tool, args) && (await autoApprove(t, ap, card))) return
   approvals.set(ap.id, ap)
   ap.timer = setTimeout(() => void expire(ap), config.approvalTimeoutMs + config.expiryGraceMs)
   addCard(t.sessionId, t.index, { kind: 'approval', approvalId: ap.id, status: 'pending', ...card, expiresAt: ap.event.expiresAt })
