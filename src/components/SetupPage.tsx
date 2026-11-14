@@ -41,6 +41,7 @@ function Field({
   onChange,
   error,
   alreadySet,
+  masked,
   secret,
   disabled,
 }: {
@@ -51,6 +52,8 @@ function Field({
   onChange: (value: string) => void
   error?: string
   alreadySet: boolean
+  // 들어 있는 키를 가린 값(sk-or-v1-…3f9a). 어떤 키인지 알아보게 한다.
+  masked?: string
   secret?: boolean
   disabled: boolean
 }) {
@@ -59,6 +62,7 @@ function Field({
       <span className="flex items-center gap-2 text-sm font-medium text-neutral-800">
         <label htmlFor={id}>{label}</label>
         {alreadySet && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-700">이미 설정됨</span>}
+        {alreadySet && masked && <span className="font-mono text-xs text-neutral-500">{masked}</span>}
       </span>
       <input
         id={id}
@@ -242,6 +246,7 @@ export function SetupPage({ status, onDone, onClose }: Props) {
             onChange={setOpenrouterKey}
             error={fields.openrouterKey}
             alreadySet={current.openrouter.set}
+            masked={current.openrouter.masked}
             secret
             disabled={disabled}
           />
@@ -253,6 +258,7 @@ export function SetupPage({ status, onDone, onClose }: Props) {
             onChange={setPortainerApiKey}
             error={fields.portainerApiKey}
             alreadySet={current.portainer.keySet}
+            masked={current.portainer.keyMasked}
             secret
             disabled={disabled}
           />

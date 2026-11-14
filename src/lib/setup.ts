@@ -10,8 +10,9 @@ export type SetupStatus = {
   needsSetup: boolean
   // env 파일에 쓸 수 있는 상태인지. false면 화면에서 저장할 수 없다.
   writable: boolean
-  openrouter: { name: string; set: boolean }
-  portainer: { urlName: string; urlSet: boolean; url: string | null; keySet: boolean }
+  // masked·keyMasked: 가린 키(앞부분 + 끝 4자리). 어떤 키가 들어 있는지만 알 수 있다.
+  openrouter: { name: string; set: boolean; masked?: string }
+  portainer: { urlName: string; urlSet: boolean; url: string | null; keySet: boolean; keyMasked?: string }
   // 브라우저가 여는 Portainer 주소(WEB 환경변수). 설치할 때 정하므로 화면에서 바꾸지 못한다.
   browserUrl: string | null
   agent: { state: string }

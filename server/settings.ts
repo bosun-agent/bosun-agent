@@ -17,7 +17,7 @@ export function getSettings(): Settings {
   return {
     model: currentModel() ?? null,
     models: config.agentModels,
-    apiKey: { editable: config.agentEnvFile !== '', set: apiKeySet() },
+    apiKey: { editable: config.agentEnvFile !== '', set: apiKeySet(), ...maskedKey(config.agentKeyName) },
     approvalMode: approvalMode(),
     ...(agentModesEnabled() ? { agentMode: currentAgentName() as AgentMode } : {}),
     autoReads: autoReads(),
@@ -121,6 +121,20 @@ export function validApiKey(value: unknown): value is string {
 
 // ---- Agent env 파일의 여러 값(첫 실행 설정 화면, server/setup.ts) ----
 // 값은 화면으로 돌려주지 않는다(설정 화면과 같은 규칙). 있는지 없는지만 알려준다.
+
+// 화면에 보여줄 가린 키: 알려진 앞부분(sk-or-v1-, ptr_ 등) + … + 끝 4자리. 짧은 값은 끝자리도 숨긴다.
+// 어떤 키가 들어 있는지 알아보는 용도이고, 전체 값은 화면으로 보내지 않는다.
+const KEY_PREFIX = /^(sk-or-v1-|sk-or-|sk-ant-[a-z0-9]+-|sk-proj-|sk-|ptr_|AIza)/
+export function maskKey(value: string): string {
+  const prefix = KEY_PREFIX.exec(value)?.[1] ?? ''
+  const rest = value.length - prefix.length
+  return `${prefix}…${rest >= 12 ? value.slice(-4) : ''}`
+}
+
+function maskedKey(name: string): { masked?: string } {
+  const value = agentEnvValue(name)
+  return value ? { masked: maskKey(value) } : {}
+}
 
 export function agentEnvValue(name: string): string | null {
   if (!config.agentEnvFile) return null

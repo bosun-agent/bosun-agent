@@ -103,7 +103,8 @@ export interface Settings {
   model: string | null
   // 권장 모델(AGENT_MODELS). 전체 목록은 GET /api/models
   models: string[]
-  apiKey: { editable: boolean; set: boolean }
+  // masked: 가린 키(앞부분 + … + 끝 4자리). 키가 있을 때만.
+  apiKey: { editable: boolean; set: boolean; masked?: string }
   // 승인 방식. 카드를 띄울지 WEB이 대신 승인할지 정한다.
   approvalMode: ApprovalMode
   // 초보자용·숙련자용 Agent. 두 Agent를 띄운 설치에서만 있다(AGENT_NAME이 beginner나 expert).

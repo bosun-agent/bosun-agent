@@ -18,7 +18,7 @@ import { request as httpsRequest } from 'node:https'
 import { agentSpawnedAt, agentStatus, restartAgent } from './agentProcess.ts'
 import * as agent from './agentClient.ts'
 import { config } from './config.ts'
-import { agentEnvBlankKeys, agentEnvIsSet, agentEnvValue, pruneBlankAgentEnvKeys, saveAgentEnvValues, validEnvValue } from './settings.ts'
+import { agentEnvBlankKeys, agentEnvIsSet, agentEnvValue, maskKey, pruneBlankAgentEnvKeys, saveAgentEnvValues, validEnvValue } from './settings.ts'
 
 // Portainer 주소로 받는 모양. 뒤에 경로가 붙는 것을 막는다.
 const URL_SHAPE = /^https?:\/\/[A-Za-z0-9._~-]+(:\d{1,5})?\/?$/
@@ -37,8 +37,9 @@ export type SetupStatus = {
   needsSetup: boolean
   // env 파일에 쓸 수 있는 상태인지(AGENT_ENV_FILE). false면 화면에서 저장할 수 없다.
   writable: boolean
-  openrouter: { name: string; set: boolean }
-  portainer: { urlName: string; urlSet: boolean; url: string | null; keySet: boolean }
+  // masked: 가린 키(앞부분 + 끝 4자리). 값이 있을 때만.
+  openrouter: { name: string; set: boolean; masked?: string }
+  portainer: { urlName: string; urlSet: boolean; url: string | null; keySet: boolean; keyMasked?: string }
   // 브라우저가 여는 Portainer 주소(WEB 환경변수 PORTAINER_URL). 컨테이너 설치 때 정하므로 화면에서 바꾸지 못한다.
   browserUrl: string | null
   agent: { state: string }
@@ -64,6 +65,11 @@ function timeoutEnv(name: string, fallback: number): number {
 }
 
 // 값을 보지 않고 있는지 없는지만 알려준다(설정 화면과 같은 규칙).
+function maskedOf<K extends string>(name: string, field: K): Partial<Record<K, string>> {
+  const value = agentEnvValue(name)
+  return value ? ({ [field]: maskKey(value) } as Partial<Record<K, string>>) : {}
+}
+
 export function setupStatus(): SetupStatus {
   const portainerUrl = agentEnvValue(PORTAINER_URL_NAME)
   const openrouterSet = agentEnvIsSet(config.agentKeyName)
@@ -72,8 +78,8 @@ export function setupStatus(): SetupStatus {
   return {
     needsSetup: !(openrouterSet && portainerKeySet && urlSet),
     writable: config.agentEnvFile !== '',
-    openrouter: { name: config.agentKeyName, set: openrouterSet },
-    portainer: { urlName: PORTAINER_URL_NAME, urlSet, url: portainerUrl, keySet: portainerKeySet },
+    openrouter: { name: config.agentKeyName, set: openrouterSet, ...maskedOf(config.agentKeyName, 'masked') },
+    portainer: { urlName: PORTAINER_URL_NAME, urlSet, url: portainerUrl, keySet: portainerKeySet, ...maskedOf(PORTAINER_API_KEY_NAME, 'keyMasked') },
     browserUrl: config.portainerUrl || null,
     agent: { state: agentStatus().state },
     portainerUrlHint: process.env.PORTAINER_URL_INTERNAL || 'https://<Portainer 호스트>:9443',

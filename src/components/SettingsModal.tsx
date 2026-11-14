@@ -145,7 +145,15 @@ function ApiKeySection({ onOpenSetup }: { onOpenSetup?: () => void }) {
 
   return (
     <form onSubmit={save} className="space-y-2">
-      <p className="px-1 text-sm">{settings.apiKey.set ? '저장된 키가 있어요.' : '저장된 키가 없어요.'}</p>
+      <p className="px-1 text-sm">
+        {settings.apiKey.set ? (
+          <>
+            저장된 키{settings.apiKey.masked && <span className="ml-1.5 font-mono text-neutral-600">{settings.apiKey.masked}</span>}
+          </>
+        ) : (
+          '저장된 키가 없어요.'
+        )}
+      </p>
       <div className="flex gap-2">
         <input
           type="password"

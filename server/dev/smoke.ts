@@ -331,6 +331,21 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
     JSON.stringify(lines) === JSON.stringify(['# agent env', 'PORTAINER_URL=https://127.0.0.1:9443', 'OPENROUTER_API_KEY=sk-test-12345678']),
     lines,
   )
+  // 어떤 키가 들어 있는지는 가린 값(앞부분 + 끝 4자리)으로만 보여준다.
+  const longKey = `sk-or-v1-${'a1b2c3d4'.repeat(8)}`
+  writeFileSync(file, `OPENROUTER_API_KEY=${longKey}\nPORTAINER_URL=https://127.0.0.1:9443\nPORTAINER_API_KEY=ptr_${'Zx9'.repeat(14)}Q7w2\n`)
+  const settingsBody = await fetch(`${BASE}/api/settings`).then((r) => r.text())
+  const setupBody = await fetch(`${BASE}/api/setup/status`).then((r) => r.text())
+  const setup = JSON.parse(setupBody) as { openrouter: { masked?: string }; portainer: { keyMasked?: string } }
+  check(
+    '키는 가린 값으로만 보인다(앞부분 + 끝 4자리)',
+    (JSON.parse(settingsBody) as { apiKey: { masked?: string } }).apiKey.masked === 'sk-or-v1-…c3d4' &&
+      setup.openrouter.masked === 'sk-or-v1-…c3d4' &&
+      setup.portainer.keyMasked === 'ptr_…Q7w2' &&
+      !settingsBody.includes('a1b2c3d4a1b2') &&
+      !setupBody.includes('Zx9Zx9'),
+    [settingsBody.slice(0, 200), setup],
+  )
 }
 
 {
