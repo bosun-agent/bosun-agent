@@ -845,18 +845,44 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   await put({ autoReads: [] })
 }
 
-// ---- 모델 관리 ----
+// ---- 입력창 모델 선택(GET /api/models). 가짜 Agent에는 실행 파일이 없어 dev.env MODEL_CATALOG_FILE을 읽는다 ----
 {
-  const add = (model: string) => post('/api/settings/models', { model })
-  const bad = await add('bad model!')
-  const ok = await add('openrouter/test/model-1')
-  const settings = ok.json as { models: string[]; customModels: string[] }
-  check('모델 더하기', bad.status === 400 && settings.models.includes('openrouter/test/model-1') && settings.customModels.includes('openrouter/test/model-1'), settings)
-  const envModel = settings.models.find((m) => !settings.customModels.includes(m))!
-  const delEnv = await fetch(`${BASE}/api/settings/models?model=${encodeURIComponent(envModel)}`, { method: 'DELETE' })
-  const del = await fetch(`${BASE}/api/settings/models?model=${encodeURIComponent('openrouter/test/model-1')}`, { method: 'DELETE' })
-  const after = (await del.json()) as { models: string[] }
-  check('더한 모델만 지울 수 있다', delEnv.status === 400 && del.status === 200 && !after.models.includes('openrouter/test/model-1'), after)
+  const catalog = (await fetch(`${BASE}/api/models`).then((r) => r.json())) as {
+    current: string | null
+    recommended: { id: string }[]
+    models: string[]
+    error?: string
+  }
+  check(
+    '모델 목록: 권장은 AGENT_MODELS, 전체는 권장·로컬(dmr)·잘못된 이름·중복을 뺀 나머지',
+    catalog.recommended.map((m) => m.id).join() === 'openrouter/deepseek/deepseek-v4.1-flash' &&
+      catalog.models.join() === 'openrouter/google/gemini-3-flash,openrouter/meta-llama/llama-4-maverick,openrouter/nvidia/nemotron-3-ultra-550b-a55b:free' &&
+      !catalog.error,
+    catalog,
+  )
+  const put = (model: string) => fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) })
+  const ok = await put('openrouter/google/gemini-3-flash')
+  const after = (await fetch(`${BASE}/api/models`).then((r) => r.json())) as { current: string }
+  check('전체 목록의 모델을 고르면 저장된다', ok.status === 200 && after.current === 'openrouter/google/gemini-3-flash', after)
+  check('목록에 없는 provider/model은 400', (await put('openrouter/test/model-1')).status === 400)
+  const gone = await fetch(`${BASE}/api/settings/models`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"model":"openrouter/x/y"}' })
+  check('설정 화면의 모델 더하기 API는 없다', gone.status === 404, gone.status)
+  await put(catalog.recommended[0].id)
+}
+
+// ---- 결과를 확인할 Portainer 화면(tool_status.link) ----
+{
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '재시작해줘' })
+  const d = await post(`/api/sessions/${s}/approvals/${approvalOf(r.events)!.approvalId}`, { decision: 'approve' })
+  const done = d.events.find((e) => e.type === 'tool_status' && e.status === 'succeeded')
+  check(
+    '바꾸는 작업이 성공하면 Portainer 화면 경로가 온다',
+    done?.type === 'tool_status' && done.link?.label === '컨테이너 web' && done.link.path === '#!/1/docker/containers/web',
+    done,
+  )
+  const read = await post(`/api/sessions/${s}/messages`, { text: '목록 보여줘' })
+  check('조회에는 Portainer 화면이 없다', !read.events.some((e) => e.type === 'tool_status' && e.link), read.events)
 }
 
 {

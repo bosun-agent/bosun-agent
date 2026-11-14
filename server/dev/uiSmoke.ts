@@ -30,9 +30,10 @@ async function openSidebar() {
   await page.getByLabel('대화 목록 열기').or(page.getByLabel('대화 목록 닫기')).first().waitFor()
   if (await page.getByLabel('대화 목록 열기').isVisible()) await page.getByLabel('대화 목록 열기').click()
 }
+// 새 대화는 사이드바 맨 위 BOSUN(홈)으로 연다(2026-11-11 회의: + 새 대화 버튼 삭제).
 async function newChat() {
   await openSidebar()
-  await page.getByRole('button', { name: '+ 새 대화' }).click()
+  await page.getByRole('button', { name: 'BOSUN', exact: true }).click()
 }
 
 // 로그인 없이 바로 Home
@@ -42,10 +43,10 @@ const logo = page.getByRole('img', { name: 'BOSUN' })
 check('로그인 없이 바로 Home', (await logo.isVisible()) && !(await page.getByText('로그인').count()))
 check('첫 화면 로고 이미지가 실제로 불러와진다', await logo.evaluate((el) => (el as HTMLImageElement).complete && (el as HTMLImageElement).naturalWidth > 0))
 
-// 예시 버튼 → 입력창 채우기
-await page.getByRole('button', { name: '실행 중인 컨테이너 목록 보여줘' }).click()
-check('예시를 누르면 입력창이 채워진다', (await input().inputValue()) === '실행 중인 컨테이너 목록 보여줘')
-await input().press('Enter')
+// Home에는 추천 질문이 없다(2026-11-11 회의). 넓은 화면은 사이드바가 열려 있고 + 새 대화 버튼은 없다.
+check('Home에 추천 질문 버튼이 없다', (await page.getByRole('button', { name: '실행 중인 컨테이너 목록 보여줘' }).count()) === 0)
+check('넓은 화면은 사이드바가 열려 있고 새 대화 버튼 대신 BOSUN', (await page.getByLabel('대화 목록 닫기').isVisible()) && (await page.getByRole('button', { name: '+ 새 대화' }).count()) === 0)
+await send('실행 중인 컨테이너 목록 보여줘')
 await page.getByText('실행 중인 컨테이너는 web 하나예요.').waitFor()
 check('조회 답', true)
 await shot('01-reply')
@@ -233,22 +234,31 @@ check('정보: Agent 버전과 도구 수', true)
 await page.getByText('켜져 있음(WEB이 띄우지 않음)').waitFor()
 check('정보: Agent 실행 상태(AGENT_BIN 없음), 다시 시작 버튼 없음, 배너 없음', (await page.getByRole('button', { name: '다시 시작' }).count()) === 0 && (await page.getByRole('status').count()) === 0)
 await shot('07-info')
-await page.getByRole('button', { name: '모델' }).click()
-await page.getByLabel('더할 모델').fill('openrouter/test/extra')
-await page.getByRole('button', { name: '더하기' }).click()
-await page.getByText('openrouter/test/extra').waitFor()
-check('모델을 더할 수 있다', true)
-await page.getByRole('button', { name: '빼기' }).click()
-await page.getByText('openrouter/test/extra').waitFor({ state: 'detached' })
-check('더한 모델을 뺄 수 있다', true)
+check('설정에 모델 탭이 없다(입력창에서 고른다)', (await page.getByRole('button', { name: '모델', exact: true }).count()) === 0)
 check('설정에 계정 탭이 없다', (await page.getByRole('button', { name: '계정' }).count()) === 0)
 await page.getByRole('button', { name: '알림' }).click()
 check('알림 화면', await page.getByText('승인이 필요하면 브라우저 알림 보내기').isVisible())
 await page.getByLabel('설정 닫기').click()
 
-// 도움말
-await page.getByLabel('첨부').click()
-await page.getByText('무엇을 할 수 있나요?').click()
+// 입력창 모델 선택: 찾아서 고르면 버튼 이름이 바뀌고 서버에 저장된다
+await page.getByLabel('모델 선택').click()
+await page.getByText('전체 (3개)').waitFor()
+check('모델 목록에 권장과 전체', (await page.getByText('권장', { exact: true }).isVisible()) && (await page.getByRole('button', { name: /deepseek-v4\.1-flash/ }).isVisible()))
+await page.getByLabel('모델 찾기').fill('gemini')
+check('모델 찾기로 걸러진다', (await page.getByRole('dialog', { name: '모델 고르기' }).getByRole('button').count()) === 1)
+await shot('14-model-picker')
+await page.getByRole('button', { name: /gemini-3-flash/ }).click()
+await page.getByRole('dialog', { name: '모델 고르기' }).waitFor({ state: 'detached' })
+check('고른 모델이 입력창 버튼에 보인다', (await page.getByLabel('모델 선택').innerText()).includes('gemini-3-flash'))
+check('고른 모델이 서버에 저장된다', ((await (await page.request.get(`${URL}api/settings`)).json()) as { model: string }).model === 'openrouter/google/gemini-3-flash')
+await page.getByLabel('모델 선택').click()
+await page.getByRole('button', { name: /deepseek-v4\.1-flash/ }).click()
+await page.getByRole('dialog', { name: '모델 고르기' }).waitFor({ state: 'detached' })
+
+// 도움말은 사이드바 맨 아래(2026-11-11 회의: + 메뉴에서 뺌). + 는 바로 파일 고르기다.
+check('+ 메뉴에 도움말이 없다', (await page.getByText('무엇을 할 수 있나요?').count()) === 0)
+await openSidebar()
+await page.getByRole('button', { name: '무엇을 할 수 있나요?' }).click()
 check('도움말에 안 되는 것 목록', await page.getByText('채팅으로는 할 수 없어요').isVisible())
 await shot('08-help')
 await page.getByLabel('도움말 닫기').click()
@@ -288,6 +298,10 @@ check('재시작은 승인 카드 없이 실행', !(await page.getByText('승인
 check('접힌 처리 과정에 자동 승인 건수', await page.getByText('자동 승인 1건', { exact: false }).isVisible())
 await page.getByText('처리 과정 보기', { exact: false }).last().click()
 check('펼치면 자동 승인함 줄', await page.getByText('자동 승인함: 컨테이너 web 재시작').isVisible())
+check(
+  '작업이 끝나면 Portainer 그 화면으로 가는 버튼',
+  (await page.getByRole('link', { name: '컨테이너 web ↗' }).getAttribute('href')) === 'https://localhost:9443/#!/1/docker/containers/web',
+)
 await shot('13-auto-approved')
 await page.getByLabel('설정', { exact: true }).click()
 await page.getByRole('button', { name: '정책' }).click()

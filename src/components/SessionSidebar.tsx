@@ -9,7 +9,10 @@ interface SessionSidebarProps {
   exportUrl?: (serverId: string) => string
   onClose: () => void
   onSelect: (id: string) => void
-  onNew: () => void
+  // 맨 위 BOSUN을 누르면 홈(새 대화). "+ 새 대화" 버튼 대신이다(2026-11-11 회의).
+  onHome: () => void
+  // 맨 아래 도움말(무엇을 할 수 있나요?)
+  onHelp?: () => void
   onDelete: (id: string) => void
   // 고른 대화를 한꺼번에 지운다(확인 창은 App이 띄운다)
   onDeleteMany?: (ids: string[]) => void
@@ -25,7 +28,8 @@ export function SessionSidebar({
   exportUrl,
   onClose,
   onSelect,
-  onNew,
+  onHome,
+  onHelp,
   onDelete,
   onDeleteMany,
   onRename,
@@ -81,18 +85,50 @@ export function SessionSidebar({
     <>
       <div className="fixed inset-0 z-10 bg-black/30 md:hidden" onClick={onClose} />
       <aside className="fixed inset-y-1.5 left-1.5 z-20 flex w-64 shrink-0 flex-col rounded-lg bg-neutral-100 md:static md:my-1.5 md:ml-1.5">
-        <div className="flex items-center gap-2 px-2 pt-2 pb-1.5">
+        <div className="flex items-center gap-1 px-2 pt-2 pb-1.5">
           <SidebarToggle label="대화 목록 닫기" onClick={onClose} />
-          <span className="font-semibold">BOSUN</span>
-        </div>
-        <div className="space-y-1.5 px-2 pb-1.5">
           <button
             type="button"
-            onClick={onNew}
-            className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-left text-sm font-semibold text-navy-800 transition-colors hover:border-navy-300"
+            onClick={onHome}
+            title="새 대화"
+            className="rounded-lg px-2 py-1 font-semibold text-navy-900 transition-colors hover:bg-neutral-200"
           >
-            + 새 대화
+            BOSUN
           </button>
+        </div>
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+          {pinned.length > 0 && (
+            <>
+              <p className="px-1 pt-1 text-[11px] font-medium text-neutral-500">고정됨</p>
+              {pinned.map((s) => (
+                <SessionRow key={s.id} session={s} {...rowProps} />
+              ))}
+              {rest.length > 0 && <p className="px-1 pt-2 text-[11px] font-medium text-neutral-500">대화</p>}
+            </>
+          )}
+          {rest.map((s) => (
+            <SessionRow key={s.id} session={s} {...rowProps} />
+          ))}
+          {q && matched.length === 0 && <p className="px-1 py-2 text-xs text-neutral-500">찾는 대화가 없어요.</p>}
+        </nav>
+        {/* 찾기·선택과 도움말은 아래에 고정한다(2026-11-11 회의). 목록이 길어도 늘 보인다. */}
+        <div className="space-y-1.5 border-t border-neutral-200 px-2 pt-2 pb-2">
+          {selected && (
+            <div className="flex items-center gap-2 px-1 text-xs">
+              <label className="flex flex-1 items-center gap-1.5 text-neutral-600">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={selectable.length === 0} />
+                모두 선택
+              </label>
+              <button
+                type="button"
+                onClick={deleteSelected}
+                disabled={selected.size === 0}
+                className="rounded-lg bg-red-600 px-2 py-1 font-medium text-white disabled:opacity-40"
+              >
+                삭제 ({selected.size}개)
+              </button>
+            </div>
+          )}
           <div className="flex gap-1.5">
             <input
               type="search"
@@ -112,38 +148,19 @@ export function SessionSidebar({
               </button>
             )}
           </div>
-          {selected && (
-            <div className="flex items-center gap-2 px-1 text-xs">
-              <label className="flex flex-1 items-center gap-1.5 text-neutral-600">
-                <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={selectable.length === 0} />
-                모두 선택
-              </label>
-              <button
-                type="button"
-                onClick={deleteSelected}
-                disabled={selected.size === 0}
-                className="rounded-lg bg-red-600 px-2 py-1 font-medium text-white disabled:opacity-40"
-              >
-                삭제 ({selected.size}개)
-              </button>
-            </div>
+          {onHelp && (
+            <button
+              type="button"
+              onClick={onHelp}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-200"
+            >
+              <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-neutral-400 text-[11px] font-semibold text-neutral-600">
+                ?
+              </span>
+              무엇을 할 수 있나요?
+            </button>
           )}
         </div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-          {pinned.length > 0 && (
-            <>
-              <p className="px-1 pt-1 text-[11px] font-medium text-neutral-500">고정됨</p>
-              {pinned.map((s) => (
-                <SessionRow key={s.id} session={s} {...rowProps} />
-              ))}
-              {rest.length > 0 && <p className="px-1 pt-2 text-[11px] font-medium text-neutral-500">대화</p>}
-            </>
-          )}
-          {rest.map((s) => (
-            <SessionRow key={s.id} session={s} {...rowProps} />
-          ))}
-          {q && matched.length === 0 && <p className="px-1 py-2 text-xs text-neutral-500">찾는 대화가 없어요.</p>}
-        </nav>
       </aside>
     </>
   )

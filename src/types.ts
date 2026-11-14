@@ -1,4 +1,4 @@
-import type { ProposedAction, RiskLevel, RiskReason } from './lib/agentProtocol'
+import type { PortainerLink, ProposedAction, RiskLevel, RiskReason } from './lib/agentProtocol'
 
 export type ChatRole = 'user' | 'assistant'
 
@@ -50,6 +50,8 @@ export interface ChatMessage {
   errorMessage?: string
   // 답 아래에 작게 붙는 안내(사용자가 멈춤 등)
   notice?: string
+  // 이 턴에서 성공한 변경을 확인할 Portainer 화면들(tool_status.link)
+  links?: PortainerLink[]
   steps?: ProcessStep[]
 }
 

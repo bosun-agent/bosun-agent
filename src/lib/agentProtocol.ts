@@ -31,6 +31,8 @@ export type AgentEvent =
       summary: string
       // 도구 호출 ID. 모델이 도구를 한꺼번에 여러 개 부르면 시작·결과를 이걸로 짝짓는다
       callId?: string
+      // 바꾸는 작업이 성공했을 때만: 결과를 확인할 Portainer 화면(PORTAINER_URL 뒤에 붙일 경로)
+      link?: PortainerLink
     }
   | {
       type: 'approval_required'
@@ -49,6 +51,13 @@ export type AgentEvent =
   | { type: 'approval_resolved'; approvalId: string; status: Exclude<ApprovalStatus, 'pending'> }
   | { type: 'error'; code: string; message: string }
   | { type: 'done' }
+
+// AI가 한 작업이 실제로 됐는지 확인하러 갈 Portainer 화면. label은 "컨테이너 web", path는 `#!/1/docker/containers/web`처럼
+// Portainer 주소 뒤에 붙는 부분이다. 지운 대상은 목록 화면으로 간다.
+export interface PortainerLink {
+  label: string
+  path: string
+}
 
 export type ApprovalDecision = 'approve' | 'deny'
 
@@ -92,9 +101,8 @@ export interface SessionSummary {
 // apiKey는 키 값 없이 상태만 준다. editable이 false면 WEB 백엔드에 Agent env 파일 경로가 없다.
 export interface Settings {
   model: string | null
+  // 권장 모델(AGENT_MODELS). 전체 목록은 GET /api/models
   models: string[]
-  // models 중 관리자가 화면에서 더한 것. 이것만 지울 수 있다.
-  customModels: string[]
   apiKey: { editable: boolean; set: boolean }
   // 승인 방식. 카드를 띄울지 WEB이 대신 승인할지 정한다.
   approvalMode: ApprovalMode
@@ -106,6 +114,15 @@ export interface Settings {
   portainerUrl?: string
   // PUT /api/settings/api-key 응답에만 있다. 새 키를 적용하려고 Agent를 다시 시작했는지(AgentRestart).
   agentRestart?: AgentRestart
+}
+
+// 입력창 모델 선택(GET /api/models). recommended는 AGENT_MODELS(detail: agent.yaml 이름이면 실제 provider/model),
+// models는 docker-agent models가 준 나머지(키가 있는 provider). error면 전체 목록 없이 권장만 고른다.
+export interface ModelCatalog {
+  current: string | null
+  recommended: { id: string; detail?: string }[]
+  models: string[]
+  error?: 'unavailable' | 'failed'
 }
 
 // ask: 매번 묻기(기본), never: 묻지 않기(YOLO, 삭제까지 모두 바로 실행).
@@ -225,8 +242,7 @@ export interface AgentClient {
   saveApprovalMode?(mode: ApprovalMode): Promise<Settings>
   saveAgentMode?(mode: AgentMode): Promise<Settings>
   saveAutoReads?(reads: ReadChoice[]): Promise<Settings>
-  addModel?(model: string): Promise<Settings>
-  removeModel?(model: string): Promise<Settings>
+  getModels?(): Promise<ModelCatalog>
   // 저장해도 Docker Agent를 다시 시작해야 적용된다.
   saveApiKey?(apiKey: string): Promise<Settings>
   // 서버 대화 삭제. 처리 중인 대화는 서버가 409로 거절한다.

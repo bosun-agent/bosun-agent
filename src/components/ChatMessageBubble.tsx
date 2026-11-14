@@ -39,6 +39,7 @@ export function ChatMessageBubble({ message, portainerUrl, onApprove, onDeny, on
       )}
       <AssistantBody message={message} hasSteps={steps.length > 0} onApprove={onApprove} onDeny={onDeny} onExpire={onExpire} />
       {message.notice && <p className="mt-1 text-xs text-neutral-500">{message.notice}</p>}
+      {settled && portainerUrl && message.links && message.links.length > 0 && <PortainerLinks base={portainerUrl} links={message.links} />}
       {settled && (message.content || (message.status === 'error' && onRetry)) && (
         <div className={`mt-1 flex gap-1 text-xs text-neutral-500 ${message.status === 'error' ? '' : 'md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100'}`}>
           {message.content && <CopyButton text={message.content} />}
@@ -127,6 +128,27 @@ function UserBubble({ message, onEdit }: Pick<ChatMessageBubbleProps, 'message' 
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// AI가 한 작업이 실제로 됐는지 Portainer 그 화면에서 확인하게 한다(2026-11-11 회의).
+function PortainerLinks({ base, links }: { base: string; links: NonNullable<ChatMessage['links']> }) {
+  const root = base.replace(/\/+$/, '')
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="text-neutral-500">Portainer에서 확인</span>
+      {links.map((l) => (
+        <a
+          key={l.path}
+          href={`${root}/${l.path}`}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-neutral-700 transition-colors hover:border-navy-300 hover:text-navy-800"
+        >
+          {l.label} ↗
+        </a>
+      ))}
     </div>
   )
 }

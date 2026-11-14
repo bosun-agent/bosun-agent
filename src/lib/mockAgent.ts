@@ -252,13 +252,19 @@ async function* stoppable(sessionId: string, events: AsyncGenerator<AgentEvent>)
 
 // 목업 설정. 화면을 확인하는 용도라 새로고침하면 처음 값으로 돌아간다.
 const MOCK_MODELS = ['openrouter/deepseek/deepseek-v4.1-flash', 'openrouter/deepseek/deepseek-v4.1']
+// 입력창 모델 선택의 전체 목록(실제로는 docker-agent models가 준다)
+const MOCK_CATALOG = [
+  'openrouter/anthropic/claude-sonnet-5.5',
+  'openrouter/google/gemini-3-flash',
+  'openrouter/meta-llama/llama-4-maverick',
+  'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
+  'openrouter/openai/gpt-5.2-mini',
+]
 let mockModel = MOCK_MODELS[0]
 let mockKeySet = false
-const customModels: string[] = []
 const mockSettings = () => ({
   model: mockModel,
-  models: [...MOCK_MODELS, ...customModels],
-  customModels: [...customModels],
+  models: MOCK_MODELS,
   apiKey: { editable: true, set: mockKeySet },
   // 목업은 카드를 대신 승인하지 않는다. 승인 방식은 WEB 백엔드에 붙여야 바꿀 수 있다.
   approvalMode: 'ask' as const,
@@ -279,16 +285,7 @@ export const mockAgent: AgentClient = {
     mockModel = model
     return mockSettings()
   },
-  addModel: async (model) => {
-    if (!mockSettings().models.includes(model)) customModels.push(model)
-    return mockSettings()
-  },
-  removeModel: async (model) => {
-    const i = customModels.indexOf(model)
-    if (i >= 0) customModels.splice(i, 1)
-    if (mockModel === model) mockModel = MOCK_MODELS[0]
-    return mockSettings()
-  },
+  getModels: async () => ({ current: mockModel, recommended: MOCK_MODELS.map((id) => ({ id })), models: MOCK_CATALOG }),
   saveApiKey: async () => {
     mockKeySet = true
     return mockSettings()

@@ -30,12 +30,14 @@ export const config = {
   // agent.yaml과 session.db. 비어 있으면 AGENT_ENV_FILE과 같은 폴더의 <AGENT_NAME>.yaml, session.db.
   agentConfig: process.env.AGENT_CONFIG ?? '',
   agentSessionDb: process.env.AGENT_SESSION_DB ?? '',
-  // 설정 화면에서 고를 수 있는 모델. 쉼표로 나눈 `provider/model` 또는 agent.yaml models의 이름.
-  // 비어 있으면 모델을 고르지 않고 agent.yaml에 적힌 모델을 쓴다.
+  // 입력창 모델 선택의 "권장" 묶음. 쉼표로 나눈 `provider/model` 또는 agent.yaml models의 이름. 첫 번째가 기본값이다.
+  // 비어 있고 고른 모델도 없으면 agent.yaml에 적힌 모델을 쓴다. 전체 목록은 `docker-agent models`에서 받는다(server/models.ts).
   agentModels: (process.env.AGENT_MODELS ?? '')
     .split(',')
     .map((m) => m.trim())
     .filter(Boolean),
+  // (개발·테스트용) `docker-agent models --format json` 결과 대신 읽을 JSON 파일. 가짜 Agent에는 실행 파일이 없어서 쓴다.
+  modelCatalogFile: process.env.MODEL_CATALOG_FILE ?? '',
 
   // Docker Agent `--env-from-file`로 넘기는 env 파일. 설정 화면에서 API 키를 바꾸면 이 파일에 쓴다.
   // 비어 있으면 화면에서 키를 바꿀 수 없다. 저장한 키는 Agent를 다시 시작해야 적용된다.

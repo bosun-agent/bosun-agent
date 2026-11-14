@@ -1,5 +1,4 @@
-// 설정 화면 값. 모델 목록은 운영자가 AGENT_MODELS로 정한 것과 사용자가 화면에서 더한 것을 합친 것이다.
-// 화면은 그 안에서만 고른다. 더한 모델은 지울 수 있고 AGENT_MODELS 모델은 지울 수 없다.
+// 설정 화면 값. 모델은 입력창에서 고른다: 권장(AGENT_MODELS)이나 `docker-agent models`의 전체 목록(server/models.ts).
 // API 키는 Docker Agent env 파일(AGENT_ENV_FILE)에 쓴다. 키 값은 화면으로 돌려주지 않는다.
 
 import { chmodSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -7,31 +6,17 @@ import { READ_CHOICES, type AgentMode, type ApprovalMode, type ReadChoice, type 
 import { config } from './config.ts'
 import { getSetting, setSetting } from './store.ts'
 
-function customModels(): string[] {
-  try {
-    const list = JSON.parse(getSetting('custom_models') ?? '[]') as unknown
-    return Array.isArray(list) ? list.filter((m): m is string => typeof m === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-function allModels(): string[] {
-  return [...new Set([...config.agentModels, ...customModels()])]
-}
-
-// 저장된 값이 목록에서 빠졌으면 첫 번째 모델로 돌아간다. 목록이 비어 있으면 agent.yaml 모델을 쓴다(undefined).
+// 저장할 때 목록에 있는지 확인했으므로 저장된 값을 그대로 쓴다. 없으면 권장 첫 번째, 그것도 없으면 agent.yaml 모델(undefined).
+// (예전 설정 화면에서 더한 custom_models는 이제 쓰지 않는다. 고른 모델이 그중 하나였다면 그대로 남는다.)
 export function currentModel(): string | undefined {
   const saved = getSetting('model')
-  const models = allModels()
-  return saved && models.includes(saved) ? saved : models[0]
+  return saved && validModelRef(saved) ? saved : config.agentModels[0]
 }
 
 export function getSettings(): Settings {
   return {
     model: currentModel() ?? null,
-    models: allModels(),
-    customModels: customModels().filter((m) => !config.agentModels.includes(m)),
+    models: config.agentModels,
     apiKey: { editable: config.agentEnvFile !== '', set: apiKeySet() },
     approvalMode: approvalMode(),
     ...(agentModesEnabled() ? { agentMode: currentAgentName() as AgentMode } : {}),
@@ -94,9 +79,9 @@ export function saveAutoReads(reads: ReadChoice[]): void {
   setSetting('auto_reads', JSON.stringify(reads))
 }
 
-// 목록에 없는 모델이면 false.
-export function saveModel(model: string): boolean {
-  if (!allModels().includes(model)) return false
+// 권장 모델이나 전체 목록(catalog)에 없는 모델이면 false.
+export function saveModel(model: string, catalog: readonly string[] = []): boolean {
+  if (!config.agentModels.includes(model) && !catalog.includes(model)) return false
   setSetting('model', model)
   return true
 }
@@ -105,18 +90,6 @@ export function saveModel(model: string): boolean {
 // 모델 이름에 쓰이는 글자만 받는다. 실제로 있는 모델인지는 Agent가 실행할 때 확인한다.
 export function validModelRef(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 120 && /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._:@+-]+)*$/.test(value)
-}
-
-export function addModel(model: string): void {
-  if (allModels().includes(model)) return
-  setSetting('custom_models', JSON.stringify([...customModels(), model]))
-}
-
-// AGENT_MODELS에 있는 모델은 지우지 않는다(false).
-export function removeModel(model: string): boolean {
-  if (config.agentModels.includes(model) || !customModels().includes(model)) return false
-  setSetting('custom_models', JSON.stringify(customModels().filter((m) => m !== model)))
-  return true
 }
 
 // ---- API 키 ----

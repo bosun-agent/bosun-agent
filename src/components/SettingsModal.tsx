@@ -3,9 +3,9 @@ import type { ApprovalMode, Settings } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 import { AuditSection, BackupSection, InfoSection, NotifySection, PolicySection } from './SettingsSections'
 
-// 설정 화면. 모델·API 키는 바꿀 수 있고, 정책·정보·승인 기록은 Agent 설정과 WEB 기록을 보여준다.
+// 설정 화면. API 키는 바꿀 수 있고, 정책·정보·승인 기록은 Agent 설정과 WEB 기록을 보여준다.
+// 모델은 입력창 옆에서 고른다(2026-11-11 회의).
 const SECTIONS = [
-  { id: 'model', label: '모델' },
   { id: 'api-key', label: 'API 키' },
   { id: 'policy', label: '정책' },
   { id: 'audit', label: '승인 기록' },
@@ -28,7 +28,7 @@ export function SettingsModal({
   // 입력창에 글을 채우고 설정을 닫는다(백업 복원 요청).
   onDraft?: (text: string) => void
 }) {
-  const [sectionId, setSectionId] = useState<SectionId>('model')
+  const [sectionId, setSectionId] = useState<SectionId>('api-key')
   const section = SECTIONS.find((s) => s.id === sectionId) ?? SECTIONS[0]
 
   useEffect(() => {
@@ -75,7 +75,6 @@ export function SettingsModal({
               ✕
             </button>
           </div>
-          {sectionId === 'model' && <ModelSection />}
           {sectionId === 'api-key' && <ApiKeySection />}
           {sectionId === 'policy' && <PolicySection onApprovalModeChange={onApprovalModeChange} />}
           {sectionId === 'audit' && <AuditSection />}
@@ -97,98 +96,6 @@ function useSettings() {
   }, [])
 
   return { settings, setSettings, failed }
-}
-
-// 고르면 바로 저장한다. 다음 메시지부터 그 모델로 보낸다.
-function ModelSection() {
-  const { settings, setSettings, failed: loadFailed } = useSettings()
-  const [failed, setFailed] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [newModel, setNewModel] = useState('')
-
-  async function run(fn: () => Promise<Settings>, message: string) {
-    if (saving) return false
-    setSaving(true)
-    setFailed(null)
-    try {
-      setSettings(await fn())
-      return true
-    } catch {
-      setFailed(message)
-      return false
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function add(e: FormEvent) {
-    e.preventDefault()
-    const model = newModel.trim()
-    if (!model || !agent.addModel) return
-    const ok = await run(() => agent.addModel!(model), '더하지 못했어요. agent.yaml 모델 이름이나 provider/model 형식으로 적어주세요.')
-    if (ok) setNewModel('')
-  }
-
-  if (loadFailed && !settings) return <p className="px-1 text-sm text-red-600">설정을 불러오지 못했어요.</p>
-  if (!settings) return <p className="px-1 text-sm text-neutral-500">불러오는 중…</p>
-
-  return (
-    <div className="space-y-1.5">
-      {settings.models.length === 0 ? (
-        <p className="px-1 text-sm text-neutral-500">고를 수 있는 모델이 없어요. AI Agent 설정에 적힌 모델을 써요.</p>
-      ) : (
-        <p className="px-1 text-xs text-neutral-500">다음 메시지부터 고른 모델로 답해요. 이미 있는 대화도 다음 메시지부터 바뀌어요.</p>
-      )}
-      {settings.models.map((model) => {
-        const custom = settings.customModels?.includes(model)
-        return (
-          <div key={model} className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm hover:bg-neutral-50">
-            <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
-              <input
-                type="radio"
-                name="model"
-                checked={settings.model === model}
-                disabled={saving}
-                onChange={() => agent.saveModel && run(() => agent.saveModel!(model), '저장하지 못했어요. 다시 골라주세요.')}
-              />
-              <span className="truncate font-mono text-[13px]">{model}</span>
-            </label>
-            {custom && agent.removeModel && (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => run(() => agent.removeModel!(model), '지우지 못했어요.')}
-                className="shrink-0 rounded px-1.5 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-red-700"
-              >
-                빼기
-              </button>
-            )}
-          </div>
-        )
-      })}
-      {agent.addModel && (
-        <form onSubmit={add} className="space-y-1 pt-2">
-          <p className="px-1 text-xs text-neutral-500">
-            모델 더하기: agent.yaml의 모델 이름(예: <code>flash</code>)이나 <code>provider/model</code>(예:{' '}
-            <code>openrouter/deepseek/deepseek-v4.1</code>). 그 provider의 API 키가 Agent에 있어야 해요.
-          </p>
-          <div className="flex gap-2">
-            <input
-              value={newModel}
-              onChange={(e) => setNewModel(e.target.value)}
-              placeholder="openrouter/..."
-              aria-label="더할 모델"
-              className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-mono text-[13px]"
-            />
-            <button type="submit" disabled={saving || !newModel.trim()} className="shrink-0 rounded-lg bg-navy-800 px-3 py-2 text-sm text-white disabled:opacity-40">
-              더하기
-            </button>
-          </div>
-        </form>
-      )}
-      {failed && <p className="px-1 text-sm text-red-600">{failed}</p>}
-    </div>
-  )
 }
 
 // Agent는 시작할 때 키를 읽는다. WEB이 띄운 Agent면 저장한 뒤 다시 시작한다.

@@ -8,6 +8,7 @@ import type {
   AgentRestart,
   AuditRecord,
   BackupRecord,
+  ModelCatalog,
   RestoredMessage,
   SessionSummary,
   SessionUsage,
@@ -111,9 +112,7 @@ export const httpAgent: AgentClient = {
 
   saveAutoReads: (autoReads) => json<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ autoReads }) }),
 
-  addModel: (model) => json<Settings>('/api/settings/models', { method: 'POST', body: JSON.stringify({ model }) }),
-
-  removeModel: (model) => json<Settings>(`/api/settings/models?model=${encodeURIComponent(model)}`, { method: 'DELETE' }),
+  getModels: () => json<ModelCatalog>('/api/models'),
 
   async deleteSession(sessionId) {
     const res = await apiFetch(sessionPath(sessionId), { method: 'DELETE' })

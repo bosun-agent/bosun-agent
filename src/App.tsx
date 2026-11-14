@@ -5,11 +5,11 @@ import { ChatInput } from './components/ChatInput'
 import { DevScenarioBar } from './components/DevScenarioBar'
 import { HelpPanel } from './components/HelpPanel'
 import { MessageList } from './components/MessageList'
+import { ModelPicker } from './components/ModelPicker'
 import { SessionSidebar, SidebarToggle } from './components/SessionSidebar'
 import { SettingsModal } from './components/SettingsModal'
 import type { AgentEvent, ApprovalDecision, ApprovalMode, ApprovalStatus, ProgressStep, SessionSummary } from './lib/agentProtocol'
 import { agent, showScenarios } from './lib/agent'
-import { EXAMPLE_PROMPTS } from './lib/examples'
 import { notifyApproval } from './lib/notify'
 import { addDetail, APPROVED_LABEL, AUTO_APPROVED_LABEL, BLOCKED_LABEL, finishActive, finishToolStep, hasActive, markTargetChanged, startStep, startToolStep, withSummary } from './lib/processSteps'
 import { toChatMessages } from './lib/restore'
@@ -75,7 +75,8 @@ function App() {
   const [localBusy, setBusy] = useState<ReadonlySet<string>>(() => new Set())
   // 서버 목록이 처리 중이라고 한 대화(서버 ID). 아직 열지 않은 대화에만 쓴다. 열면 다시 붙어서 이 화면이 맡는다.
   const [serverRunning, setServerRunning] = useState<ReadonlySet<string>>(() => new Set())
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  // 넓은 화면에서는 열어 둔다. 새 대화(BOSUN)와 도움말이 사이드바에 있다.
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrowScreen())
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   // 입력창에 넣을 글(도움말 예시를 누르면 채운다)
@@ -84,11 +85,14 @@ function App() {
   const [portainerUrl, setPortainerUrl] = useState<string>()
   // 승인 방식. 묻지 않는 방식이면 입력창 위에 늘 보여준다(모르고 켜 둔 채 쓰지 않게).
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>('ask')
+  // 입력창 모델 선택에 보이는 지금 모델. null이면 agent.yaml 모델.
+  const [model, setModel] = useState<string | null>(null)
   useEffect(() => {
     agent.getSettings?.().then(
       (s) => {
         setPortainerUrl(s.portainerUrl)
         setApprovalMode(s.approvalMode)
+        setModel(s.model)
       },
       () => undefined,
     )
@@ -239,6 +243,11 @@ function App() {
             }))
             break
           case 'tool_status':
+            // 바꾸는 작업이 성공하면 확인하러 갈 Portainer 화면이 온다. 같은 화면은 한 번만 둔다.
+            if (event.link) {
+              const link = event.link
+              updateMessage(id, (m) => (m.links?.some((l) => l.path === link.path) ? {} : { links: [...(m.links ?? []), link] }))
+            }
             updateSteps(id, (steps) => {
               const step = { label: event.summary, doneLabel: '도구 호출함', detail: event.tool }
               if (event.status === 'running') {
@@ -639,7 +648,7 @@ function App() {
           handleSend(text)
         }}
         onStop={canStop ? handleStop : undefined}
-        onHelp={() => setHelpOpen(true)}
+        extra={agent.getModels && <ModelPicker model={model} onChange={setModel} />}
       />
       {/* Home에서는 와이어프레임대로 입력창 바로 아래에 Portainer 버튼을 둔다. */}
       {!isEmpty && (
@@ -658,7 +667,11 @@ function App() {
           exportUrl={agent.exportUrl}
           onClose={() => setSidebarOpen(false)}
           onSelect={handleSelectSession}
-          onNew={handleNewSession}
+          onHome={handleNewSession}
+          onHelp={() => {
+            if (isNarrowScreen()) setSidebarOpen(false)
+            setHelpOpen(true)
+          }}
           onDelete={handleDeleteSession}
           onDeleteMany={handleDeleteMany}
           onRename={handleRename}
@@ -678,18 +691,6 @@ function App() {
           <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto py-12">
             <img src={logoUrl} alt="BOSUN" width={216} height={300} className="h-36 w-auto select-none" draggable={false} />
             {composer}
-            <div className="flex max-w-2xl flex-wrap justify-center gap-1.5 px-4">
-              {EXAMPLE_PROMPTS.slice(0, 4).map((p) => (
-                <button
-                  key={p.text}
-                  type="button"
-                  onClick={() => pickExample(p.text)}
-                  className="rounded-full border border-neutral-200 bg-white px-3.5 py-1.5 text-[13px] text-neutral-700 transition-colors hover:border-navy-300 hover:text-navy-800"
-                >
-                  {p.text}
-                </button>
-              ))}
-            </div>
             {portainerUrl || BUILD_PORTAINER_URL ? (
               <a
                 href={portainerUrl || BUILD_PORTAINER_URL}

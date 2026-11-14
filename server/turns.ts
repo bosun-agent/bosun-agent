@@ -300,7 +300,7 @@ async function retryStream(t: Turn): Promise<AsyncGenerator<DAEvent> | null> {
 }
 
 async function pump(t: Turn, first: AsyncGenerator<DAEvent>): Promise<void> {
-  const translator = new Translator()
+  const translator = new Translator({ names, stacks })
   let upstream: AsyncGenerator<DAEvent> | null = first
   // 모델이 도구 호출을 글로 쓰면(DeepSeek, 가끔) 실행된 것이 없으므로 턴마다 한 번만 다시 시도한다.
   let retried = false

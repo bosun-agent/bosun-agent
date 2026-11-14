@@ -4,7 +4,7 @@
 import type { AgentEvent } from '../src/lib/agentProtocol.ts'
 import type { DAEvent } from './agentClient.ts'
 import { maskText } from './mask.ts'
-import { describeTool, toolSummary } from './tools.ts'
+import { describeTool, portainerLink, toolSummary, type StackInfo } from './tools.ts'
 
 // 도구 호출이 정책으로 막혔을 때 Docker Agent가 도구 결과로 돌려주는 문구(v1.145.0 `pkg/runtime/toolexec`).
 // 도구 결과에는 컨테이너 이름·로그 같은 외부 문자열이 섞이므로 맨 앞부터 맞춰 본다.
@@ -97,6 +97,16 @@ export class Translator {
   // 도구 호출 ID → 작업 이름. 결과 이벤트에는 인자가 없어서 호출 때 정해 둔다.
   // 거부·차단된 호출은 tool_call 없이 결과만 오므로 공통 문구가 된다.
   private labels = new Map<string, string | undefined>()
+  // 도구 호출 ID → 이름과 인자. 바꾸는 작업이 성공하면 확인할 Portainer 화면을 정한다.
+  private calls = new Map<string, { name: string; args: Record<string, unknown> }>()
+
+  // names·stacks: turns.ts가 도구 결과에서 알아 둔 ID → 이름, 스택 ID → 이름(Portainer 화면 이름표에 쓴다).
+  private readonly lookup: { names: ReadonlyMap<string, string>; stacks: ReadonlyMap<string, StackInfo> }
+
+  constructor(lookup?: { names: ReadonlyMap<string, string>; stacks: ReadonlyMap<string, StackInfo> }) {
+    this.lookup = lookup ?? { names: new Map(), stacks: new Map() }
+  }
+
   // 도구 호출 앞뒤 문장이 붙어 나오지 않게, 도구 호출 뒤 첫 문장 앞에 빈 줄을 넣는다.
   private text = ''
   private toolSinceText = false
@@ -178,7 +188,10 @@ export class Translator {
           // 인자를 못 읽으면 공통 문구를 쓴다.
         }
         const label = describeTool(name, args)?.label
-        if (call.id) this.labels.set(call.id, label)
+        if (call.id) {
+          this.labels.set(call.id, label)
+          this.calls.set(call.id, { name, args })
+        }
         const before = this.flushHeld()
         // 표기를 글로 썼어도 실제 도구 호출이 이어지면 정상 진행이다. 그 뒤 글은 다시 보낸다.
         this.leaked = false
@@ -196,6 +209,8 @@ export class Translator {
         const isError = res.result?.isError ?? false
         const label = this.labels.get(res.tool_call_id)
         this.labels.delete(res.tool_call_id)
+        const call = this.calls.get(res.tool_call_id)
+        this.calls.delete(res.tool_call_id)
         this.toolSinceText = true
         this.produced = true
         if (isError && USER_REJECTED.test(res.response)) return { events: [] }
@@ -223,8 +238,10 @@ export class Translator {
             ],
           }
         }
+        const link = !isError && call ? portainerLink(call.name, call.args, res.response, this.lookup.names, this.lookup.stacks) : undefined
+        if (link) link.label = maskText(link.label)
         return {
-          events: [{ type: 'tool_status', tool: name, status, summary: toolSummary(label, status), callId: res.tool_call_id }],
+          events: [{ type: 'tool_status', tool: name, status, summary: toolSummary(label, status), callId: res.tool_call_id, ...(link ? { link } : {}) }],
         }
       }
 

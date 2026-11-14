@@ -5,7 +5,7 @@
 // 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다.
 
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { ProposedAction, ReadChoice, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
+import type { PortainerLink, ProposedAction, ReadChoice, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
 import type { HookExplanation } from './agentClient.ts'
 import { maskText } from './mask.ts'
 
@@ -904,4 +904,69 @@ function learnStacks(stacks: Map<string, StackInfo>, tool: string, args: Record<
     rememberStack(stacks, created, { ...(name ? { name } : {}), ...(services ? { services } : {}) })
   }
   if (tool === 'StackUpdate' && id && services) rememberStack(stacks, id, { services })
+}
+
+// ---- 결과를 확인할 Portainer 화면 ----
+// AI가 바꾼 것이 실제로 됐는지 사용자가 Portainer 그 화면에서 보게 한다(2026-11-11 회의).
+// 주소는 Portainer 2.45 화면 라우트: #!/<환경>/docker/containers/<이름·ID>, volumes/<이름>, networks/<ID>,
+// stacks/<이름>?id=<스택 ID>&type=2&regular=true. 바꾸는 작업이 성공했을 때만 준다. 지운 대상은 목록 화면으로 간다.
+
+function parsedOutput(output: string): Record<string, unknown> {
+  try {
+    return objectArg(JSON.parse(output))
+  } catch {
+    return {}
+  }
+}
+
+export function portainerLink(
+  tool: string,
+  args: Record<string, unknown>,
+  output: string,
+  names: ReadonlyMap<string, string>,
+  stacks: ReadonlyMap<string, StackInfo>,
+): PortainerLink | undefined {
+  if (tool.startsWith('Stack')) return stackLink(tool, args, output, stacks)
+  if (tool !== 'docker_proxy') return undefined
+  const method = (str(args.method) ?? 'GET').toUpperCase()
+  const env = numericId(args.environment_id)
+  if (method === 'GET' || method === 'HEAD' || !env) return undefined
+  const [kind, ...rest] = pathParts(str(args.path) ?? '')
+  const resource = RESOURCES[kind]
+  if (!resource) return undefined
+  const base = `#!/${env}/docker/${kind}`
+  const list = { label: `${resource} 목록`, path: base }
+  if (method === 'DELETE') return list
+  const query = objectArg(args.query_params)
+  if (kind === 'containers') {
+    // 이름으로 왔으면 이름을 쓴다. 스택을 다시 배포하면 이름은 그대로고 ID만 바뀌어서 알아 둔 ID가 낡을 수 있다.
+    const requested = str(query.name)?.replace(/^\//, '')
+    let target = rest[0]
+    if (target === 'create') target = requested ?? idOf(parsedOutput(output)) ?? ''
+    else if (rest[1] === 'rename' && requested && !HEX_ID.test(target)) target = requested
+    if (!target) return list
+    const label = HEX_ID.test(target) ? (names.get(normalized(kind, target)) ?? target) : target
+    return { label: `컨테이너 ${label}`, path: `${base}/${encodeURIComponent(target)}` }
+  }
+  if (kind === 'volumes' && rest[0] === 'create') {
+    const name = str(argOf(objectArg(args.body), 'Name')) ?? str(argOf(parsedOutput(output), 'Name'))
+    return name ? { label: `볼륨 ${name}`, path: `${base}/${encodeURIComponent(name)}` } : list
+  }
+  // 컨테이너 연결·해제(`/networks/{id}/connect`)
+  if (kind === 'networks' && rest.length === 2) return { label: `네트워크 ${rest[0]}`, path: `${base}/${encodeURIComponent(rest[0])}` }
+  return list
+}
+
+function stackLink(tool: string, args: Record<string, unknown>, output: string, stacks: ReadonlyMap<string, StackInfo>): PortainerLink | undefined {
+  if (STACK_READS[tool]) return undefined
+  const env = numericId(argOf(args, 'endpointId'))
+  if (!env) return undefined
+  const base = `#!/${env}/docker/stacks`
+  const list = { label: '스택 목록', path: base }
+  if (tool === 'StackDelete') return list
+  const created = tool === 'StackCreateDockerStandaloneString'
+  const id = created ? numericId(argOf(parsedOutput(output), 'id')) : numericId(argOf(args, 'id'))
+  const name = created ? str(argOf(args, 'Name')) : id ? stacks.get(id)?.name : undefined
+  if (!id || !name) return list
+  return { label: `스택 ${name}`, path: `${base}/${encodeURIComponent(name)}?id=${id}&type=2&regular=true` }
 }

@@ -12,6 +12,7 @@ import type {
   ApprovalDecision,
   ApprovalMode,
   AuditRecord,
+  ModelCatalog,
   RestoredCard,
   RestoredMessage,
   SessionSummary,
@@ -24,11 +25,11 @@ import { listBackups } from './backups.ts'
 import { config } from './config.ts'
 import { LOCAL_USER, localOnly } from './guard.ts'
 import { maskText } from './mask.ts'
+import { clearModelCatalog, modelCatalog } from './models.ts'
 import {
-  addModel,
   APPROVAL_MODES,
+  currentModel,
   getSettings,
-  removeModel,
   saveApiKey,
   saveApprovalMode,
   saveModel,
@@ -355,8 +356,11 @@ app.put('/api/settings', async (c) => {
   if (body.approvalMode !== undefined && !APPROVAL_MODES.includes(body.approvalMode as ApprovalMode)) {
     throw new HttpError(400, 'BAD_REQUEST', '승인 방식은 ask, never 중 하나예요.')
   }
-  if (body.model !== undefined && (typeof body.model !== 'string' || !saveModel(body.model))) {
-    throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 모델이에요.')
+  if (body.model !== undefined) {
+    const model = body.model
+    // 권장 모델이 아니면 전체 목록에 있는지 본다(처음이면 docker-agent models를 한 번 돌린다).
+    const catalog = validModelRef(model) && !config.agentModels.includes(model) ? (await modelCatalog()).models : []
+    if (typeof model !== 'string' || !saveModel(model, catalog)) throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 모델이에요.')
   }
   if (body.agentMode !== undefined && !saveAgentMode(body.agentMode)) {
     throw new HttpError(400, 'BAD_REQUEST', '이 설치에서는 고를 수 없는 Agent예요.')
@@ -369,22 +373,37 @@ app.put('/api/settings', async (c) => {
   return c.json(getSettings())
 })
 
-// 고를 수 있는 모델을 더한다. 실제로 있는 모델인지는 그 모델로 보낼 때 Agent가 확인한다.
-app.post('/api/settings/models', async (c) => {
-  const body = await jsonBody<{ model: unknown }>(c)
-  const model = typeof body.model === 'string' ? body.model.trim() : undefined
-  if (!validModelRef(model)) {
-    throw new HttpError(400, 'BAD_REQUEST', '모델은 agent.yaml 모델 이름이나 provider/model 형식으로 적어주세요.')
-  }
-  addModel(model)
-  return c.json(getSettings())
+// 입력창 모델 선택. 권장(AGENT_MODELS, agent.yaml 이름이면 실제 모델을 곁들임)과 docker-agent models의 전체 목록.
+app.get('/api/models', async (c) => {
+  const [catalog, yamlModels] = await Promise.all([modelCatalog(), agentYamlModels()])
+  const recommended = config.agentModels.map((id) => {
+    const m = yamlModels.get(id)
+    return m ? { id, detail: m } : { id }
+  })
+  const listed = new Set(config.agentModels)
+  return c.json({
+    current: currentModel() ?? null,
+    recommended,
+    models: catalog.models.filter((m) => !listed.has(m)),
+    ...(catalog.error ? { error: catalog.error } : {}),
+  } satisfies ModelCatalog)
 })
 
-app.delete('/api/settings/models', (c) => {
-  const model = c.req.query('model') ?? ''
-  if (!removeModel(model)) throw new HttpError(400, 'BAD_REQUEST', '화면에서 더한 모델만 지울 수 있어요.')
-  return c.json(getSettings())
-})
+// agent.yaml models의 이름 → `provider/model`. Agent가 꺼져 있거나 느리면 없이 보낸다.
+async function agentYamlModels(): Promise<Map<string, string>> {
+  try {
+    const cfg = (await Promise.race([agent.getAgentConfig(), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))])) as {
+      models?: Record<string, { provider?: unknown; model?: unknown }>
+    }
+    return new Map(
+      Object.entries(cfg.models ?? {}).flatMap(([name, m]) =>
+        typeof m?.provider === 'string' && typeof m.model === 'string' ? [[name, maskText(`${m.provider}/${m.model}`)] as const] : [],
+      ),
+    )
+  } catch {
+    return new Map()
+  }
+}
 
 // API 키는 Docker Agent env 파일에 쓴다. Agent는 시작할 때 키를 읽으므로 WEB이 띄운 Agent면 다시 시작한다.
 // 처리 중인 대화가 있으면 끝난 뒤에 다시 시작한다(server/agentProcess.ts).
@@ -394,6 +413,7 @@ app.put('/api/settings/api-key', async (c) => {
   const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : undefined
   if (!validApiKey(apiKey)) throw new HttpError(400, 'BAD_REQUEST', 'API 키 형식이 올바르지 않아요.')
   saveApiKey(apiKey)
+  clearModelCatalog()
   const agentRestart = restartAgent()
   console.info(`[settings] ${config.agentKeyName} updated; agent restart: ${agentRestart}`)
   return c.json({ ...getSettings(), agentRestart })
