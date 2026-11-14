@@ -161,7 +161,7 @@ const APPROVAL_MODE_TEXT: Record<ApprovalMode, { label: string; help: string }> 
   ask: { label: '매번 묻기', help: '바꾸는 작업마다 승인 카드를 띄워요. 처음 쓰거나 중요한 서버라면 이걸 권해요.' },
   never: {
     label: '묻지 않기 (YOLO)',
-    help: '승인 카드 없이 모두 바로 실행해요. 삭제도 묻지 않아요. 테스트 서버에서만 쓰세요.',
+    help: '승인 카드 없이 바로 실행해요. 삭제도 묻지 않아요(BOSUN이 설명할 수 없는 도구만 예외). 테스트 서버에서만 쓰세요.',
   },
 }
 

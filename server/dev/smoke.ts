@@ -741,6 +741,18 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const hooked = await post(`/api/sessions/${s}/messages`, { text: '명령 실행해줘' })
   check('묻지 않기에서도 permissions.deny는 막힌다', types(hooked.events).includes('rejected') && !types(hooked.events).includes('auto_approved'), types(hooked.events))
 
+  // WEB이 설명할 수 없는 도구(새로 붙인 MCP 등)는 정책 훅이 걸리지 않으므로 묻지 않기여도 카드를 띄운다.
+  const su = await newSession()
+  const ru = await post(`/api/sessions/${su}/messages`, { text: '모르는 도구 써줘' })
+  check(
+    '묻지 않기여도 모르는 도구는 대신 승인하지 않고 카드(MANUAL)',
+    last(ru.events) === 'approval_required' &&
+      !types(ru.events).includes('auto_approved') &&
+      approvalOf(ru.events)?.reasons.some((x) => x.code === 'MANUAL') === true,
+    types(ru.events),
+  )
+  await post(`/api/sessions/${su}/approvals/${approvalOf(ru.events)!.approvalId}`, { decision: 'deny' })
+
   const removed = await fetch(`${BASE}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approvalMode: 'risky' }) })
   check('없앤 승인 방식(risky)은 400', removed.status === 400, removed.status)
 
