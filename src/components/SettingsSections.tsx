@@ -1,11 +1,13 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { READ_CHOICES, type AgentConfigSummary, type AgentMode, type ApprovalMode, type AuditRecord, type BackupRecord, type ReadChoice, type SessionUsage, type Settings, type SystemInfo, type UsageTotals } from '../lib/agentProtocol'
+import { READ_CHOICES, type AgentConfigSummary, type AgentMode, type ApprovalMode, type AuditRecord, type BackupRecord, type PolicyState, type ReadChoice, type SessionUsage, type Settings, type SystemInfo, type UsageTotals } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
+import { PolicyBoard } from './PolicyBoard'
 import { agentStateText, restartAgent, useAgentStatus } from '../lib/agentStatus'
 import { notifyEnabled, setNotifyEnabled } from '../lib/notify'
 
 // 설정 창의 정책·승인 기록·정보·알림 화면.
-// 정책은 Agent 설정에서 고른 값을 읽어서 보여준다. WEB에서 고르는 것은 승인 방식, Agent 종류, 바로 실행할 조회뿐이다. 거부 규칙은 Agent 설정에서만 바뀐다.
+// 정책은 Agent 설정에서 고른 값을 읽어서 보여준다. WEB에서 고르는 것은 승인 방식, Agent 종류, 바로 실행할 조회,
+// 그리고 Agent 설정 파일이 있으면 작업별 허용·묻기·막기 칸(PolicyBoard.tsx, 저장하면 Agent 다시 시작)이다.
 
 function useLoad<T>(load: (() => Promise<T>) | undefined) {
   const [data, setData] = useState<T | null>(null)
@@ -140,17 +142,21 @@ export function PolicySection({ onApprovalModeChange }: { onApprovalModeChange?:
   useEffect(() => {
     agent.getSettings?.().then(setSettings, () => setSettingsFailed(true))
   }, [])
+  // 설정 파일을 고칠 수 있으면 칸 화면. Agent가 꺼져 있어도 보여서, 잘못 옮겨 Agent가 안 뜰 때 되돌릴 수 있다.
+  const { data: policy } = useLoad<PolicyState>(agent.getPolicy)
+  const board = policy?.editable === true
   return (
     <div className="space-y-2">
       <ApprovalModeBox settings={settings} setSettings={setSettings} loadFailed={settingsFailed} onChange={onApprovalModeChange} />
       <AgentModeBox />
       <AutoReadBox settings={settings} setSettings={setSettings} />
+      {board && <PolicyBoard initial={policy} settings={settings} />}
       {!data ? (
         <Unavailable failed={failed} />
       ) : !data.config ? (
         <p className="px-1 text-sm text-red-600">AI Agent 설정을 읽지 못했어요. Agent가 켜져 있는지 확인해주세요.</p>
       ) : (
-        <PolicyView cfg={data.config} approvalTimeoutSec={data.web.approvalTimeoutSec} settings={settings} />
+        <PolicyView cfg={data.config} approvalTimeoutSec={data.web.approvalTimeoutSec} settings={settings} board={board} />
       )}
     </div>
   )
@@ -342,16 +348,29 @@ function AutoReadBox({ settings, setSettings }: SettingsProps) {
   )
 }
 
-function PolicyView({ cfg, approvalTimeoutSec, settings }: { cfg: AgentConfigSummary; approvalTimeoutSec: number; settings: Settings | null }) {
+function PolicyView({
+  cfg,
+  approvalTimeoutSec,
+  settings,
+  board,
+}: {
+  cfg: AgentConfigSummary
+  approvalTimeoutSec: number
+  settings: Settings | null
+  // 위에 칸 화면(PolicyBoard)이 있으면 같은 규칙 목록을 또 보여주지 않는다.
+  board: boolean
+}) {
   // Agent 설정에는 없지만 WEB이 대신 승인해서 실제로는 바로 실행되는 것. 목록만 보면 승인이 필요해 보이지 않게 같이 적는다.
   const webAuto = settings?.approvalMode === 'never' ? [] : (settings?.autoReads ?? []).map((c) => READ_TEXT[c])
   return (
     <div className="space-y-2">
-      <Note>
-        아래는 AI Agent 설정에 적힌 정책이에요. 실제로 막고 허용하는 건 Agent 정책이고, WEB은 그 결과를 승인 카드와 차단 안내로 보여줘요.
-        거부 규칙은 안전을 위해 Agent 설정 파일에서만 바꿀 수 있어요.
-      </Note>
-      {settings?.approvalMode === 'never' && (
+      {!board && (
+        <Note>
+          아래는 AI Agent 설정에 적힌 정책이에요. 실제로 막고 허용하는 건 Agent 정책이고, WEB은 그 결과를 승인 카드와 차단 안내로 보여줘요.
+          WEB이 Agent 설정 파일을 찾지 못해서 여기서는 바꿀 수 없어요(AGENT_CONFIG).
+        </Note>
+      )}
+      {!board && settings?.approvalMode === 'never' && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           지금은 승인 방식이 "묻지 않기"라서, 아래 "항상 거부"와 정책 훅이 막는 것 말고는 모두 승인 없이 바로 실행돼요.
         </p>
@@ -367,9 +386,13 @@ function PolicyView({ cfg, approvalTimeoutSec, settings }: { cfg: AgentConfigSum
           </p>
         </Box>
       ))}
-      <RuleList title="자동 허용 (승인 없이 실행)" tone="text-neutral-800" rules={cfg.permissions.allow} empty="없어요." extra={webAuto} />
-      <RuleList title="항상 묻기" tone="text-amber-700" rules={cfg.permissions.ask} empty="따로 정한 것은 없어요. 자동 허용에 없는 호출은 안전 모드에 따라 물어요." />
-      <RuleList title="항상 거부 (승인해도 안 됨)" tone="text-red-700" rules={cfg.permissions.deny} empty="없어요." />
+      {!board && (
+        <>
+          <RuleList title="자동 허용 (승인 없이 실행)" tone="text-neutral-800" rules={cfg.permissions.allow} empty="없어요." extra={webAuto} />
+          <RuleList title="항상 묻기" tone="text-amber-700" rules={cfg.permissions.ask} empty="따로 정한 것은 없어요. 자동 허용에 없는 호출은 안전 모드에 따라 물어요." />
+          <RuleList title="항상 거부 (승인해도 안 됨)" tone="text-red-700" rules={cfg.permissions.deny} empty="없어요." />
+        </>
+      )}
       {cfg.agents.map((a) =>
         a.hooks.length === 0 ? null : (
           <Box key={`${a.name}-hooks`} title="정책 훅 (Agent가 실행하는 검사 프로그램)">

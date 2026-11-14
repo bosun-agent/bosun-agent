@@ -2,7 +2,8 @@
 // 실행: npm run server:fake, npm run server, npm run dev:http를 띄운 뒤 npm run test:ui
 // 운영 빌드(STATIC_DIR=dist)로 확인하려면 URL=http://127.0.0.1:3001/ npm run test:ui
 // 브라우저는 설치된 Chrome을 쓴다(CHROME_PATH). 캡처를 남기려면 SHOTS=<폴더>.
-import { writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { chromium } from 'playwright-core'
 
 const OUT = process.env.SHOTS
@@ -367,6 +368,69 @@ check(
 )
 await shot('10-bulk-delete')
 await page.getByLabel('대화 목록 닫기').click()
+
+// 정책 칸 옮기기(server/policy.ts). Agent 설정 파일이 있을 때만 칸 화면이 나온다. 백엔드는 AGENT_ENV_FILE 옆 <AGENT_NAME>.yaml을 본다.
+if (envFile) {
+  const yamlFile = join(dirname(envFile), `${process.env.AGENT_NAME ?? 'agent'}.yaml`)
+  const base = [
+    'agents:',
+    '  root:',
+    '    model: x',
+    'permissions:',
+    '  allow:',
+    '    - "docker_proxy:method=GET:path=/containers/json" # 컨테이너 목록',
+    '    - "EndpointList"',
+    '  deny:',
+    '    - "docker_proxy:method=POST:path=*/containers/create*"',
+    '    - "docker_proxy:method=DELETE:path=*/volumes/*"',
+    '',
+  ].join('\n')
+  writeFileSync(yamlFile, base)
+  try {
+    await page.getByLabel('설정', { exact: true }).click()
+    await page.getByRole('button', { name: '정책' }).click()
+    await page.getByText('작업별 허용·묻기·막기').waitFor()
+    const deny = page.getByRole('region', { name: '막기 칸' })
+    check(
+      '정책: 설정 파일이 있으면 세 칸 화면(잠긴 항목 포함), 예전 규칙 목록은 없다',
+      (await page.getByRole('region', { name: '허용 칸' }).getByRole('button', { name: '컨테이너 목록' }).isVisible()) &&
+        (await deny.getByRole('button', { name: '볼륨 삭제' }).getAttribute('aria-disabled')) === 'true' &&
+        !(await page.getByText('자동 허용 (승인 없이 실행)').isVisible()),
+    )
+    // 눌러서 옮기기(폰·키보드)
+    await page.getByRole('button', { name: '컨테이너 시작', exact: true }).click()
+    await page.getByRole('group', { name: '컨테이너 시작 옮기기' }).getByRole('button', { name: '허용(으)로' }).click()
+    // 끌어다 놓기
+    await page.getByRole('region', { name: '허용 칸' }).getByRole('button', { name: '컨테이너 목록' }).dragTo(deny, { targetPosition: { x: 40, y: 20 } })
+    await page.getByRole('button', { name: '2개 바꾼 것 저장하고 Agent 다시 시작' }).waitFor()
+    check(
+      '정책: 눌러서·끌어서 옮기면 그 칸으로 가고 저장 버튼에 바꾼 수',
+      (await page.getByRole('region', { name: '허용 칸' }).getByRole('button', { name: /^컨테이너 시작/ }).isVisible()) &&
+        (await deny.getByRole('button', { name: /^컨테이너 목록/ }).isVisible()),
+    )
+    await shot('14-policy-board')
+    await page.getByRole('button', { name: '2개 바꾼 것 저장하고 Agent 다시 시작' }).click()
+    await page.getByText('Agent를 직접 다시 시작해야 적용돼요', { exact: false }).waitFor()
+    const saved = readFileSync(yamlFile, 'utf8')
+    check(
+      '정책: 저장하면 설정 파일에 적고(WEB이 띄운 Agent가 아니면 직접 다시 시작 안내)',
+      saved.includes('- "docker_proxy:method=POST:path=/containers/*/start"') && /deny:[\s\S]*containers\/json/.test(saved),
+      saved,
+    )
+    await page.getByRole('button', { name: '기본값으로' }).click()
+    await page.getByRole('button', { name: '2개 바꾼 것 저장하고 Agent 다시 시작' }).click()
+    await page.getByText('Agent를 직접 다시 시작해야 적용돼요', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '기본값으로' }).waitFor({ state: 'detached' })
+    check('정책: 기본값으로 되돌리면 설정 파일이 처음 그대로', readFileSync(yamlFile, 'utf8') === base)
+    await page.setViewportSize({ width: 375, height: 760 })
+    await shot('15-policy-board-mobile')
+    check('정책: 좁은 화면에서도 가로 스크롤 없음', !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)))
+    await page.setViewportSize({ width: 1280, height: 860 })
+    await page.getByLabel('설정 닫기').click()
+  } finally {
+    rmSync(yamlFile, { force: true })
+  }
+}
 
 // 좁은 화면
 await page.setViewportSize({ width: 375, height: 760 })

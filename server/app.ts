@@ -26,6 +26,7 @@ import { config } from './config.ts'
 import { LOCAL_USER, localOnly } from './guard.ts'
 import { maskText } from './mask.ts'
 import { clearModelCatalog, modelCatalog } from './models.ts'
+import { choicesFrom, policyState, savePolicy } from './policy.ts'
 import {
   APPROVAL_MODES,
   currentModel,
@@ -449,6 +450,22 @@ app.get('/api/agent', async (c) => {
 app.post('/api/agent/restart', (c) => {
   const restart = restartAgent()
   return c.json({ restart, status: agentStatus() })
+})
+
+// 설정 > 정책의 허용·묻기·막기 칸(server/policy.ts). 저장하면 Agent 설정 파일에 적고 Agent를 다시 시작한다.
+app.get('/api/policy', (c) => c.json(policyState()))
+
+app.put('/api/policy', async (c) => {
+  const body = await jsonBody<{ buckets: unknown }>(c)
+  const choices = choicesFrom(body.buckets)
+  if (typeof choices === 'string') throw new HttpError(400, 'BAD_REQUEST', choices)
+  try {
+    const { changed } = savePolicy(choices)
+    console.info(`[policy] ${Object.keys(choices).length} item(s) moved; files written: ${changed.length}`)
+  } catch (err) {
+    throw new HttpError(500, 'POLICY_NOT_SAVED', `Agent 설정 파일에 적지 못했어요: ${(err as Error).message}`)
+  }
+  return c.json({ ...policyState(), restart: restartAgent() })
 })
 
 // 정보·정책 화면. Docker Agent 상태와 agent.yaml 요약(server/system.ts).

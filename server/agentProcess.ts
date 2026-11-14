@@ -15,6 +15,7 @@ import type { AgentProcessStatus } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
+import { applyPolicy } from './policy.ts'
 
 export interface AgentCommand {
   bin: string
@@ -198,6 +199,13 @@ async function spawnAgent(): Promise<void> {
     lastError = cmd
     console.error(`[agent] ${cmd}`)
     return
+  }
+  // 설정 > 정책에서 옮긴 항목을 Agent 설정 파일에 다시 적는다(server/policy.ts). 실패하면 파일은 그대로 두고 띄운다.
+  try {
+    const { changed } = applyPolicy()
+    if (changed.length) console.info(`[agent] policy applied to ${changed.join(', ')}`)
+  } catch (err) {
+    console.error(`[agent] policy not applied: ${(err as Error).message}`)
   }
   console.info(`[agent] ${cmd.describe}`)
   readBinVersion(cmd)

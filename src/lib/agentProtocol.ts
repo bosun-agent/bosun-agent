@@ -141,6 +141,32 @@ export type ReadChoice = (typeof READ_CHOICES)[number]
 // manual: WEB이 띄운 Agent가 아니라서 사람이 다시 띄워야 함.
 export type AgentRestart = 'started' | 'waiting' | 'manual'
 
+// 설정 > 정책의 허용·묻기·막기 칸(GET /api/policy, server/policy.ts).
+export type PolicyBucket = 'allow' | 'ask' | 'deny'
+
+export interface PolicyItem {
+  id: string
+  label: string
+  group: string
+  bucket: PolicyBucket
+  // Agent 기준 설정 파일에 적힌 칸
+  defaultBucket: PolicyBucket
+  // hook: 정책 훅이 막아서 옮겨도 실행되지 않으므로 잠근다
+  lock?: 'hook'
+  // 설명 없는 규칙(원문 그대로 보여 준다)
+  raw?: boolean
+}
+
+export interface PolicyState {
+  // false면 설정 파일을 찾거나 읽지 못했다(reason)
+  editable: boolean
+  reason?: string
+  files: string[]
+  items: PolicyItem[]
+  // 기본값과 다른 칸에 있는 항목 수
+  changed: number
+}
+
 // WEB 백엔드가 띄운 Docker Agent 상태(GET /api/agent).
 export interface AgentProcessStatus {
   // false면 WEB이 Agent를 띄우지 않는다(AGENT_BIN 없음). AGENT_URL에 붙기만 한다.
@@ -262,4 +288,7 @@ export interface AgentClient {
   getBackups?(): Promise<{ available: boolean; records: BackupRecord[] }>
   getAgentStatus?(): Promise<AgentProcessStatus>
   restartAgent?(): Promise<{ restart: AgentRestart; status: AgentProcessStatus }>
+  getPolicy?(): Promise<PolicyState>
+  // 항목 id → 칸. 저장하면 Agent 설정 파일에 적고 Agent를 다시 시작한다.
+  savePolicy?(buckets: Record<string, PolicyBucket>): Promise<PolicyState & { restart: AgentRestart }>
 }
