@@ -105,7 +105,7 @@ function UserBubble({ message, onEdit }: Pick<ChatMessageBubbleProps, 'message' 
   const shown = long && !unfolded ? `${message.content.slice(0, FOLD_CHARS)}…` : message.content
   return (
     <div className="group flex flex-col items-end">
-      <div className="max-w-[75%] rounded-2xl bg-navy-50 px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap text-navy-900">
+      <div className="max-w-[75%] rounded-2xl bg-sky-100 px-4 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap text-navy-900">
         {shown}
         {long && (
           <button type="button" onClick={() => setUnfolded((v) => !v)} className="mt-1 block text-xs text-neutral-500 underline">
@@ -144,7 +144,7 @@ function PortainerLinks({ base, links }: { base: string; links: NonNullable<Chat
           href={`${root}/${l.path}`}
           target="_blank"
           rel="noreferrer"
-          className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-neutral-700 transition-colors hover:border-navy-300 hover:text-navy-800"
+          className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 font-medium text-navy-800 transition-colors hover:border-sky-300 hover:bg-sky-100"
         >
           {l.label} ↗
         </a>

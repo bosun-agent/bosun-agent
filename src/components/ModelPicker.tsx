@@ -166,7 +166,7 @@ function ModelRow({
       disabled={disabled}
       aria-pressed={selected}
       title={id}
-      className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm ${selected ? 'bg-navy-50 text-navy-900' : 'text-neutral-800 hover:bg-neutral-100'}`}
+      className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm ${selected ? 'bg-sky-100 text-navy-900' : 'text-neutral-800 hover:bg-neutral-100'}`}
     >
       <span className="w-3 shrink-0 text-xs text-navy-700">{selected ? '✓' : ''}</span>
       <span className="min-w-0 flex-1">

@@ -19,22 +19,23 @@ const DANGER_CODES = new Set(['HOST_TAKEOVER', 'PRIVILEGED', 'HOST_NAMESPACE', '
 const WARN_CODES = new Set(['CONCURRENT', 'ORPHANS'])
 
 // 카드 맨 위 위험도 표시. 문장을 읽기 전에 재시작(곧 돌아옴)과 삭제(되돌릴 수 없음)를 구분하게 한다.
+// 카드 머리 띠(연한 색) 위에 놓이므로 흰 바탕에 테두리로 띄운다.
 const RISK_STYLE: Record<RiskLevel['level'], string> = {
-  high: 'bg-red-50 text-red-700',
-  medium: 'bg-amber-50 text-amber-800',
-  low: 'bg-navy-50 text-navy-700',
-  unknown: 'border border-red-300 bg-white text-red-700',
+  high: 'bg-white text-red-700 ring-1 ring-red-200',
+  medium: 'bg-white text-amber-800 ring-1 ring-amber-200',
+  low: 'bg-white text-navy-700 ring-1 ring-sky-200',
+  unknown: 'bg-white text-red-700 ring-1 ring-red-300',
 }
 
 function RiskBadge({ risk }: { risk: RiskLevel }) {
   return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${RISK_STYLE[risk.level]}`}>{risk.label}</span>
 }
 
-// 카드 한 장에는 위험도에 맞는 색 하나만 쓴다.
+// 카드 한 장에는 위험도에 맞는 색 하나만 쓴다. 머리 띠(band)는 작업 지시서처럼 상태·위험도·남은 시간을 한 줄에 모은다.
 const TONE = {
-  danger: { border: 'border-red-200', head: 'text-red-700', dot: 'bg-red-500', approve: 'bg-red-600 hover:bg-red-700' },
-  warn: { border: 'border-amber-300', head: 'text-amber-800', dot: 'bg-amber-500', approve: 'bg-navy-800 hover:bg-navy-700' },
-  calm: { border: 'border-navy-100', head: 'text-navy-700', dot: 'bg-navy-600', approve: 'bg-navy-800 hover:bg-navy-700' },
+  danger: { border: 'border-red-200', band: 'border-red-100 bg-red-50/80', head: 'text-red-700', dot: 'bg-red-500', approve: 'bg-red-600 hover:bg-red-700' },
+  warn: { border: 'border-amber-300', band: 'border-amber-200 bg-amber-50/80', head: 'text-amber-800', dot: 'bg-amber-500', approve: 'bg-navy-800 hover:bg-navy-700' },
+  calm: { border: 'border-sky-200', band: 'border-sky-100 bg-sky-50', head: 'text-navy-700', dot: 'bg-navy-600', approve: 'bg-navy-800 hover:bg-navy-700' },
 }
 function toneOf(risk?: RiskLevel) {
   if (risk?.level === 'high' || risk?.level === 'unknown') return TONE.danger
@@ -84,8 +85,8 @@ export function ApprovalCard({
   const shownParams = { 도구: `${action.tool}${action.target ? ` → ${action.target}` : ''}`, ...action.params }
 
   return (
-    <div className={`w-full max-w-[560px] rounded-2xl border bg-white px-4 py-3.5 text-[15px] shadow-[0_1px_3px_rgb(28_27_24/0.06)] ${tone.border}`}>
-      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs font-medium">
+    <div className={`w-full max-w-[560px] overflow-hidden rounded-2xl border bg-white text-[15px] shadow-[0_1px_3px_rgb(28_27_24/0.06)] ${tone.border}`}>
+      <div className={`flex items-center justify-between gap-3 border-b px-4 py-2 text-xs font-medium ${tone.band}`}>
         <span className={`flex items-center gap-1.5 ${tone.head}`}>
           <span className={`inline-block h-1.5 w-1.5 rounded-full ${tone.dot}`} />
           승인이 필요해요
@@ -101,44 +102,46 @@ export function ApprovalCard({
           {formatRemaining(remainingMs)} 남음
         </span>
       </div>
-      <p className="text-[17px] font-semibold tracking-[-0.012em] text-neutral-900">{summary}</p>
-      {reasons.length > 0 && (
-        <ul className="mt-2 space-y-1 text-sm leading-relaxed">
-          {reasons.map((reason) => (
-            <li
-              key={reason.code}
-              className={
-                DANGER_CODES.has(reason.code)
-                  ? 'font-medium text-red-700'
-                  : WARN_CODES.has(reason.code)
-                    ? 'font-medium text-amber-800'
-                    : reason.code === EFFECT_CODE
-                      ? 'text-neutral-800'
-                      : 'text-neutral-600'
-              }
-            >
-              {reason.code === EFFECT_CODE ? '' : WARN_CODES.has(reason.code) ? '⚠ ' : '· '}
-              {reason.message}
-            </li>
-          ))}
-        </ul>
-      )}
-      <ParamList params={shownParams} />
-      <div className="mt-3.5 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onDeny}
-          className="rounded-lg border border-neutral-300 px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
-        >
-          거부
-        </button>
-        <button
-          type="button"
-          onClick={onApprove}
-          className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-white transition-colors ${tone.approve}`}
-        >
-          승인
-        </button>
+      <div className="px-4 pt-3 pb-3.5">
+        <p className="text-[17px] font-semibold tracking-[-0.012em] text-neutral-900">{summary}</p>
+        {reasons.length > 0 && (
+          <ul className="mt-2 space-y-1 text-sm leading-relaxed">
+            {reasons.map((reason) => (
+              <li
+                key={reason.code}
+                className={
+                  DANGER_CODES.has(reason.code)
+                    ? 'font-medium text-red-700'
+                    : WARN_CODES.has(reason.code)
+                      ? 'font-medium text-amber-800'
+                      : reason.code === EFFECT_CODE
+                        ? 'text-neutral-800'
+                        : 'text-neutral-600'
+                }
+              >
+                {reason.code === EFFECT_CODE ? '' : WARN_CODES.has(reason.code) ? '⚠ ' : '· '}
+                {reason.message}
+              </li>
+            ))}
+          </ul>
+        )}
+        <ParamList params={shownParams} />
+        <div className="mt-3.5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onDeny}
+            className="rounded-lg border border-neutral-300 px-4 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
+          >
+            거부
+          </button>
+          <button
+            type="button"
+            onClick={onApprove}
+            className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-white transition-colors ${tone.approve}`}
+          >
+            승인
+          </button>
+        </div>
       </div>
     </div>
   )

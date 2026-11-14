@@ -91,9 +91,11 @@ export function SessionSidebar({
             type="button"
             onClick={onHome}
             title="새 대화"
-            className="rounded-lg px-2 py-1 font-semibold text-navy-900 transition-colors hover:bg-neutral-200"
+            className="flex items-center gap-2 rounded-lg py-1 pr-2 pl-1 text-navy-900 transition-colors hover:bg-neutral-200"
           >
-            BOSUN
+            {/* 팀 로고의 얼굴 부분(파비콘과 같은 그림). 작은 자리에서는 로고 전체가 읽히지 않는다. */}
+            <img src="/favicon.png" alt="" width={24} height={24} className="h-6 w-6 rounded-full bg-white ring-1 ring-neutral-300" draggable={false} />
+            <span className="font-display text-[19px] leading-none tracking-[0.04em]">BOSUN</span>
           </button>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
@@ -235,7 +237,7 @@ function SessionRow({
   return (
     <div
       className={`group relative flex w-full items-center rounded-lg text-sm transition-colors ${
-        session.id === activeId ? 'bg-neutral-200 font-semibold text-navy-900' : 'text-neutral-700 hover:bg-neutral-200'
+        session.id === activeId ? 'bg-sky-100 font-semibold text-navy-900' : 'text-neutral-700 hover:bg-neutral-200'
       }`}
     >
       <button

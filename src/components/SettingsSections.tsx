@@ -215,7 +215,7 @@ function ApprovalModeBox({
             return (
               <label
                 key={mode}
-                className={`flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 ${checked ? 'bg-navy-50' : 'hover:bg-neutral-50'}`}
+                className={`flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 ${checked ? 'bg-sky-50' : 'hover:bg-neutral-50'}`}
               >
                 <input type="radio" name="approval-mode" className="mt-1" checked={checked} disabled={saving} onChange={() => void choose(mode)} />
                 <span>
@@ -266,7 +266,7 @@ function AgentModeBox() {
         {(Object.keys(AGENT_MODE_TEXT) as AgentMode[]).map((mode) => {
           const checked = settings.agentMode === mode
           return (
-            <label key={mode} className={`flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 ${checked ? 'bg-navy-50' : 'hover:bg-neutral-50'}`}>
+            <label key={mode} className={`flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 ${checked ? 'bg-sky-50' : 'hover:bg-neutral-50'}`}>
               <input type="radio" name="agent-mode" className="mt-1" checked={checked} onChange={() => void choose(mode)} />
               <span>
                 <span className="block text-sm text-neutral-900">{AGENT_MODE_TEXT[mode].label}</span>

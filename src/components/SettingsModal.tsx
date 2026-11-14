@@ -55,7 +55,7 @@ export function SettingsModal({
               type="button"
               onClick={() => setSectionId(s.id)}
               className={`shrink-0 rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
-                s.id === sectionId ? 'bg-neutral-200 font-semibold text-navy-900' : 'text-neutral-600 hover:bg-neutral-200'
+                s.id === sectionId ? 'bg-sky-100 font-semibold text-navy-900' : 'text-neutral-600 hover:bg-neutral-200'
               }`}
             >
               {s.label}

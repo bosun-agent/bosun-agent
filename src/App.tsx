@@ -689,7 +689,13 @@ function App() {
 
         {isEmpty ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto py-12">
-            <img src={logoUrl} alt="BOSUN" width={216} height={300} className="h-36 w-auto select-none" draggable={false} />
+            <div className="flex flex-col items-center gap-3">
+              <img src={logoUrl} alt="BOSUN" width={216} height={300} className="h-36 w-auto select-none" draggable={false} />
+              {/* 처음 온 사람에게 무엇을 하는 곳인지 한 줄로 알린다. 자세한 것은 사이드바 아래 도움말. */}
+              <p className="px-4 text-center text-[15px] break-keep text-neutral-600">
+                말로 컨테이너를 관리해요. <span className="block text-navy-800 sm:inline">바꾸는 작업은 승인을 받고 실행해요.</span>
+              </p>
+            </div>
             {composer}
             {portainerUrl || BUILD_PORTAINER_URL ? (
               <a

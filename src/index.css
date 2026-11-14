@@ -8,8 +8,35 @@
   src: url("./assets/fonts/PretendardVariable.woff2") format("woff2-variations");
 }
 
+/* 워드마크(BOSUN)용 굵은 글꼴. 라틴 글자만 넣었다(9KB). OFL-BlackHanSans.txt */
+@font-face {
+  font-family: "Black Han Sans";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("./assets/fonts/BlackHanSans-latin.woff2") format("woff2");
+}
+
+/* 도구 인자·요청·모델 이름 같은 고정폭 글자. 라틴만 넣었고 한글은 Pretendard로 이어진다. OFL-JetBrainsMono.txt */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("./assets/fonts/JetBrainsMono-latin.woff2") format("woff2");
+}
+
 @theme {
   --font-sans: "Pretendard Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Pretendard Variable", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-display: "Black Han Sans", "Pretendard Variable", sans-serif;
+
+  /* 하늘색은 밝은 면(선택된 줄, 사용자 말풍선, 링크 칩)에만 쓴다. 흰 글씨 버튼은 대비가 모자라서 남색을 쓴다. */
+  --color-sky-50: #f0f7fd;
+  --color-sky-100: #e0eefa;
+  --color-sky-200: #c5e0f5;
+  --color-sky-300: #9cc9ec;
+  --color-sky-500: #3d8fd1;
 
   --color-neutral-50: #faf9f7;
   --color-neutral-100: #f3f1ed;
@@ -37,6 +64,10 @@
 
 html, body, #root {
   height: 100%;
+}
+
+::selection {
+  background: var(--color-sky-200);
 }
 
 body {
