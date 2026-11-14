@@ -106,8 +106,8 @@ docker compose exec bosun sh -lc 'docker-agent version; python3 -c "import yaml;
 # 3) agent.yaml 치환 결과(자리표시자 0개)
 docker compose exec bosun sh -lc 'grep -c "/절대경로/\|/실행폴더/\|uvx" /opt/bosun/agent.yaml || echo "0 (정상)"'
 
-# 4) 에이전트 API(루프백, 토큰 필요)
-docker compose exec bosun sh -lc 'curl -sS http://127.0.0.1:8080/health; echo; curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:8080/api/agents'
+# 4) 에이전트 API(루프백). {"status":"ok"}면 정상. (토큰은 진입점 안에서만 있어 exec 셸에는 없다)
+docker compose exec bosun sh -lc 'curl -sS http://127.0.0.1:8080/health; echo'
 
 # 5) 화면 응답 + 설정 상태(값이 다 들어갔는지)
 curl -s -o /dev/null -w 'web HTTP=%{http_code}\n' http://127.0.0.1:3001

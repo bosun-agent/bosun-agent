@@ -60,7 +60,9 @@ COPY container/entrypoint.sh /usr/local/bin/bosun-entrypoint
 COPY --from=build /app/dist ./dist
 
 # 개발용 값(가짜 Agent)은 이미지에 넣지 않는다.
+# Windows에서 받은 저장소는 줄 끝이 CRLF일 수 있다 → 진입점의 \r을 지운다(안 지우면 'bash\r'을 찾다 죽는다).
 RUN rm -rf server/dev \
+ && sed -i 's/\r$//' /usr/local/bin/bosun-entrypoint \
  && chmod +x /usr/local/bin/bosun-entrypoint \
  && mkdir -p /data "$BOSUN_HOME" \
  && chown -R node:node /data "$BOSUN_HOME" /app

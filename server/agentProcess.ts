@@ -16,6 +16,7 @@ import * as agent from './agentClient.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
 import { applyPolicy } from './policy.ts'
+import { agentEnvValue } from './settings.ts'
 
 export interface AgentCommand {
   bin: string
@@ -183,12 +184,19 @@ function pipe(stream: NodeJS.ReadableStream | null, write: (line: string) => voi
 
 // 컨테이너 환경변수에 빈 값이 들어 있으면(예: container/.env의 `PORTAINER_API_KEY=`) docker-agent의
 // 공급자 체인이 그 빈 값을 "찾은 값"으로 보고 그대로 쓴다(pkg/environment/multi.go — 첫 found 채택).
-// env-file에 값이 있으면 그쪽이 1순위라 무관하지만, 값이 없을 때는 빈 값이 조용히 통과해
+// env-file에 값이 없을 때 빈 값이 조용히 통과해
 // "A valid authorization token is missing"으로만 보인다. 그래서 Agent를 띄울 때 빈 값을 없애
 // "없음"으로 만든다(그러면 ${env.X}가 치환되지 않아 "값 없음"이 드러난다).
-export function cleanAgentEnv(names: readonly string[], source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+// 11-15 실측(컨테이너, docker-agent v1.148.0): env-file에 값이 있어도 프로세스 환경변수가 이겼다 —
+// container/.env의 브라우저용 PORTAINER_URL(https://localhost:9443)이 mcp-portainer까지 가서 연결 실패.
+// 그래서 env-file(설정 화면이 쓰는 곳)에 값이 있는 이름은 프로세스 환경에서 빼서 env-file 값만 남긴다.
+export function cleanAgentEnv(
+  names: readonly string[],
+  source: NodeJS.ProcessEnv = process.env,
+  inEnvFile: (name: string) => boolean = (name) => agentEnvValue(name) !== null,
+): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = { ...source }
-  for (const name of names) if (out[name] === '') delete out[name]
+  for (const name of names) if (out[name] === '' || inEnvFile(name)) delete out[name]
   return out
 }
 
