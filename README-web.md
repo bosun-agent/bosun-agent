@@ -54,7 +54,7 @@ cp server/real.env.example server/real.env
 | `AGENT_CONFIG` | `agents` 폴더 절대경로. 두 Agent가 함께 뜬다 |
 | `AGENT_NAME` | 처음에 쓸 Agent. `beginner`나 `expert`면 설정 > 정책에서 고를 수 있다 |
 | `AGENT_TOKEN` | 아무 긴 값. `node -e "console.log(crypto.randomUUID())"`로 만들면 된다 |
-| `AGENT_MODELS` | 설정 화면에서 고를 모델. 쉼표로 여러 개. 설정에 정의된 이름(`flash`)을 쓴다 |
+| `AGENT_MODELS` | 입력창 모델 선택의 "권장" 모델. 쉼표로 여러 개, 첫 번째가 기본값. 설정에 정의된 이름(`flash`)을 쓴다. 그 아래 "전체"는 저장한 키로 쓸 수 있는 모델을 `docker-agent models`로 받은 목록이고, 거기서 고른 모델은 agent.yaml의 `max_tokens` 같은 설정 없이 돈다 |
 | `TELEMETRY_ENABLED` | `false`로 둔다. docker-agent 사용 통계를 끈다 |
 | `PORTAINER_URL` | (선택) 정책에 막혔을 때 보여줄 "Portainer 열기" 링크. 브라우저에서 여는 주소 |
 
@@ -162,7 +162,8 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 | `mask.ts` | 알려진 비밀값 형식 가리기 |
 | `store.ts` | 승인·차단 카드, 승인 감사 기록, 고정한 대화, 설정 값, 턴별 사용량(SQLite, `server/data/web.db`. 커밋하지 않는다) |
 | `guard.ts` | 이 PC의 화면만 `/api`를 부르게 막기: Host·Origin 루프백 검사, `X-Bosun` 헤더 검사 |
-| `settings.ts` | 설정 화면 값: 모델 목록(`AGENT_MODELS` + 화면에서 더한 것), API 키를 Agent env 파일에 쓰기 |
+| `settings.ts` | 설정 값: 고른 모델, 승인 방식, 바로 볼 조회, API 키를 Agent env 파일에 쓰기 |
+| `models.ts` | 입력창 모델 선택의 전체 목록(`docker-agent models --format json`, 10분 기억, API 키를 바꾸면 다시 받음) |
 | `config.ts` | 환경변수 읽기 |
 | `agentProcess.ts` | Docker Agent를 자식 프로세스로 띄우고 관리: 죽으면 다시 띄우기, API 키를 바꾸면 다시 시작, 남은 Agent 정리(PID 파일) |
 | `runAgent.ts` | `npm run agent`: Agent만 따로 띄운다(로그를 따로 볼 때) |
