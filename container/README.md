@@ -1,6 +1,6 @@
 # BOSUN 컨테이너 설치 (웹 + Agent. Portainer는 기존 것 사용)
 
-`docker compose up -d` 한 번으로 화면(웹)·Agent를 띄운다. Portainer는 **따로 있는 것을 그대로 쓴다** — 주소와 API 키는 첫 접속 설정 페이지에서 넣는다. 설계 근거는 `docs/컨테이너_설치_설계_11-12.md`, 설정 페이지는 `docs/첫실행_설정페이지_11-12.md`.
+`docker compose up -d` 한 번으로 화면(웹)·Agent를 띄운다. Portainer는 **따로 있는 것을 그대로 쓴다** — API 키는 첫 접속 설정 페이지에서 넣는다.
 
 ```
 호스트(또는 LAN)                        bosun 스택
@@ -74,8 +74,9 @@ cd portainer && docker compose -f portainer-compose.yaml up -d
 | 칸 | 어디서 받나 |
 |---|---|
 | OpenRouter API 키 | openrouter.ai → Keys (`sk-or-…`) |
-| Portainer 주소 | **Agent가 붙는 주소**(예: `https://10.0.11.177:9443`). 컨테이너에서도 닿는 주소여야 한다 |
-| Portainer API 키 | Portainer 화면 → My account → Access tokens (`ptr-…`) |
+| Portainer API 키 | Portainer 화면 → My account → Access tokens (`ptr_…`) |
+
+- Portainer 주소 칸은 평소엔 숨어 있다. `container/.env`의 `PORTAINER_URL_INTERNAL`(예시값 `https://host.docker.internal:9443` = 이 PC의 Portainer)로 연결해 보고, 안 될 때만 주소 칸이 나온다. 컨테이너에서도 닿는 주소여야 한다.
 
 - 넣은 값은 저장 전에 실제로 확인한다: OpenRouter는 `GET /api/v1/key`(401이면 거부), Portainer는 `GET /api/endpoints`(`X-API-Key`; 키 오류·주소 오류·Docker 환경 0개를 구분해 알려준다. 자체 서명 인증서는 검증을 끄고 다시 본다).
 - 하나라도 실패하면 **저장하지 않고** 그 칸 아래에 이유가 뜬다. 저장되면 `agent.env`에 기록되고(권한 600) Agent가 다시 시작된다.
@@ -86,7 +87,7 @@ cd portainer && docker compose -f portainer-compose.yaml up -d
 ## 4. 접속
 
 - 화면: <http://127.0.0.1:3001> (다른 PC에서는 `ssh -L 3001:127.0.0.1:3001 <user>@<host>` 터널을 열고 <http://localhost:3001>)
-- Portainer: 그 Portainer 주소(예: <https://10.0.11.177:9443>)
+- Portainer: 그 Portainer 주소(이 PC에 띄웠다면 <https://localhost:9443>)
 
 ---
 
