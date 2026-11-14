@@ -161,9 +161,10 @@ docker build -t bosun-web .              # 같은 구성의 이미지. SQLite는
 화면·WEB 백엔드·Docker Agent·정책 훅을 **한 이미지**로 묶어 compose 스택으로 띄운다. **Portainer는 따로 있는 것을 그대로 쓴다**(주소·API 키는 첫 접속 설정 페이지에서 넣는다). 절차·확인 체크리스트·진단표는 `container/README.md`에 있다.
 
 ```bash
-cp container/.env.example container/.env     # 값 채우기(모델 키·Portainer 주소)
 docker compose up -d --build                 # 화면 http://127.0.0.1:3001
 ```
+
+- 이 PC에 띄운 Portainer를 쓰면 준비할 파일이 없다. Portainer가 다른 PC에 있을 때만 `cp container/.env.example container/.env` 후 주소를 고친다.
 
 - 첫 접속 화면이 **설정 페이지**다. BOSUN은 열쇠를 만들어 주지 않으므로, 사용자가 직접 발급받아 넣는다(OpenRouter 키 · Portainer API 키. Portainer 주소 칸은 기본 주소로 연결이 안 될 때만 나온다). 넣은 값은 저장 전에 실제로 확인한다(OpenRouter 401 / Portainer `/api/endpoints`).
 - 컨테이너가 첫 기동 때 `agent.env`와 `agent.yaml`을 만든다(기준 설정의 `/절대경로/`·`/실행폴더/` 자리표시자를 컨테이너 경로로 치환). 사용자가 손댄 파일은 덮어쓰지 않는다.

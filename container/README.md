@@ -26,10 +26,14 @@
 | Portainer(따로 설치, LAN에서 접속 가능) | 도커 조작은 전부 여기를 거친다. Agent가 붙을 수 있어야 한다. 팀 기본 compose: `portainer/portainer-compose.yaml` |
 | Portainer API 키 | 그 Portainer 화면 → My account → Access tokens. 설정 페이지에서 넣는다 |
 
+이 PC에 Portainer를 띄웠다면 **따로 준비할 파일은 없다.** 키 두 개는 첫 접속 설정 페이지에서 넣고, Portainer 주소는 기본값(`https://host.docker.internal:9443`, Docker Desktop 기준)으로 붙는다.
+
+Portainer가 다른 PC에 있거나(리눅스 서버 포함) 키를 미리 넣어 두고 싶을 때만 양식을 복사해 고친다.
+
 ```bash
 cp container/.env.example container/.env
-#   OPENROUTER_API_KEY=sk-or-...        (설정 페이지에서 넣어도 된다)
-#   PORTAINER_URL / PORTAINER_URL_INTERNAL  ← 기존 Portainer 주소로 바꾼다(예시 값이 들어 있다)
+#   PORTAINER_URL / PORTAINER_URL_INTERNAL  ← 그 Portainer 주소로 바꾼다
+#   OPENROUTER_API_KEY, PORTAINER_API_KEY   (설정 페이지에서 넣어도 된다)
 ```
 
 > **`.env`를 고친 뒤에는 컨테이너를 재생성해야 반영됩니다**: `docker compose up -d` (`restart`는 env를 다시 읽지 않는다).

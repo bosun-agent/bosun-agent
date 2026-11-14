@@ -49,6 +49,11 @@ ENV NODE_ENV=production \
     WEB_DB_PATH=/data/web.db \
     BOSUN_HOME=/opt/bosun
 
+# container/.env 없이도 뜨게 하는 기본값(이 PC에 띄운 Portainer, Docker Desktop 기준). container/.env에 적으면 그 값이 이긴다.
+ENV PORTAINER_URL=https://localhost:9443 \
+    PORTAINER_URL_INTERNAL=https://host.docker.internal:9443 \
+    AGENT_MODELS=openrouter/deepseek/deepseek-v4.1-flash
+
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
