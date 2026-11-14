@@ -1,13 +1,11 @@
 // WEB 백엔드가 Docker Agent를 자식 프로세스로 띄우고 관리한다.
 // - AGENT_BIN이 있을 때만 관리한다. 없으면(개발용 가짜 Agent, 다른 PC의 Agent) AGENT_URL에 붙기만 한다.
-// - 이미 AGENT_URL에서 Agent가 응답하면 새로 띄우지 않고 그 Agent를 쓴다(`npm run agent`로 따로 띄운 경우 등).
+// - 이미 AGENT_URL에서 Agent가 응답하면 새로 띄우지 않고 그 Agent를 쓴다(따로 띄운 경우 등).
 //   그 Agent는 WEB이 다시 시작할 수 없다(external). 다만 지난번에 WEB이 띄운 Agent가 남아 있던 것이면
 //   (백엔드가 강제로 꺼지면 Windows에서는 자식이 남는다) PID 파일로 알아보고 끝낸 뒤 새로 띄운다.
 // - 죽으면 잠시 뒤 다시 띄운다. 짧은 시간에 여러 번 죽으면 멈추고 화면에 알린다(crashed).
 // - API 키를 바꾸면 다시 시작한다. Agent는 키를 시작할 때 한 번 읽기 때문이다.
 //   처리 중인 대화가 있으면 끝난 뒤에 한다. 다시 시작하면 Docker Agent가 기다리던 승인과 실행을 취소한다.
-// - 띄우는 명령은 `npm run agent`(server/runAgent.ts)와 같다.
-
 import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -16,6 +14,7 @@ import * as agent from './agentClient.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
 import { applyPolicy } from './policy.ts'
+import { agentEnvValue } from './settings.ts'
 
 export interface AgentCommand {
   bin: string
@@ -183,12 +182,19 @@ function pipe(stream: NodeJS.ReadableStream | null, write: (line: string) => voi
 
 // 컨테이너 환경변수에 빈 값이 들어 있으면(예: container/.env의 `PORTAINER_API_KEY=`) docker-agent의
 // 공급자 체인이 그 빈 값을 "찾은 값"으로 보고 그대로 쓴다(pkg/environment/multi.go — 첫 found 채택).
-// env-file에 값이 있으면 그쪽이 1순위라 무관하지만, 값이 없을 때는 빈 값이 조용히 통과해
+// env-file에 값이 없을 때 빈 값이 조용히 통과해
 // "A valid authorization token is missing"으로만 보인다. 그래서 Agent를 띄울 때 빈 값을 없애
 // "없음"으로 만든다(그러면 ${env.X}가 치환되지 않아 "값 없음"이 드러난다).
-export function cleanAgentEnv(names: readonly string[], source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+// 11-15 실측(컨테이너, docker-agent v1.148.0): env-file에 값이 있어도 프로세스 환경변수가 이겼다 —
+// container/.env의 브라우저용 PORTAINER_URL(https://localhost:9443)이 mcp-portainer까지 가서 연결 실패.
+// 그래서 env-file(설정 화면이 쓰는 곳)에 값이 있는 이름은 프로세스 환경에서 빼서 env-file 값만 남긴다.
+export function cleanAgentEnv(
+  names: readonly string[],
+  source: NodeJS.ProcessEnv = process.env,
+  inEnvFile: (name: string) => boolean = (name) => agentEnvValue(name) !== null,
+): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = { ...source }
-  for (const name of names) if (out[name] === '') delete out[name]
+  for (const name of names) if (out[name] === '' || inEnvFile(name)) delete out[name]
   return out
 }
 

@@ -49,6 +49,11 @@ ENV NODE_ENV=production \
     WEB_DB_PATH=/data/web.db \
     BOSUN_HOME=/opt/bosun
 
+# container/.env 없이도 뜨게 하는 기본값(이 PC에 띄운 Portainer, Docker Desktop 기준). container/.env에 적으면 그 값이 이긴다.
+ENV PORTAINER_URL=https://localhost:9443 \
+    PORTAINER_URL_INTERNAL=https://host.docker.internal:9443 \
+    AGENT_MODELS=openrouter/deepseek/deepseek-v4.1-flash
+
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
@@ -60,7 +65,9 @@ COPY container/entrypoint.sh /usr/local/bin/bosun-entrypoint
 COPY --from=build /app/dist ./dist
 
 # 개발용 값(가짜 Agent)은 이미지에 넣지 않는다.
+# Windows에서 받은 저장소는 줄 끝이 CRLF일 수 있다 → 진입점의 \r을 지운다(안 지우면 'bash\r'을 찾다 죽는다).
 RUN rm -rf server/dev \
+ && sed -i 's/\r$//' /usr/local/bin/bosun-entrypoint \
  && chmod +x /usr/local/bin/bosun-entrypoint \
  && mkdir -p /data "$BOSUN_HOME" \
  && chown -R node:node /data "$BOSUN_HOME" /app

@@ -13,7 +13,7 @@ function num(name: string, fallback: number): number {
 export const config = {
   // 브라우저(Vite 개발 서버 프록시)가 붙는 주소. 로그인이 없으므로 루프백에서만 연다(main.ts).
   host: process.env.HOST ?? '127.0.0.1',
-  // 컨테이너 안에서만 1로 둔다. 컨테이너 안은 0.0.0.0으로 열고, 밖에서는 `-p 127.0.0.1:...`로만 내보낸다(Dockerfile).
+  // 컨테이너 안에서만 1로 둔다. 컨테이너 안은 0.0.0.0으로 열고, 밖에서는 `127.0.0.1:...`로만 내보낸다(container/Dockerfile, docker-compose.yaml).
   inContainer: process.env.HOST_IN_CONTAINER === '1',
   port: num('PORT', 3001),
 
@@ -68,6 +68,6 @@ export const config = {
   // 비어 있거나 http(s)가 아니면 차단 안내에 링크 없이 문구만 보여준다.
   portainerUrl: /^https?:\/\/[^\s"'<>]+$/.test(process.env.PORTAINER_URL ?? '') ? process.env.PORTAINER_URL! : '',
 
-  // 빌드한 화면 폴더(npm run build → dist). 정하면 WEB 백엔드가 화면도 내보낸다. 개발 중에는 비워 두고 Vite를 쓴다.
+  // 빌드한 화면 폴더(npm run build:web → dist). 정하면 WEB 백엔드가 화면도 내보낸다. 개발 중에는 비워 두고 Vite를 쓴다.
   staticDir: process.env.STATIC_DIR ?? '',
 }

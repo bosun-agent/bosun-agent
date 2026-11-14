@@ -1,6 +1,6 @@
 # BOSUN 컨테이너 설치 (웹 + Agent. Portainer는 기존 것 사용)
 
-`docker compose up -d` 한 번으로 화면(웹)·Agent를 띄운다. Portainer는 **따로 있는 것을 그대로 쓴다** — 주소와 API 키는 첫 접속 설정 페이지에서 넣는다. 설계 근거는 `docs/컨테이너_설치_설계_11-12.md`, 설정 페이지는 `docs/첫실행_설정페이지_11-12.md`.
+`docker compose up -d` 한 번으로 화면(웹)·Agent를 띄운다. Portainer는 **따로 있는 것을 그대로 쓴다** — API 키는 첫 접속 설정 페이지에서 넣는다.
 
 ```
 호스트(또는 LAN)                        bosun 스택
@@ -26,10 +26,14 @@
 | Portainer(따로 설치, LAN에서 접속 가능) | 도커 조작은 전부 여기를 거친다. Agent가 붙을 수 있어야 한다. 팀 기본 compose: `portainer/portainer-compose.yaml` |
 | Portainer API 키 | 그 Portainer 화면 → My account → Access tokens. 설정 페이지에서 넣는다 |
 
+이 PC에 Portainer를 띄웠다면 **따로 준비할 파일은 없다.** 키 두 개는 첫 접속 설정 페이지에서 넣고, Portainer 주소는 기본값(`https://host.docker.internal:9443`, Docker Desktop 기준)으로 붙는다.
+
+Portainer가 다른 PC에 있거나(리눅스 서버 포함) 키를 미리 넣어 두고 싶을 때만 양식을 복사해 고친다.
+
 ```bash
 cp container/.env.example container/.env
-#   OPENROUTER_API_KEY=sk-or-...        (설정 페이지에서 넣어도 된다)
-#   PORTAINER_URL / PORTAINER_URL_INTERNAL  ← 기존 Portainer 주소로 바꾼다(예시 값이 들어 있다)
+#   PORTAINER_URL / PORTAINER_URL_INTERNAL  ← 그 Portainer 주소로 바꾼다
+#   OPENROUTER_API_KEY, PORTAINER_API_KEY   (설정 페이지에서 넣어도 된다)
 ```
 
 > **`.env`를 고친 뒤에는 컨테이너를 재생성해야 반영됩니다**: `docker compose up -d` (`restart`는 env를 다시 읽지 않는다).
@@ -74,8 +78,9 @@ cd portainer && docker compose -f portainer-compose.yaml up -d
 | 칸 | 어디서 받나 |
 |---|---|
 | OpenRouter API 키 | openrouter.ai → Keys (`sk-or-…`) |
-| Portainer 주소 | **Agent가 붙는 주소**(예: `https://10.0.11.177:9443`). 컨테이너에서도 닿는 주소여야 한다 |
-| Portainer API 키 | Portainer 화면 → My account → Access tokens (`ptr-…`) |
+| Portainer API 키 | Portainer 화면 → My account → Access tokens (`ptr_…`) |
+
+- Portainer 주소 칸은 평소엔 숨어 있다. `container/.env`의 `PORTAINER_URL_INTERNAL`(예시값 `https://host.docker.internal:9443` = 이 PC의 Portainer)로 연결해 보고, 안 될 때만 주소 칸이 나온다. 컨테이너에서도 닿는 주소여야 한다.
 
 - 넣은 값은 저장 전에 실제로 확인한다: OpenRouter는 `GET /api/v1/key`(401이면 거부), Portainer는 `GET /api/endpoints`(`X-API-Key`; 키 오류·주소 오류·Docker 환경 0개를 구분해 알려준다. 자체 서명 인증서는 검증을 끄고 다시 본다).
 - 하나라도 실패하면 **저장하지 않고** 그 칸 아래에 이유가 뜬다. 저장되면 `agent.env`에 기록되고(권한 600) Agent가 다시 시작된다.
@@ -86,7 +91,7 @@ cd portainer && docker compose -f portainer-compose.yaml up -d
 ## 4. 접속
 
 - 화면: <http://127.0.0.1:3001> (다른 PC에서는 `ssh -L 3001:127.0.0.1:3001 <user>@<host>` 터널을 열고 <http://localhost:3001>)
-- Portainer: 그 Portainer 주소(예: <https://10.0.11.177:9443>)
+- Portainer: 그 Portainer 주소(이 PC에 띄웠다면 <https://localhost:9443>)
 
 ---
 
@@ -105,8 +110,8 @@ docker compose exec bosun sh -lc 'docker-agent version; python3 -c "import yaml;
 # 3) agent.yaml 치환 결과(자리표시자 0개)
 docker compose exec bosun sh -lc 'grep -c "/절대경로/\|/실행폴더/\|uvx" /opt/bosun/agent.yaml || echo "0 (정상)"'
 
-# 4) 에이전트 API(루프백, 토큰 필요)
-docker compose exec bosun sh -lc 'curl -sS http://127.0.0.1:8080/health; echo; curl -sS -H "Authorization: Bearer $AGENT_TOKEN" http://127.0.0.1:8080/api/agents'
+# 4) 에이전트 API(루프백). {"status":"ok"}면 정상. (토큰은 진입점 안에서만 있어 exec 셸에는 없다)
+docker compose exec bosun sh -lc 'curl -sS http://127.0.0.1:8080/health; echo'
 
 # 5) 화면 응답 + 설정 상태(값이 다 들어갔는지)
 curl -s -o /dev/null -w 'web HTTP=%{http_code}\n' http://127.0.0.1:3001
