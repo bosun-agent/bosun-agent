@@ -31,7 +31,7 @@ npm install
 
 **2. Agent 준비.** `README-agent.md` 3절대로 실행 폴더(예: `C:/bosun/agent-run`)에 `agents/beginner.yaml`, `agents/expert.yaml`을 만든다. 설정 안의 자리표시자는 **내 PC의 절대경로로 바꾼다**. Windows에서 `python3`이 안 되면 `python.exe` 전체 경로로, `uvx`가 PATH에 없으면 `uvx.exe` 전체 경로로 적는다(`where python`, `where uvx`로 확인).
 
-**3. 같은 폴더에 빈 `agent.env` 만들기.** Agent에게 넘기는 비밀값(키)이 들어갈 파일이다. 커밋하지 않는다. **키는 비워 두고, 처음 화면에서 넣는다**(아래 "키 넣기"). 손으로 적어도 된다.
+**3. 같은 폴더에 `agent.env` 만들기.** Agent에게 넘기는 비밀값이다. 커밋하지 않는다.
 
 ```bash
 OPENROUTER_API_KEY=sk-or-...
@@ -71,21 +71,6 @@ npm start          # 화면 빌드 + WEB 백엔드(3001) + Docker Agent(17080)
 - 끌 때: 터미널에서 Ctrl+C. Agent도 같이 꺼진다.
 - 코드를 받아 왔으면(`git pull`): `npm install` 후 `npm start`를 다시 실행한다.
 - `bosun-portainer`는 끄지 않는다(Agent가 Portainer에 붙지 못한다).
-
-### 키 넣기 (처음 화면)
-
-`agent.env`에 키가 없으면 채팅 대신 **처음 설정** 화면이 뜬다. **OpenRouter 키, Portainer 키, 모델** 세 가지만 정하면 된다. Portainer 주소는 `https://localhost:9443`로 미리 채워져 있다. 칸 옆 **?** 를 누르면 화면에서도 같은 안내가 나온다.
-
-| 넣을 것 | 받는 법 | 어떻게 전달되나 |
-|---|---|---|
-| OpenRouter API 키 (`sk-or-v1-…`) | [openrouter.ai](https://openrouter.ai) 가입 → 오른쪽 위 메뉴 → **Keys** → **Create Key**. 키는 한 번만 보이니 바로 복사한다. 사용 한도(credit limit)를 정해 두면 안전하다. 유료 모델은 크레딧 충전이 필요하고, `:free` 모델은 충전 없이 된다 | 저장 전에 WEB이 OpenRouter에 키가 맞는지 묻는다(`/api/v1/key`). 맞으면 `agent.env`의 `OPENROUTER_API_KEY`로 저장하고 Agent를 다시 시작한다. Agent가 모델을 부를 때만 OpenRouter로 보낸다 |
-| Portainer 주소 | 브라우저에서 Portainer 화면이 열리는 주소. 이 PC면 `https://localhost:9443` 그대로. 컨테이너로 설치했다면 Portainer PC의 IP 주소 | 저장 전에 그 주소로 Portainer가 응답하는지 본다. `PORTAINER_URL`로 저장되고, Agent의 Portainer 도구와 정책 훅이 이 주소로 요청한다 |
-| Portainer API 키 (`ptr_…`) | Portainer 로그인 → 오른쪽 위 사용자 이름 → **My account** → **Access tokens** → **Add access token**(이름 예: `bosun`, 지금 비밀번호 확인). 키는 한 번만 보인다 | 저장 전에 이 키로 환경 목록(`/api/endpoints`)을 불러와 확인한다. `PORTAINER_API_KEY`로 저장되고, Agent가 Docker를 다룰 때마다 `X-API-Key`로 붙여 보낸다. 만든 계정의 권한을 그대로 가지므로 위험한 작업은 정책 훅과 승인 카드가 한 번 더 막는다 |
-| 모델 | 받을 것 없음. 맨 위(권장, `AGENT_MODELS` 첫 번째)를 그대로 두면 된다 | WEB 설정에 저장되고 메시지마다 Agent에 같이 넘어간다. 다시 시작은 필요 없다. 저장한 뒤에는 입력창 오른쪽에서 전체 목록을 검색해 바꿀 수 있다 |
-
-- 하나라도 틀리면 **아무것도 저장하지 않고** 그 칸 아래에 이유를 보여준다.
-- 키는 화면에 다시 보여주지 않고(있는지만 "이미 설정됨"으로 표시), 저장소에도 올라가지 않는다(`agent.env`는 `.gitignore`).
-- 나중에 바꿀 때: 설정(⚙) → **API 키** → **연결 설정 열기**, 또는 주소 끝에 `?setup=1`. 바꿀 칸만 채우면 나머지는 그대로 둔다.
 
 ### 잘 안 될 때
 

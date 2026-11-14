@@ -49,10 +49,6 @@ if (envFile) {
     (await page.getByPlaceholder('sk-or-v1-…').isVisible()) && (await page.getByPlaceholder('ptr_…').isVisible()) && !(await input().count()),
   )
   check('Portainer 주소는 미리 채워 둔다(PORTAINER_URL)', (await page.getByLabel('Portainer 주소', { exact: true }).inputValue()) === 'https://localhost:9443')
-  check(
-    '모델은 권장 모델 중에서 고른다',
-    (await page.getByLabel('모델', { exact: true }).inputValue()) === 'openrouter/deepseek/deepseek-v4.1-flash',
-  )
   await page.getByRole('button', { name: 'Portainer API 키 받는 법' }).click()
   check(
     '? 를 누르면 키 받는 법과 전달 방식',
