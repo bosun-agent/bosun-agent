@@ -153,7 +153,14 @@ export async function checkPortainerAccess(url: string, apiKey: string): Promise
   }
   if (res.status !== 200) {
     const why = res.status === 0 ? `연결하지 못했어요(${res.error ?? 'unknown'})` : `HTTP ${res.status}`
-    return { ok: false, endpoints: 0, tlsSkipped, field: 'portainerUrl', message: `Portainer에 ${why}. 주소(${url})를 확인해 주세요.` }
+    // Portainer가 꺼져 있어도 연결 실패라서, 주소가 틀린 줄 알지 않게 켜져 있는지부터 묻는다.
+    return {
+      ok: false,
+      endpoints: 0,
+      tlsSkipped,
+      field: 'portainerUrl',
+      message: `Portainer에 ${why}. Portainer가 켜져 있는지, 주소(${url})가 맞는지 확인해 주세요.`,
+    }
   }
   let list: unknown
   try {
