@@ -85,7 +85,7 @@ export function ApprovalCard({
   const shownParams = { 도구: `${action.tool}${action.target ? ` → ${action.target}` : ''}`, ...action.params }
 
   return (
-    <div className={`w-full max-w-[560px] overflow-hidden rounded-2xl border bg-white text-[15px] shadow-[0_1px_3px_rgb(28_27_24/0.06)] ${tone.border}`}>
+    <div className={`w-full max-w-[560px] overflow-hidden rounded-2xl border bg-white text-[15px] shadow-[0_1px_3px_rgb(16_33_60/0.07)] ${tone.border}`}>
       <div className={`flex items-center justify-between gap-3 border-b px-4 py-2 text-xs font-medium ${tone.band}`}>
         <span className={`flex items-center gap-1.5 ${tone.head}`}>
           <span className={`inline-block h-1.5 w-1.5 rounded-full ${tone.dot}`} />

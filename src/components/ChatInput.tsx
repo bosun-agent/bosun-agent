@@ -91,7 +91,7 @@ export function ChatInput({ disabled, initialText, onSend, onStop, extra }: Chat
           {fileError && <span className="text-xs text-red-600">{fileError}</span>}
         </div>
       )}
-      <div className="relative flex items-end gap-1 rounded-3xl border border-neutral-300 bg-white px-2 py-1.5 shadow-[0_1px_3px_rgb(28_27_24/0.06)] transition-colors focus-within:border-navy-600">
+      <div className="relative flex items-end gap-1 rounded-3xl border border-neutral-300 bg-white px-2 py-1.5 shadow-[0_1px_3px_rgb(16_33_60/0.07)] transition-colors focus-within:border-navy-600">
         {/* 도움말은 사이드바 아래로 옮겨서(2026-11-11 회의) + 는 바로 파일 고르기다. */}
         <button
           type="button"

@@ -38,16 +38,17 @@
   --color-sky-300: #9cc9ec;
   --color-sky-500: #3d8fd1;
 
-  --color-neutral-50: #faf9f7;
-  --color-neutral-100: #f3f1ed;
-  --color-neutral-200: #e8e5df;
-  --color-neutral-300: #d7d3cb;
-  --color-neutral-400: #a9a49b;
-  --color-neutral-500: #79746b;
-  --color-neutral-600: #58544c;
-  --color-neutral-700: #423f39;
-  --color-neutral-800: #2b2925;
-  --color-neutral-900: #1c1b18;
+  /* 회색은 남색 쪽으로 살짝 기운 차가운 회색(2026-11-14, 예전 따뜻한 베이지 회색에서 바꿈). */
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f4f8;
+  --color-neutral-200: #e3e8ef;
+  --color-neutral-300: #ccd4de;
+  --color-neutral-400: #98a2b1;
+  --color-neutral-500: #5f6a7c;
+  --color-neutral-600: #4a5466;
+  --color-neutral-700: #353d4c;
+  --color-neutral-800: #232a35;
+  --color-neutral-900: #161b24;
 
   --color-navy-50: #eef2f8;
   --color-navy-100: #dfe6f1;
