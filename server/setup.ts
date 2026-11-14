@@ -20,6 +20,13 @@ import * as agent from './agentClient.ts'
 import { config } from './config.ts'
 import { agentEnvBlankKeys, agentEnvIsSet, agentEnvValue, maskKey, pruneBlankAgentEnvKeys, saveAgentEnvValues, validEnvValue } from './settings.ts'
 
+// OpenRouter API 주소. 개발·테스트에서는 '/'로 시작하는 경로를 주면 AGENT_URL(가짜 Agent)에 붙여 바깥에 요청하지 않는다(server/dev/dev.env).
+const OPENROUTER_BASE = ((): string => {
+  const raw = process.env.OPENROUTER_API_BASE ?? ''
+  if (raw.startsWith('/')) return `${config.agentUrl.replace(/\/+$/, '')}${raw}`
+  return raw || 'https://openrouter.ai/api/v1'
+})()
+
 // Portainer 주소로 받는 모양. 뒤에 경로가 붙는 것을 막는다.
 const URL_SHAPE = /^https?:\/\/[A-Za-z0-9._~-]+(:\d{1,5})?\/?$/
 
@@ -125,7 +132,7 @@ function probe(url: string, headers: Record<string, string>, verifyTls: boolean,
 
 // OpenRouter 키 확인. 이 주소는 키가 있어야 답한다(없거나 틀리면 401).
 export async function checkOpenRouterKey(key: string): Promise<SetupCheck> {
-  const res = await probe('https://openrouter.ai/api/v1/key', { authorization: `Bearer ${key}` }, true, 10_000)
+  const res = await probe(`${OPENROUTER_BASE}/key`, { authorization: `Bearer ${key}` }, true, 10_000)
   if (res.status === 200) return { ok: true, message: 'OpenRouter 키를 확인했어요.' }
   if (res.status === 401) return { ok: false, message: 'OpenRouter가 이 키를 거부했어요(401). openrouter.ai → Keys에서 다시 복사해 주세요.' }
   if (res.status === 0) return { ok: false, message: `OpenRouter에 연결하지 못했어요(${res.error ?? res.tlsError}). 네트워크를 확인해 주세요.` }
@@ -185,6 +192,75 @@ export async function checkPortainerAccess(url: string, apiKey: string): Promise
     }
   }
   return { ok: true, endpoints, tlsSkipped, field: 'portainerUrl', message: `Portainer 연결됨 — Docker 환경 ${endpoints}개.` }
+}
+
+// ---- 설정 > API 키 탭의 상태 ----
+// 저장된 키가 지금 쓸 수 있는지와 OpenRouter 남은 크레딧. 탭을 열 때 한 번 부른다. 키 값은 돌려주지 않는다.
+// 잔액이 모자라면 OpenRouter가 402로 거부해 Agent가 답을 못 한다(agents yaml max_tokens 주석) → 미리 보이게 한다.
+
+export type KeyState = 'ok' | 'error' | 'unset'
+
+export type KeyStatus = {
+  openrouter: {
+    state: KeyState
+    message?: string
+    // remaining·total: 계정 잔액(충전액 - 사용액). limitRemaining: 키에 한도가 있으면 남은 한도(없으면 null). usage: 이 키로 쓴 금액.
+    credits?: { remaining?: number; total?: number; usage?: number; limitRemaining?: number | null }
+  }
+  // field: 문제가 주소 쪽인지 키 쪽인지(주소 쪽일 때만 화면이 주소 칸을 보여 준다)
+  portainer: { state: KeyState; message?: string; endpoints?: number; field?: 'portainerUrl' | 'portainerApiKey' }
+}
+
+function numberOf(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function dataOf(body: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(body) as { data?: unknown }
+    return typeof parsed.data === 'object' && parsed.data !== null ? (parsed.data as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+async function openRouterStatus(key: string): Promise<KeyStatus['openrouter']> {
+  const auth = { authorization: `Bearer ${key}` }
+  const res = await probe(`${OPENROUTER_BASE}/key`, auth, true, 10_000)
+  if (res.status === 401) return { state: 'error', message: 'OpenRouter가 이 키를 거부했어요. 새 키로 바꿔 주세요.' }
+  if (res.status !== 200) {
+    return { state: 'error', message: res.status === 0 ? 'OpenRouter에 연결하지 못했어요. 네트워크를 확인해 주세요.' : `OpenRouter 확인 실패(HTTP ${res.status}).` }
+  }
+  const info = dataOf(res.body)
+  const credits: NonNullable<KeyStatus['openrouter']['credits']> = {}
+  const usage = numberOf(info.usage)
+  if (usage !== undefined) credits.usage = usage
+  if (info.limit !== undefined) credits.limitRemaining = info.limit === null ? null : (numberOf(info.limit_remaining) ?? null)
+  // 계정 잔액. 키 종류에 따라 못 받을 수 있어서 실패해도 키 상태는 그대로 둔다.
+  const acc = await probe(`${OPENROUTER_BASE}/credits`, auth, true, 10_000)
+  if (acc.status === 200) {
+    const d = dataOf(acc.body)
+    const total = numberOf(d.total_credits)
+    const used = numberOf(d.total_usage)
+    if (total !== undefined && used !== undefined) {
+      credits.total = total
+      credits.remaining = total - used
+    }
+  }
+  return { state: 'ok', credits }
+}
+
+export async function keyStatus(): Promise<KeyStatus> {
+  const orKey = agentEnvValue(config.agentKeyName)
+  const ptUrl = agentEnvValue(PORTAINER_URL_NAME)
+  const ptKey = agentEnvValue(PORTAINER_API_KEY_NAME)
+  const [openrouter, portainer] = await Promise.all([
+    orKey ? openRouterStatus(orKey) : Promise.resolve<KeyStatus['openrouter']>({ state: 'unset' }),
+    ptUrl && ptKey
+      ? checkPortainerAccess(ptUrl, ptKey).then<KeyStatus['portainer']>((c) => ({ state: c.ok ? 'ok' : 'error', message: c.message, endpoints: c.endpoints, field: c.field }))
+      : Promise.resolve<KeyStatus['portainer']>({ state: 'unset' }),
+  ])
+  return { openrouter, portainer }
 }
 
 // ---- 저장 ----

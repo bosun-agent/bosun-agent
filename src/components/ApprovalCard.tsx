@@ -69,10 +69,7 @@ export function ApprovalCard({
         <p className="text-neutral-500 line-through">
           {summary}
         </p>
-        <p className="mt-2 font-mono text-xs text-neutral-500">
-          {action.tool}
-          {action.target && ` → ${action.target}`}
-        </p>
+        {action.target && <p className="mt-2 text-xs text-neutral-500">대상 {action.target}</p>}
         <p className="mt-2 text-sm text-neutral-600">
           실행되지 않았어요. 필요하면 다시 요청해주세요.
         </p>

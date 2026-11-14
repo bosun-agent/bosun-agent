@@ -346,6 +346,19 @@ const decide = (approvalId: string, decision: string, reason?: string) =>
       !setupBody.includes('Zx9Zx9'),
     [settingsBody.slice(0, 200), setup],
   )
+  // 설정 > API 키 탭의 상태: 키가 쓸 수 있는지와 남은 크레딧(dev.env가 가짜 OpenRouter로 돌린다). 키 값은 돌려주지 않는다.
+  type Keys = { openrouter: { state: string; credits?: { remaining?: number; total?: number; usage?: number } }; portainer: { state: string } }
+  const keysBody = await fetch(`${BASE}/api/setup/keys`).then((r) => r.text())
+  const keys = JSON.parse(keysBody) as Keys
+  check(
+    'API 키 상태: OpenRouter 연결됨과 남은 크레딧(충전 10 - 사용 2.5), 키 값은 안 보낸다',
+    keys.openrouter.state === 'ok' && keys.openrouter.credits?.remaining === 7.5 && keys.openrouter.credits.total === 10 && !keysBody.includes('a1b2c3d4'),
+    keys,
+  )
+  writeFileSync(file, 'OPENROUTER_API_KEY=sk-or-v1-bad-0000000000\n')
+  const badKeys = (await fetch(`${BASE}/api/setup/keys`).then((r) => r.json())) as Keys
+  check('API 키 상태: 거부된 키는 error, Portainer 값이 없으면 unset', badKeys.openrouter.state === 'error' && badKeys.portainer.state === 'unset', badKeys)
+  writeFileSync(file, `OPENROUTER_API_KEY=${longKey}\nPORTAINER_URL=https://127.0.0.1:9443\nPORTAINER_API_KEY=ptr_${'Zx9'.repeat(14)}Q7w2\n`)
 }
 
 {

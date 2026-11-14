@@ -41,6 +41,22 @@ function Unavailable({ failed }: { failed: boolean }) {
 
 // ---- 정책 ----
 
+// 안전 모드(agent.yaml safety)를 쉬운 말로. 제목은 "기본 동작: …"으로 보여 준다(2026-11-14).
+const SAFETY_TITLE: Record<string, string> = {
+  strict: '모르는 작업은 묻기',
+  balanced: '읽기는 바로, 나머지는 묻기',
+  restricted: '읽기만 실행',
+  autonomous: '묻지 않고 실행',
+}
+
+// 정책 칸(PolicyBoard)이 있을 때의 설명. 칸에 없는 작업이 어떻게 되는지 알려 준다.
+const SAFETY_BOARD: Record<string, string> = {
+  strict: '허용 칸에 있는 것만 바로 실행하고, 나머지는 물어봐요. 세 칸 어디에도 없는 작업(새 도구 등)도 물어봐요.',
+  balanced: '허용 칸과 읽기 전용 작업은 바로 실행하고, 나머지는 물어봐요.',
+  restricted: '허용 칸과 읽기 전용만 실행하고, 나머지는 묻지 않고 거부해요. 승인 카드가 뜨지 않아요.',
+  autonomous: '막기 칸 말고는 묻지 않고 실행해요. BOSUN에서는 쓰지 않아요.',
+}
+
 const SAFETY: Record<string, string> = {
   strict: '모든 도구 호출을 물어봐요. 아래 "자동 허용"에 맞는 것만 묻지 않고 실행해요.',
   balanced: '읽기 전용은 바로 실행하고, 위험하거나 모르는 호출은 물어봐요.',
@@ -91,6 +107,68 @@ const HOOKS: Record<string, string> = {
   user_followup_submit: '이어서 보낸 메시지를 검사해요.',
   before_llm_call: '모델을 부르기 직전에 대화를 정리해요(막힌 메시지 가리기).',
   session_start: '대화를 시작할 때 지금 있는 앱 요약을 AI에게 알려 줘요.',
+}
+
+// 언제 도는 검사인지로 묶는다.
+const HOOK_PHASES: { title: string; events: string[] }[] = [
+  { title: '메시지를 보낼 때', events: ['session_start', 'user_prompt_submit', 'user_steering_messages_submit', 'user_followup_submit', 'before_llm_call'] },
+  { title: '도구를 실행하기 전', events: ['tool_input_transform', 'tool_guard', 'pre_tool_use', 'permission_request'] },
+  { title: '도구를 실행한 뒤', events: ['tool_response_transform', 'post_tool_use'] },
+]
+
+// 검사 프로그램(ai-agent-hooks/*.py)이 실제로 하는 일. 이벤트 설명(HOOKS)보다 정확하다. 모르는 파일은 이벤트 설명을 쓴다.
+const SCRIPT_TEXT: Record<string, string> = {
+  tool_input_transform_direct_policy_guard: '허용 목록에 없는 Docker 요청을 막아요. 정책 칸에서 자물쇠가 붙은 작업이 여기서 막혀요.',
+  tool_input_transform_direct_backup_guard: '컨테이너를 지우기 전에 설정을 저장해요.',
+  tool_input_transform_stack_guard: '스택(compose) 내용을 검사해요. 공식 이미지, 비밀번호, 볼륨, 시작 명령 등을 봐요.',
+  tool_guard_approval_explainer: '승인 카드에 쉬운 설명을 붙여요. 막지는 않아요.',
+  tool_response_transform_backup_runner: '승인한 "지금 백업"을 실행하고 결과를 돌려줘요.',
+  tool_response_transform_secret_mask: '도구 결과에서 비밀번호 같은 값을 가려요.',
+  tool_response_transform_injection_guard: '도구 결과에 섞인 수상한 지시(인젝션)를 표시해요.',
+  user_prompt_submit_injection_guard: '보낸 메시지에서 AI를 속이려는 지시(인젝션)를 검사해요.',
+  before_llm_call_injection_sanitizer: 'AI를 부르기 직전에 막힌 메시지를 가려요.',
+  session_start_app_summary: '대화를 시작할 때 지금 있는 앱 요약을 AI에게 알려 줘요.',
+}
+
+type Hook = AgentConfigSummary['agents'][number]['hooks'][number]
+
+function hookTexts(hooks: Hook[]): string[] {
+  const texts = hooks.flatMap((h) => (h.scripts.length ? h.scripts.map((s) => SCRIPT_TEXT[s.replace(/\.py$/, '')] ?? HOOKS[h.event] ?? h.event) : [HOOKS[h.event] ?? h.event]))
+  return [...new Set(texts)]
+}
+
+function SafetyChecks({ hooks }: { hooks: Hook[] }) {
+  const known = new Set(HOOK_PHASES.flatMap((p) => p.events))
+  const phases = [...HOOK_PHASES, { title: '그 밖', events: hooks.map((h) => h.event).filter((e) => !known.has(e)) }]
+    .map((p) => ({ title: p.title, texts: hookTexts(hooks.filter((h) => p.events.includes(h.event))) }))
+    .filter((p) => p.texts.length > 0)
+  return (
+    <Box title="안전 검사 (정책 칸과 상관없이 항상 실행)">
+      <div className="space-y-2">
+        {phases.map((p) => (
+          <div key={p.title}>
+            <p className="text-xs font-medium text-neutral-500">{p.title}</p>
+            <ul className="mt-0.5 list-inside list-disc space-y-0.5 text-sm text-neutral-800">
+              {p.texts.map((text) => (
+                <li key={text}>{text}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <details className="mt-2">
+        <summary className="cursor-pointer text-xs text-neutral-500">자세히 (이벤트·파일 이름)</summary>
+        <ul className="mt-1 space-y-0.5">
+          {hooks.map((h) => (
+            <li key={h.event} className="text-[11px] text-neutral-500">
+              <code>{h.event}</code>
+              {h.matchers.length > 0 && ` · 대상 ${h.matchers.join(', ')}`} · {[...new Set(h.scripts)].join(', ')}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </Box>
+  )
 }
 
 function RuleList({ title, tone, rules, empty }: { title: string; tone: string; rules: string[]; empty: string }) {
@@ -303,9 +381,11 @@ function PolicyView({
         </p>
       )}
       {cfg.agents.map((a) => (
-        <Box key={a.name} title={`안전 모드: ${a.safety ?? '지정 안 함'}`}>
+        <Box key={a.name} title={a.safety ? `기본 동작: ${SAFETY_TITLE[a.safety] ?? a.safety} (${a.safety})` : '기본 동작'}>
           <p className="text-sm text-neutral-700">
-            {a.safety ? (SAFETY[a.safety] ?? '알 수 없는 모드예요.') : '읽기 전용은 바로 실행하고 나머지는 물어봐요.'}
+            {a.safety
+              ? ((board ? SAFETY_BOARD[a.safety] : SAFETY[a.safety]) ?? '알 수 없는 모드예요.')
+              : '읽기 전용은 바로 실행하고 나머지는 물어봐요.'}
           </p>
           <p className="mt-1 text-xs text-neutral-500">
             승인 카드는 {Math.round(approvalTimeoutSec / 60)}분 안에 결정하지 않으면 자동으로 거부돼요(WEB 설정).
@@ -320,23 +400,7 @@ function PolicyView({
           <RuleList title="항상 거부 (승인해도 안 됨)" tone="text-red-700" rules={cfg.permissions.deny} empty="없어요." />
         </>
       )}
-      {cfg.agents.map((a) =>
-        a.hooks.length === 0 ? null : (
-          <Box key={`${a.name}-hooks`} title="정책 훅 (Agent가 실행하는 검사 프로그램)">
-            <ul className="space-y-1.5 text-sm">
-              {a.hooks.map((h) => (
-                <li key={h.event}>
-                  <p className="text-neutral-800">{HOOKS[h.event] ?? h.event}</p>
-                  <p className="text-[11px] text-neutral-500">
-                    <code>{h.event}</code>
-                    {h.matchers.length > 0 && ` · 대상 ${h.matchers.join(', ')}`} · {[...new Set(h.scripts)].join(', ')}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </Box>
-        ),
-      )}
+      {cfg.agents.map((a) => (a.hooks.length === 0 ? null : <SafetyChecks key={`${a.name}-hooks`} hooks={a.hooks} />))}
     </div>
   )
 }
@@ -365,12 +429,12 @@ export function AuditSection() {
         {data.map((r) => {
           const d = DECISION[r.decision] ?? { label: r.decision, tone: '' }
           return (
-            <li key={`${r.approvalId}-${r.at}`} className="flex gap-3 px-3 py-2 text-sm">
+            <li key={`${r.approvalId}-${r.at}`} title={r.tool} className="flex gap-3 px-3 py-2 text-sm">
               <span className={`w-10 shrink-0 font-medium ${d.tone}`}>{d.label}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{r.summary ?? '(지운 대화의 카드)'}</span>
                 <span className="block text-[11px] text-neutral-500">
-                  {new Date(r.at).toLocaleString()} · {AUDIT_USER[r.user] ?? '사용자'} · <code>{r.tool}</code>
+                  {new Date(r.at).toLocaleString()} · {AUDIT_USER[r.user] ?? '사용자'}
                   {r.target && ` · ${r.target}`}
                 </span>
               </span>
@@ -384,17 +448,34 @@ export function AuditSection() {
 
 // ---- 정보 ----
 
+// Agent 설정 이름(AGENT_NAME) → 쉬운 말
+const AGENT_LABEL: Record<string, string> = { beginner: '초보자용', expert: '숙련자용' }
+
+// MCP 도구 이름 → 쉬운 말. 원래 이름은 "자세히"에만 보인다.
+const TOOL_LABEL: Record<string, string> = {
+  docker_proxy: 'Docker 조회·관리',
+  EndpointList: '환경 목록',
+  StackList: '스택 목록',
+  StackInspect: '스택 조회',
+  StackFileInspect: '스택 파일 보기',
+  StackCreateDockerStandaloneString: '스택 만들기',
+  StackUpdate: '스택 수정',
+  StackStart: '스택 시작',
+  StackStop: '스택 중지',
+  StackDelete: '스택 삭제',
+}
+
 function usageText(u: SessionUsage): string {
   return `입력 토큰 ${u.inputTokens.toLocaleString()} · 출력 토큰 ${u.outputTokens.toLocaleString()}${u.cost !== undefined ? ` · 약 $${u.cost.toFixed(4)}` : ''}`
 }
 
-const COST_NOTE = '비용은 Docker Agent가 모델 가격표로 계산한 값이에요. 실제 청구액은 provider 화면에서 확인해주세요.'
+const COST_NOTE = '금액은 추정값이에요. 실제 청구액은 OpenRouter에서 확인하세요.'
 
 export function InfoSection({ activeServerId }: { activeServerId?: string }) {
   const { data, failed } = useLoad<SystemInfo>(agent.getSystem)
   const { data: usage } = useLoad<SessionUsage>(agent.getUsage && activeServerId ? () => agent.getUsage!(activeServerId) : undefined)
   const { data: totals } = useLoad<UsageTotals>(agent.getUsageTotals)
-  const [tools, setTools] = useState<number | 'loading' | 'failed' | null>(null)
+  const [toolCount, setTools] = useState<number | 'loading' | 'failed' | null>(null)
   const [proc, setProc] = useAgentStatus()
   const canRestart = proc?.managed && proc.state !== 'external' && proc.state !== 'starting' && proc.state !== 'restarting'
 
@@ -414,16 +495,14 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
     <div className="space-y-2">
       <Box title="연결 상태">
         <dl className="grid grid-cols-[7rem_1fr] gap-y-1 text-sm">
+          {/* 켜져 있는지(WEB이 띄운 프로세스)와 연결되는지를 한 줄로. 문제가 있으면 그쪽이 빨갛게 보인다. */}
           <dt className="text-neutral-500">AI Agent</dt>
-          <dd className={a.reachable ? 'text-neutral-900' : 'text-red-600'}>
-            {a.reachable ? (a.ready === false ? '연결됨(준비 안 됨)' : '연결됨') : '연결 안 됨'}
+          <dd>
+            {proc && <span className={proc.state === 'crashed' ? 'text-red-600' : ''}>{agentStateText(proc)} · </span>}
+            <span className={a.reachable ? '' : 'text-red-600'}>{a.reachable ? (a.ready === false ? '연결됨(준비 안 됨)' : '연결됨') : '연결 안 됨'}</span>
             {a.error && <span className="block text-xs text-red-600">{a.error}</span>}
-          </dd>
-          {proc && (
-            <>
-              <dt className="text-neutral-500">Agent 실행</dt>
-              <dd>
-                {agentStateText(proc)}
+            {proc && (
+              <>
                 {proc.restarts > 0 && <span className="text-xs text-neutral-500"> · 다시 시작 {proc.restarts}번</span>}
                 {canRestart && (
                   <button
@@ -437,9 +516,9 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
                 {proc.state === 'external' && (
                   <span className="block text-xs text-neutral-500">WEB이 띄운 Agent가 아니라서 다시 시작은 Agent를 띄운 창에서 해주세요.</span>
                 )}
-              </dd>
-            </>
-          )}
+              </>
+            )}
+          </dd>
           <dt className="text-neutral-500">Agent 버전</dt>
           {/* 실제 Docker Agent(v1.148.0)는 /health에 빈 버전을 준다(2026-10-28 실측). */}
           {a.version ? (
@@ -447,8 +526,8 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
           ) : (
             <dd className="text-[13px] text-neutral-500">Agent가 알려주지 않음</dd>
           )}
-          <dt className="text-neutral-500">Agent 이름</dt>
-          <dd className="font-mono text-[13px]">{a.name}</dd>
+          <dt className="text-neutral-500">Agent 종류</dt>
+          <dd>{AGENT_LABEL[a.name] ? `${AGENT_LABEL[a.name]} (${a.name})` : <span className="font-mono text-[13px]">{a.name}</span>}</dd>
           <dt className="text-neutral-500">WEB 버전</dt>
           <dd className="font-mono text-[13px]">{data.web.version}</dd>
           <dt className="text-neutral-500">처리 중</dt>
@@ -468,7 +547,7 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
             <dd>{usageText(totals.total)}</dd>
           </dl>
           <p className="mt-1 text-xs text-neutral-500">
-            WEB 0.5.0부터 대화 한 번마다 기록해요. 대화를 지워도 남아요. 날짜는 서버 시간 기준이에요. {COST_NOTE}
+            대화마다 기록해요. 대화를 지워도 남아요. {COST_NOTE}
           </p>
         </Box>
       )}
@@ -478,53 +557,83 @@ export function InfoSection({ activeServerId }: { activeServerId?: string }) {
           <p className="text-xs text-neutral-500">{COST_NOTE}</p>
         </Box>
       )}
-      {data.config?.agents.map((ag) => (
-        <Box key={ag.name} title={`Agent: ${ag.name}`}>
-          {ag.description && <p className="text-sm text-neutral-700">{ag.description}</p>}
-          <dl className="mt-1 grid grid-cols-[7rem_1fr] gap-y-1 text-sm">
-            <dt className="text-neutral-500">기본 모델</dt>
-            <dd className="font-mono text-[13px]">
-              {ag.model ?? '-'}
-              {(() => {
-                const m = data.config?.models.find((x) => x.name === ag.model)
-                return m ? ` (${[m.provider, m.model].filter(Boolean).join('/')}${m.maxTokens ? `, 최대 ${m.maxTokens.toLocaleString()} 토큰` : ''})` : ''
-              })()}
-            </dd>
-            {ag.toolsets.map((t, i) => (
-              <div key={i} className="contents">
-                <dt className="text-neutral-500">도구 묶음 {i + 1}</dt>
-                <dd className="text-[13px]">
-                  <span className="font-mono">
-                    {t.type}
-                    {t.command && ` · ${t.command}`} {t.args.join(' ')}
-                  </span>
-                  {t.tools.length > 0 && <span className="block">도구: {t.tools.join(', ')}</span>}
-                  {t.callTimeout && <span className="block text-neutral-500">호출 제한 시간 {t.callTimeout}</span>}
-                  {t.env.length > 0 && <span className="block text-neutral-500">환경변수: {t.env.join(', ')} (값은 숨김)</span>}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {ag.instruction && (
+      {data.config?.agents.map((ag, i) => {
+        const m = data.config?.models.find((x) => x.name === ag.model)
+        const tools = ag.toolsets.flatMap((ts) => ts.tools)
+        return (
+          <Box key={ag.name} title={data.config!.agents.length === 1 ? `AI 설정 (${AGENT_LABEL[a.name] ?? a.name})` : `AI 설정: ${ag.name}`}>
+            {ag.description && <p className="text-sm text-neutral-700">{ag.description}</p>}
+            <dl className="mt-1 grid grid-cols-[6rem_1fr] gap-y-1 text-sm">
+              <dt className="text-neutral-500">기본 모델</dt>
+              <dd>
+                {m?.model ? m.model.split('/').pop() : (ag.model ?? '-')}
+                <span className="block text-xs text-neutral-500">입력창에서 다른 모델을 고르면 그 모델을 써요.</span>
+              </dd>
+              {tools.length > 0 && (
+                <>
+                  <dt className="text-neutral-500">할 수 있는 일</dt>
+                  <dd>
+                    {[...new Set(tools.map((x) => TOOL_LABEL[x] ?? x))].join(', ')}
+                    {/* 실제로 Agent가 MCP 서버를 띄워 몇 개를 쓰는지(설정에 적힌 것과 다르면 연결 문제). 느려서 눌렀을 때만 센다. */}
+                    {i === 0 && agent.getToolCount && (
+                      <span className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="text-neutral-500">도구 {tools.length}개</span>
+                        <button
+                          type="button"
+                          onClick={countTools}
+                          disabled={toolCount === 'loading'}
+                          className="rounded-md border border-neutral-300 px-2 py-0.5 hover:bg-neutral-50 disabled:opacity-40"
+                        >
+                          실제 연결 확인
+                        </button>
+                        {toolCount === 'loading' && <span className="text-neutral-500">MCP 서버를 띄워서 세는 중…</span>}
+                        {toolCount === 'failed' && <span className="text-red-600">확인하지 못했어요. Portainer MCP 연결을 확인해주세요.</span>}
+                        {typeof toolCount === 'number' && (
+                          <span className={toolCount === tools.length ? 'text-emerald-700' : 'text-amber-700'}>
+                            {toolCount === tools.length ? `${toolCount}개 모두 연결됨` : `실제로 쓸 수 있는 도구 ${toolCount}개`}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </dd>
+                </>
+              )}
+            </dl>
             <details className="mt-2">
-              <summary className="cursor-pointer text-xs text-neutral-600">Agent 지시문 보기</summary>
-              <pre className="mt-1 max-h-64 overflow-auto rounded bg-neutral-50 p-2 text-[11px] whitespace-pre-wrap">{ag.instruction}</pre>
+              <summary className="cursor-pointer text-xs text-neutral-600">자세히 (개발자용)</summary>
+              <dl className="mt-1 grid grid-cols-[6rem_1fr] gap-y-1 text-xs">
+                <dt className="text-neutral-500">Agent 이름</dt>
+                <dd className="font-mono">{ag.name}</dd>
+                <dt className="text-neutral-500">모델</dt>
+                <dd className="font-mono break-all">
+                  {ag.model ?? '-'}
+                  {m && ` (${[m.provider, m.model].filter(Boolean).join('/')}${m.maxTokens ? `, 답 최대 ${m.maxTokens.toLocaleString()} 토큰` : ''})`}
+                </dd>
+                {ag.toolsets.map((ts, k) => (
+                  <div key={k} className="contents">
+                    <dt className="text-neutral-500">도구 묶음 {k + 1}</dt>
+                    <dd className="break-all">
+                      <span className="font-mono">
+                        {ts.type}
+                        {ts.command && ` · ${ts.command}`} {ts.args.join(' ')}
+                      </span>
+                      {ts.tools.length > 0 && <span className="block font-mono">{ts.tools.join(', ')}</span>}
+                      {ts.callTimeout && <span className="block text-neutral-500">호출 제한 시간 {ts.callTimeout}</span>}
+                      {ts.env.length > 0 && <span className="block text-neutral-500">환경변수: {ts.env.join(', ')} (값은 숨김)</span>}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              {ag.instruction && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-neutral-600">Agent 지시문</summary>
+                  <pre className="mt-1 max-h-64 overflow-auto rounded bg-neutral-50 p-2 text-[11px] whitespace-pre-wrap">{ag.instruction}</pre>
+                </details>
+              )}
             </details>
-          )}
-        </Box>
-      ))}
-      {agent.getToolCount && (
-        <Box title="쓸 수 있는 도구 수">
-          <div className="flex items-center gap-2 text-sm">
-            <button type="button" onClick={countTools} disabled={tools === 'loading'} className="rounded-lg border border-neutral-300 px-2 py-1 text-xs disabled:opacity-40">
-              확인하기
-            </button>
-            {tools === 'loading' && <span className="text-neutral-500">MCP 서버를 띄워서 세는 중…</span>}
-            {tools === 'failed' && <span className="text-red-600">확인하지 못했어요. Portainer MCP 연결을 확인해주세요.</span>}
-            {typeof tools === 'number' && <span>{tools}개</span>}
-          </div>
-        </Box>
-      )}
+          </Box>
+        )
+      })}
     </div>
   )
 }

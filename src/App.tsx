@@ -107,24 +107,12 @@ function App() {
   // ?setup=1 이면 값이 다 차 있어도 보여준다(나중에 주소·키를 바꿀 때).
   // 목업·데모 빌드에는 백엔드가 없으므로 건너뛴다. 값을 못 받아도 화면을 막지 않는다.
   const [setup, setSetup] = useState<SetupStatus | null>(null)
-  // 화면에서 직접 연 경우(설정 → 연결 설정 열기). 채팅으로 돌아갈 수 있게 닫기 버튼을 보여준다.
-  const [setupManual, setSetupManual] = useState(OPEN_SETUP)
+  // OPEN_SETUP으로 직접 연 경우. 채팅으로 돌아갈 수 있게 닫기 버튼을 보여준다.
+  const setupManual = OPEN_SETUP
   useEffect(() => {
     if (usingMock) return
     getSetupStatus().then(
       (s) => setSetup(s && (s.needsSetup || OPEN_SETUP) ? s : null),
-      () => undefined,
-    )
-  }, [])
-  // 설정 화면의 "연결 설정 열기". 값이 다 차 있어도 연다.
-  const openSetup = useCallback(() => {
-    setSettingsOpen(false)
-    getSetupStatus().then(
-      (s) => {
-        if (!s) return
-        setSetup(s)
-        setSetupManual(true)
-      },
       () => undefined,
     )
   }, [])
@@ -781,7 +769,6 @@ function App() {
           activeServerId={active.serverId}
           onClose={() => setSettingsOpen(false)}
           onApprovalModeChange={setApprovalMode}
-          {...(usingMock ? {} : { onOpenSetup: openSetup })}
           onDraft={(text) => {
             // 백업 복원 요청은 새 대화에서 쓴다. 지금 대화가 처리 중이어도 보낼 수 있게.
             setSettingsOpen(false)

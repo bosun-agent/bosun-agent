@@ -37,7 +37,7 @@ import {
   validModelRef,
   saveAgentMode,
 } from './settings.ts'
-import { applySetup, setupStatus, type SetupInput } from './setup.ts'
+import { applySetup, keyStatus, setupStatus, type SetupInput } from './setup.ts'
 import { cardSummaries, cardsFor, copyCards, deleteCards, pinnedSessions, recentDecisions, setPinned, usageSince } from './store.ts'
 import { systemInfo } from './system.ts'
 import {
@@ -417,6 +417,9 @@ app.put('/api/settings/api-key', async (c) => {
 // 첫 실행 설정(server/setup.ts). 값은 사용자가 직접 발급받아 넣는다(WEB은 만들어 내지 않는다).
 // 값이 다 있는지, 화면에서 저장할 수 있는지 알려준다. 값 자체는 돌려주지 않는다.
 app.get('/api/setup/status', (c) => c.json(setupStatus()))
+
+// 설정 > API 키 탭: 저장된 키가 지금 쓸 수 있는지와 OpenRouter 남은 크레딧(바깥 서비스에 한 번씩 물어본다).
+app.get('/api/setup/keys', async (c) => c.json(await keyStatus()))
 
 // 넣은 값이 실제로 쓸 수 있는지 확인한 뒤 Agent env 파일에 저장하고 Agent를 다시 시작한다.
 // 하나라도 못 쓰면 아무것도 저장하지 않고 항목별로 이유를 돌려준다(키 오타로 '설정됨'이 되지 않게).

@@ -249,10 +249,31 @@ await page.getByText('sk-or-v1-…0000', { exact: true }).waitFor()
 check('API 키 탭에 가린 키(앞부분 + 끝 4자리)', !(await page.getByText('uismoke', { exact: false }).count()))
 await page.getByText('ptr_…0000', { exact: true }).waitFor()
 check('API 키 탭에 Portainer 키(가린 값)와 주소도 보인다', await page.getByText('https://127.0.0.1:9443', { exact: true }).isVisible())
+const orCard = page.getByRole('region', { name: 'OpenRouter 키' })
+await orCard.getByText('연결됨').waitFor()
+check(
+  'API 키 탭: 두 키가 같은 상자, OpenRouter 연결됨과 남은 크레딧(가짜 OpenRouter), 연결 설정 버튼은 없다',
+  (await page.getByRole('region', { name: 'Portainer 키' }).isVisible()) &&
+    (await orCard.getByText('$7.50 (충전 $10.00)').isVisible()) &&
+    (await page.getByRole('button', { name: '연결 설정 열기' }).count()) === 0,
+)
+await page.getByRole('region', { name: 'Portainer 키' }).getByText(/연결됨|연결 안 됨/).waitFor()
 await shot('06a-api-key')
+await orCard.getByLabel('OpenRouter 키').fill('sk-or-v1-bad-key-000000')
+await orCard.getByRole('button', { name: '저장' }).click()
+await orCard.getByText('OpenRouter가 이 키를 거부했어요', { exact: false }).waitFor()
+check('API 키 탭: 잘못된 키는 확인하고 저장하지 않는다', await page.getByText('sk-or-v1-…0000', { exact: true }).isVisible())
+// 일부러 거절당한 저장(PUT /api/setup 400)은 브라우저가 콘솔에 남긴다. 마지막 "콘솔 오류 없음" 검사에서 뺀다.
+for (let i = errors.length - 1; i >= 0; i--) if (errors[i].includes('status of 400')) errors.splice(i, 1)
 await page.getByRole('button', { name: '정책' }).click()
 await page.getByText('자동 허용 (승인 없이 실행)').waitFor()
 check('정책: 자동 허용·거부 규칙 설명', (await page.getByText('조회(GET 요청)').isVisible()) && (await page.getByText('컨테이너 안 명령 실행(exec)').isVisible()))
+check(
+  '정책: 안전 모드는 쉬운 제목, 훅은 "안전 검사"로 묶고 파일 이름은 자세히에',
+  (await page.getByText('기본 동작: 모르는 작업은 묻기 (strict)').isVisible()) &&
+    (await page.getByText('안전 검사 (정책 칸과 상관없이 항상 실행)').isVisible()) &&
+    (await page.getByText('자세히 (이벤트·파일 이름)').isVisible()),
+)
 await shot('06-policy')
 await page.getByRole('button', { name: '승인 기록' }).click()
 await page.getByText('nginx 삭제', { exact: false }).first().waitFor().catch(() => {})
@@ -262,9 +283,15 @@ await page.getByText('지우기 직전에 Agent 백업 훅이', { exact: false }
 check('백업 화면', true)
 await page.getByRole('button', { name: '정보' }).click()
 await page.getByText('v1.148.0-fake').waitFor()
-await page.getByRole('button', { name: '확인하기' }).click()
-await page.getByText('2개').waitFor()
-check('정보: Agent 버전과 도구 수', true)
+// AI 설정 상자: 할 수 있는 일은 쉬운 말, 원래 도구 이름·실행 명령은 자세히에. 도구 수는 그 상자에서 확인한다.
+await page.getByRole('button', { name: '실제 연결 확인' }).click()
+await page.getByText('2개 모두 연결됨').waitFor()
+check(
+  '정보: AI 설정 상자(쉬운 도구 이름, 원래 이름은 자세히에), 도구 수 상자는 따로 없다',
+  (await page.getByText('Docker 조회·관리, 환경 목록').isVisible()) &&
+    !(await page.getByText('docker_proxy, EndpointList').isVisible()) &&
+    (await page.getByText('쓸 수 있는 도구 수').count()) === 0,
+)
 await page.getByText('켜져 있음(WEB이 띄우지 않음)').waitFor()
 check('정보: Agent 실행 상태(AGENT_BIN 없음), 다시 시작 버튼 없음, 배너 없음', (await page.getByRole('button', { name: '다시 시작' }).count()) === 0 && (await page.getByRole('status').count()) === 0)
 await shot('07-info')
@@ -294,6 +321,10 @@ check('+ 메뉴에 도움말이 없다', (await page.getByText('무엇을 할 �
 await openSidebar()
 await page.getByRole('button', { name: '무엇을 할 수 있나요?' }).click()
 check('도움말에 안 되는 것 목록', await page.getByText('채팅으로는 할 수 없어요').isVisible())
+check(
+  '도움말에 볼륨 백업은 없다(백업 보류, 11-14)',
+  (await page.getByText('지금 볼륨 백업').count()) === 0 && (await page.getByText('지금 백업해줘', { exact: false }).count()) === 0,
+)
 await shot('08-help')
 await page.getByLabel('도움말 닫기').click()
 
@@ -425,6 +456,19 @@ if (envFile) {
       saved.includes('- "docker_proxy:method=POST:path=/containers/*/start"') && /deny:[\s\S]*containers\/json/.test(saved),
       saved,
     )
+    await page.getByLabel('설정 닫기').click()
+    await openSidebar()
+    await page.getByRole('button', { name: '무엇을 할 수 있나요?' }).click()
+    await page.getByText('컨테이너: 컨테이너 시작', { exact: false }).waitFor()
+    check(
+      '정책: 도움말이 정책 칸대로(허용한 시작은 바로 실행, 막은 목록 예시는 막힘)',
+      (await page.getByText('막힘 · 실행 중인 컨테이너 목록 보여줘').isVisible()) && (await page.getByText('승인 · web 컨테이너 재시작해줘').isVisible()),
+    )
+    await shot('16-help-policy')
+    await page.getByLabel('도움말 닫기').click()
+    await page.getByLabel('설정', { exact: true }).click()
+    await page.getByRole('button', { name: '정책' }).click()
+    await page.getByText('작업별 허용·묻기·막기').waitFor()
     await page.getByRole('button', { name: '기본값으로' }).click()
     await page.getByRole('button', { name: '2개 바꾼 것 저장하고 Agent 다시 시작' }).click()
     await page.getByText('Agent를 직접 다시 시작해야 적용돼요', { exact: false }).waitFor()
