@@ -21,6 +21,9 @@ real.env
 server/*.env
 !server/start.env
 
+# 컨테이너 설치
+container/*.env
+
 # 웹 백엔드 SQLite(승인·차단 카드, 승인 감사 기록)
 server/data/
 

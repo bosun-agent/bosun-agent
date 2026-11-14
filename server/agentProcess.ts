@@ -99,6 +99,9 @@ let restarts = 0
 let crashes: number[] = []
 let pendingRestart = false
 let stopping = false
+// 마지막으로 Agent 프로세스를 띄운 시각. 설정 저장 쪽이 "정말 새 프로세스인지" 확인하는 데 쓴다
+// (/health는 누가 응답해도 ok라서, 다시 시작하는 동안 옛 프로세스를 새 것으로 착각할 수 있다).
+let spawnedAt = 0
 let isIdle: () => boolean = () => true
 // 다시 띄우기를 기다리는 중에 화면에서 다시 시작을 누르면 앞의 기다림은 버린다.
 let generation = 0
@@ -111,6 +114,12 @@ export function agentStatus(): AgentProcessStatus {
     ...(pendingRestart ? { pendingRestart } : {}),
     ...(lastError && state !== 'running' ? { error: lastError } : {}),
   }
+}
+
+// 마지막으로 띄운 시각(0이면 WEB이 띄운 적 없음). 밖에서는 이 값이 "요청 시각보다 큰지"로
+// 새 프로세스가 실제로 떴는지 판단한다(server/setup.ts).
+export function agentSpawnedAt(): number {
+  return spawnedAt
 }
 
 // 실제 docker-agent의 /health는 version을 빈 값으로 준다. 그래서 WEB이 띄우는 실행 파일에 `version`을 한 번 물어 둔다.
@@ -171,6 +180,17 @@ function pipe(stream: NodeJS.ReadableStream | null, write: (line: string) => voi
   })
 }
 
+// 컨테이너 환경변수에 빈 값이 들어 있으면(예: container/.env의 `PORTAINER_API_KEY=`) docker-agent의
+// 공급자 체인이 그 빈 값을 "찾은 값"으로 보고 그대로 쓴다(pkg/environment/multi.go — 첫 found 채택).
+// env-file에 값이 있으면 그쪽이 1순위라 무관하지만, 값이 없을 때는 빈 값이 조용히 통과해
+// "A valid authorization token is missing"으로만 보인다. 그래서 Agent를 띄울 때 빈 값을 없애
+// "없음"으로 만든다(그러면 ${env.X}가 치환되지 않아 "값 없음"이 드러난다).
+export function cleanAgentEnv(names: readonly string[], source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...source }
+  for (const name of names) if (out[name] === '') delete out[name]
+  return out
+}
+
 async function spawnAgent(): Promise<void> {
   const cmd = agentCommand()
   if (typeof cmd === 'string') {
@@ -181,8 +201,13 @@ async function spawnAgent(): Promise<void> {
   }
   console.info(`[agent] ${cmd.describe}`)
   readBinVersion(cmd)
-  const proc = spawn(cmd.bin, cmd.args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+  const proc = spawn(cmd.bin, cmd.args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    env: cleanAgentEnv([config.agentKeyName, 'PORTAINER_URL', 'PORTAINER_API_KEY']),
+  })
   child = proc
+  spawnedAt = Date.now()
   savePid(proc.pid)
   pipe(proc.stdout, (line) => console.info(`[agent] ${line}`))
   pipe(proc.stderr, (line) => {

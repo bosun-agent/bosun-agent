@@ -2,6 +2,7 @@
 // 실행: npm run server:fake, npm run server, npm run dev:http를 띄운 뒤 npm run test:ui
 // 운영 빌드(STATIC_DIR=dist)로 확인하려면 URL=http://127.0.0.1:3001/ npm run test:ui
 // 브라우저는 설치된 Chrome을 쓴다(CHROME_PATH). 캡처를 남기려면 SHOTS=<폴더>.
+import { writeFileSync } from 'node:fs'
 import { chromium } from 'playwright-core'
 
 const OUT = process.env.SHOTS
@@ -34,6 +35,21 @@ async function openSidebar() {
 async function newChat() {
   await openSidebar()
   await page.getByRole('button', { name: 'BOSUN', exact: true }).click()
+}
+
+// 키가 없으면 채팅 대신 첫 설정 페이지(server/setup.ts). 실제 키 확인(OpenRouter·Portainer 호출)은 여기서 하지 않고,
+// 테스트용 값을 Agent env 파일에 직접 넣은 뒤 새로고침해서 채팅 화면으로 넘어가는지만 본다.
+const envFile = process.env.AGENT_ENV_FILE
+if (envFile) {
+  writeFileSync(envFile, '# uiSmoke\n')
+  await page.goto(URL)
+  await page.getByRole('heading', { name: '처음 설정' }).waitFor()
+  check(
+    '키가 없으면 첫 설정 페이지에 OpenRouter 키·Portainer 주소·Portainer 키 칸',
+    (await page.getByPlaceholder('sk-or-v1-…').isVisible()) && (await page.getByPlaceholder('ptr-…').isVisible()) && !(await input().count()),
+  )
+  await shot('00-setup')
+  writeFileSync(envFile, 'OPENROUTER_API_KEY=sk-or-v1-uismoke-0000\nPORTAINER_URL=https://127.0.0.1:9443\nPORTAINER_API_KEY=ptr_uismoke_0000\n')
 }
 
 // 로그인 없이 바로 Home

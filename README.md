@@ -20,6 +20,7 @@
 | `agents/` | Agent | 초보자용·숙련자용 설정 예시(`make_agents.py`가 만든다) |
 | `portainer/`, `backup/` | Agent | Portainer CE 2.45.1, 볼륨 백업 컨테이너 compose |
 | `docs/` | 공통 | 동작 기준·테스트 목록, 설계·구현 정리, 복원 절차서 |
+| `container/`, `docker-compose.yaml` | 공통 | 컨테이너 설치(웹+Agent 이미지, Portainer 포함 스택) |
 
 ## 준비물
 
@@ -73,6 +74,9 @@ Portainer 실행, Agent 실행 폴더·`agent.env` 준비는 `README-web.md`와 
 | `docs/AI_Agent_설계_구현_정리_11-04.md` | 설계·구현 정리 |
 | `docs/복원절차서_관리자용_11-07.md` | 볼륨 복원 절차(관리자 작업) |
 | `docs/백업게이트_soteria_검증_결정_11-12.md` | 백업 게이트(승인 트리거 API·MCP) 실측 검증 결과와 팀 결정 |
+| `docs/컨테이너_설치_설계_11-12.md` | 컨테이너 설치 설계 근거와 검증 항목 |
+| `docs/첫실행_설정페이지_11-12.md` | 첫 접속 설정 페이지(값 확인·저장 방식)와 검증 결과 |
+| `container/README.md` | 컨테이너 설치 절차·확인 체크리스트·진단표 |
 | `README-web.md`, `README-agent.md` | 파트별 실행·설정·문제 해결 |
 | `README-backup.md` | 백업 저장 위치 설정과 soteria 백업 게이트 사용법(사용자용) |
 
