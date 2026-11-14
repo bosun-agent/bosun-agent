@@ -246,6 +246,8 @@ await page.getByLabel('설정').click()
 // 첫 탭은 API 키. 들어 있는 키는 가린 값으로만 보인다(맨 위에서 넣은 sk-or-v1-uismoke-0000).
 await page.getByText('sk-or-v1-…0000', { exact: true }).waitFor()
 check('API 키 탭에 가린 키(앞부분 + 끝 4자리)', !(await page.getByText('uismoke', { exact: false }).count()))
+await page.getByText('ptr_…0000', { exact: true }).waitFor()
+check('API 키 탭에 Portainer 키(가린 값)와 주소도 보인다', await page.getByText('https://127.0.0.1:9443', { exact: true }).isVisible())
 await shot('06a-api-key')
 await page.getByRole('button', { name: '정책' }).click()
 await page.getByText('자동 허용 (승인 없이 실행)').waitFor()

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { ApprovalMode, Settings } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
+import { getSetupStatus, type SetupStatus } from '../lib/setup'
 import { AuditSection, BackupSection, InfoSection, NotifySection, PolicySection } from './SettingsSections'
 
 // 설정 화면. API 키는 바꿀 수 있고, 정책·정보·승인 기록은 Agent 설정과 WEB 기록을 보여준다.
@@ -109,10 +110,18 @@ const SAVED_TEXT: Record<NonNullable<Settings['agentRestart']> | 'saved', string
   saved: '저장했어요. AI Agent를 다시 시작해야 새 키가 적용돼요.',
 }
 
-// 키는 Agent env 파일에 저장된다. 화면은 키 값을 다시 받지 않고 저장 여부만 보여준다.
-// Portainer 주소·API 키는 여기서 다루지 않는다(첫 접속 설정 페이지에서 바꾼다).
+// 키는 Agent env 파일에 저장된다. 화면은 키 값을 다시 받지 않고 가린 값(앞부분 + 끝 4자리)만 보여준다.
+// Portainer 키·주소는 여기서는 보기만 하고, 바꾸는 것은 연결 설정 페이지에서 한다(server/setup.ts가 확인 후 저장).
 function ApiKeySection({ onOpenSetup }: { onOpenSetup?: () => void }) {
   const { settings, setSettings, failed } = useSettings()
+  const [portainer, setPortainer] = useState<SetupStatus['portainer'] | null>(null)
+  useEffect(() => {
+    if (!onOpenSetup) return
+    getSetupStatus().then(
+      (s) => setPortainer(s?.portainer ?? null),
+      () => undefined,
+    )
+  }, [onOpenSetup])
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<Settings['agentRestart'] | 'saved' | null>(null)
@@ -145,6 +154,7 @@ function ApiKeySection({ onOpenSetup }: { onOpenSetup?: () => void }) {
 
   return (
     <form onSubmit={save} className="space-y-2">
+      <p className="px-1 text-sm font-semibold text-neutral-800">OpenRouter 키</p>
       <p className="px-1 text-sm">
         {settings.apiKey.set ? (
           <>
@@ -161,7 +171,7 @@ function ApiKeySection({ onOpenSetup }: { onOpenSetup?: () => void }) {
           onChange={(e) => setValue(e.target.value)}
           placeholder={settings.apiKey.set ? '새 키로 바꾸기' : 'API 키'}
           autoComplete="off"
-          aria-label="API 키"
+          aria-label="OpenRouter 키"
           className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-mono text-[13px]"
         />
         <button type="submit" disabled={saving || !value.trim()} className="shrink-0 rounded-lg bg-navy-800 px-3 py-2 text-sm text-white disabled:opacity-40">
@@ -171,10 +181,19 @@ function ApiKeySection({ onOpenSetup }: { onOpenSetup?: () => void }) {
       {saved && <p className="px-1 text-sm text-neutral-700">{SAVED_TEXT[saved]}</p>}
       {saveFailed && <p className="px-1 text-sm text-red-600">저장하지 못했어요. 키를 확인하고 다시 시도해주세요.</p>}
       {onOpenSetup && (
-        <div className="mt-1 border-t border-neutral-200 pt-2">
-          <p className="px-1 text-xs text-neutral-500">
-            Portainer 주소와 API 키는 연결 설정 페이지에서 바꿔요.
-          </p>
+        <div className="mt-3 space-y-1 border-t border-neutral-200 pt-3">
+          <p className="px-1 text-sm font-semibold text-neutral-800">Portainer 키</p>
+          {portainer ? (
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 px-1 text-sm">
+              <dt className="text-neutral-500">저장된 키</dt>
+              <dd className="font-mono text-neutral-600">{portainer.keySet ? (portainer.keyMasked ?? '있음') : '없음'}</dd>
+              <dt className="text-neutral-500">주소</dt>
+              <dd className="font-mono break-all text-neutral-600">{portainer.url ?? '없음'}</dd>
+            </dl>
+          ) : (
+            <p className="px-1 text-sm text-neutral-500">불러오는 중…</p>
+          )}
+          <p className="px-1 text-xs text-neutral-500">Portainer 키와 주소는 연결 설정에서 바꿔요.</p>
           <button
             type="button"
             onClick={onOpenSetup}
