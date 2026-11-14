@@ -20,7 +20,7 @@
 | `agents/` | Agent | 초보자용·숙련자용 설정 예시(`make_agents.py`가 만든다) |
 | `portainer/`, `backup/` | Agent | Portainer CE 2.45.1, 볼륨 백업 컨테이너 compose |
 | `docs/` | 공통 | 동작 기준·테스트 목록, 설계·구현 정리, 복원 절차서 |
-| `container/`, `docker-compose.yaml` | 공통 | 컨테이너 설치(웹+Agent 이미지, Portainer 포함 스택) |
+| `container/`, `docker-compose.yaml` | 공통 | 컨테이너 설치(웹+Agent 이미지 스택. Portainer는 따로 설치) |
 
 ## 준비물
 
