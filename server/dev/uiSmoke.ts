@@ -1,0 +1,501 @@
+// 화면 스모크 테스트. 브라우저로 첫 화면부터 승인·멈춤·다시 붙기·설정 화면까지 눌러 본다.
+// 실행: npm run server:fake, npm run server, npm run dev:http를 띄운 뒤 npm run test:ui
+// 운영 빌드(STATIC_DIR=dist)로 확인하려면 URL=http://127.0.0.1:3001/ npm run test:ui
+// 브라우저는 설치된 Chrome을 쓴다(CHROME_PATH). 캡처를 남기려면 SHOTS=<폴더>.
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { chromium } from 'playwright-core'
+
+const OUT = process.env.SHOTS
+const URL = process.env.URL ?? 'http://localhost:5173/'
+let failures = 0
+const check = (name: string, ok: boolean, detail?: unknown) => {
+  if (!ok) failures++
+  console.info(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ' ' + JSON.stringify(detail ?? '')}`)
+}
+
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe' })
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } })
+const page = await ctx.newPage()
+const errors: string[] = []
+page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+page.on('pageerror', (e) => errors.push(String(e)))
+const shot = async (name: string) => {
+  if (OUT) await page.screenshot({ path: `${OUT}/${name}.png` })
+}
+const input = () => page.getByPlaceholder('무엇을 해 드릴까요?')
+async function send(text: string) {
+  await input().fill(text)
+  await input().press('Enter')
+}
+async function openSidebar() {
+  await page.getByLabel('대화 목록 열기').or(page.getByLabel('대화 목록 닫기')).first().waitFor()
+  if (await page.getByLabel('대화 목록 열기').isVisible()) await page.getByLabel('대화 목록 열기').click()
+}
+// 새 대화는 사이드바 맨 위 BOSUN(홈)으로 연다(2026-11-11 회의: + 새 대화 버튼 삭제).
+async function newChat() {
+  await openSidebar()
+  await page.getByRole('button', { name: 'BOSUN', exact: true }).click()
+}
+
+// 키가 없으면 채팅 대신 첫 설정 페이지(server/setup.ts). 실제 키 확인(OpenRouter·Portainer 호출)은 여기서 하지 않고,
+// 테스트용 값을 Agent env 파일에 직접 넣은 뒤 새로고침해서 채팅 화면으로 넘어가는지만 본다.
+const envFile = process.env.AGENT_ENV_FILE
+if (envFile) {
+  writeFileSync(envFile, '# uiSmoke\n')
+  await page.goto(URL)
+  await page.getByRole('heading', { name: '처음 설정' }).waitFor()
+  check(
+    '키가 없으면 첫 설정 페이지에 키 두 칸만(주소 칸은 숨김)',
+    (await page.getByPlaceholder('sk-or-v1-…').isVisible()) &&
+      (await page.getByPlaceholder('ptr_…').isVisible()) &&
+      (await page.getByLabel('Portainer 주소', { exact: true }).count()) === 0 &&
+      !(await input().count()),
+  )
+  check('설명은 처음엔 접혀 있다', !(await page.getByText('키는 어떻게 전달되나요').isVisible()))
+  await page.getByRole('button', { name: '키 받는 법과 전달 방식' }).click()
+  check(
+    '제목 옆 ? 하나에 키 받는 법·주소·전달 방식',
+    (await page.getByText('Access tokens → Add access token', { exact: false }).isVisible()) &&
+      (await page.getByText('https://localhost:9443', { exact: true }).isVisible()) &&
+      (await page.getByText('키는 어떻게 전달되나요').isVisible()),
+  )
+  await shot('00-setup')
+  writeFileSync(envFile, 'OPENROUTER_API_KEY=sk-or-v1-uismoke-0000\nPORTAINER_URL=https://127.0.0.1:9443\nPORTAINER_API_KEY=ptr_uismoke_0000\n')
+}
+
+// 로그인 없이 바로 Home
+await page.goto(URL)
+await input().waitFor()
+const logo = page.getByRole('img', { name: 'BOSUN' })
+check('로그인 없이 바로 Home', (await logo.isVisible()) && !(await page.getByText('로그인').count()))
+check('첫 화면 로고 이미지가 실제로 불러와진다', await logo.evaluate((el) => (el as HTMLImageElement).complete && (el as HTMLImageElement).naturalWidth > 0))
+
+// Home에는 추천 질문이 없다(2026-11-11 회의). 넓은 화면은 사이드바가 열려 있고 + 새 대화 버튼은 없다.
+check('Home에 추천 질문 버튼이 없다', (await page.getByRole('button', { name: '실행 중인 컨테이너 목록 보여줘' }).count()) === 0)
+check('넓은 화면은 사이드바가 열려 있고 새 대화 버튼 대신 BOSUN', (await page.getByLabel('대화 목록 닫기').isVisible()) && (await page.getByRole('button', { name: '+ 새 대화' }).count()) === 0)
+await send('실행 중인 컨테이너 목록 보여줘')
+await page.getByText('실행 중인 컨테이너는 web 하나예요.').waitFor()
+check('조회 답', true)
+await shot('01-reply')
+
+// 승인 카드(EFFECT 줄, 기술 정보 접힘)
+await newChat()
+await send('nginx 삭제해줘')
+await page.getByText('승인이 필요해요').waitFor()
+check('승인 카드에 승인하면 어떻게 되는지 한 줄', await page.getByText('컨테이너와 그 안에서 바뀐 파일이 지워져요', { exact: false }).isVisible())
+check('삭제 카드 위에 되돌릴 수 없음 표시', await page.getByText('되돌릴 수 없음', { exact: true }).isVisible())
+check('요청 원문은 접혀 있다', !(await page.getByText('DELETE /containers/nginx-web').isVisible()))
+await page.getByText('기술 정보 (Docker에 보낼 요청)').click()
+check('펼치면 요청 원문', await page.getByText('DELETE /containers/nginx-web').isVisible())
+check('승인 대기 중에는 멈춤 버튼', await page.getByLabel('멈추기').isVisible())
+await shot('02-approval')
+
+// 다른 대화는 그대로 쓸 수 있다
+await newChat()
+await send('안녕')
+await page.getByText('가짜 Agent 응답이에요', { exact: false }).waitFor()
+check('승인 대기 중에도 다른 대화에서 보낼 수 있다', true)
+
+// 새로고침하면 마지막으로 보던 대화가 열린다
+await page.reload()
+await page.getByText('가짜 Agent 응답이에요', { exact: false }).waitFor()
+check('새로고침하면 마지막으로 보던 대화가 다시 열린다', true)
+
+// 대기 중인 카드가 돌아오고 승인할 수 있다
+await openSidebar()
+await page.getByRole('button', { name: /^nginx 삭제해줘( 처리 중)?$/ }).click()
+await page.getByText('승인이 필요해요').waitFor()
+check('새로고침 뒤 처리 중 대화에 다시 붙어 카드가 보인다', true)
+await page.getByRole('button', { name: '승인', exact: true }).click()
+await page.getByText('nginx-web을 삭제했어요.').waitFor()
+check('다시 붙은 카드를 승인하면 이어서 답', true)
+await page.getByRole('button', { name: /^처리 과정 보기/ }).last().click()
+check('처리 과정에 무엇을 승인했는지 남는다', await page.getByText('승인함: 컨테이너 nginx-web 삭제').isVisible())
+await shot('03-approved-after-reload')
+
+// 모델이 빈 답을 보내면 멈춘 것처럼 두지 않고 다시 시도를 띄운다
+await newChat()
+await send('빈 답 테스트')
+await page.getByText('AI가 빈 답을 보냈어요', { exact: false }).waitFor()
+check('빈 답이면 오류와 다시 시도', await page.getByRole('button', { name: '다시 시도' }).last().isVisible())
+check('오류의 다시 시도는 마우스를 올리지 않아도 보인다', (await page.getByRole('button', { name: '다시 시도' }).last().evaluate((el) => getComputedStyle(el.parentElement!).opacity)) === '1')
+
+// 줄 하나만 바꾼 답도 줄을 나눠 보여준다(2026-11-11: ①②③이 한 문단으로 붙었다)
+await newChat()
+await send('줄바꿈 보여줘')
+await page.getByText('② 이유: 둘째 줄', { exact: false }).waitFor()
+check('한 줄 바꿈도 화면에서 줄이 나뉜다', (await page.locator('p:has-text("① 막힌 것") br').count()) === 1)
+
+// Agent에 Portainer 도구가 없으면 답 아래에 다시 시작하라는 안내(차단 안내 아님)
+await newChat()
+await send('도구 없음 확인')
+await page.getByText('Portainer 도구를 불러오지 못했어요', { exact: false }).waitFor()
+check('Portainer 도구 없음 안내, 빨간 차단 안내는 없다', (await page.getByText('차단됨', { exact: true }).count()) === 0)
+
+// 중간에 막힌 뒤 다시 만들어 승인하면 차단 안내가 회색으로 낮아진다(2026-10-28 리허설)
+await newChat()
+await send('설정 없이 만들어줘')
+await page.getByText('승인이 필요해요').waitFor()
+check('차단 안내에 무엇이 왜 막혔는지', await page.getByText('컨테이너 생성 body(설정)가 없습니다', { exact: true }).isVisible())
+check('승인 전에는 빨간 차단됨', await page.getByText('차단됨', { exact: true }).isVisible())
+check(
+  '정책 차단이면 Portainer에서 직접 하라는 안내와 링크',
+  (await page.getByRole('link', { name: 'Portainer 열기 ↗' }).getAttribute('href')) === 'https://localhost:9443',
+)
+check('처리 과정에 차단 사유가 붙고 같은 줄은 ×2로', await page.getByText('정책에 따라 차단됨: 컨테이너 생성 body(설정)가 없습니다').isVisible() && (await page.getByText('×2').isVisible()))
+await shot('04-blocked')
+await page.getByRole('button', { name: '승인', exact: true }).click()
+await page.getByText('simple-web을 만들었어요.').waitFor()
+check('뒤에 승인한 작업이 있으면 도중에 막힌 요청(회색)', await page.getByText('도중에 막힌 요청', { exact: true }).isVisible() && !(await page.getByText('차단됨', { exact: true }).isVisible()))
+check('회색으로 낮추면 Portainer 안내는 뺀다', !(await page.getByRole('link', { name: 'Portainer 열기 ↗' }).isVisible()))
+await shot('05-blocked-resolved')
+
+// 먼저 뜬 카드를 기다리는 사이 다른 대화가 같은 대상을 바꾸면, 승인해도 실행하지 않고 처리 과정과 답 아래 안내로 알린다
+await newChat()
+await send('nginx 지워줘')
+await page.getByText('승인이 필요해요').waitFor()
+{
+  // 다른 대화는 API로 보내고 승인한다. 화면처럼 X-Bosun 헤더를 붙인다.
+  const headers = { 'X-Bosun': '1' }
+  const { sessionId } = (await (await page.request.post(`${URL}api/sessions`, { headers })).json()) as { sessionId: string }
+  const sent = await (await page.request.post(`${URL}api/sessions/${sessionId}/messages`, { headers, data: { text: 'nginx 지워줘' } })).text()
+  const approvalId = /"approvalId":"([^"]+)"/.exec(sent)?.[1]
+  await page.request.post(`${URL}api/sessions/${sessionId}/approvals/${approvalId}`, { headers, data: { decision: 'approve' } })
+}
+await page.getByRole('button', { name: '승인', exact: true }).click()
+await page.getByText('승인되지 않아서 삭제하지 않았어요.').waitFor()
+const changedShown = async () => {
+  await page.getByRole('button', { name: /^처리 과정 보기/ }).last().click()
+  return (
+    (await page.getByText('다른 대화에서 같은 대상', { exact: false }).isVisible()) &&
+    (await page.getByText('대상이 바뀌어 실행 안 함: 컨테이너 nginx-web 삭제').isVisible()) &&
+    !(await page.getByText('승인함: 컨테이너 nginx-web 삭제').isVisible()) &&
+    !(await page.getByText('차단됨', { exact: true }).isVisible())
+  )
+}
+check('대상이 바뀌어 실행하지 않았으면 승인함 대신 그 줄과 안내(정책 차단 안내는 없음)', await changedShown())
+await shot('06-target-changed')
+await page.reload()
+await page.getByText('승인되지 않아서 삭제하지 않았어요.').waitFor()
+check('새로고침해도 같은 줄과 안내', await changedShown())
+
+// 멈추기
+await newChat()
+await send('천천히 답해줘')
+await page.getByText('1번째 줄이에요.').waitFor()
+await page.getByLabel('멈추기').click()
+await page.getByText('작업을 멈췄어요.').waitFor()
+check('멈추면 안내가 나오고 더 받지 않는다', !(await page.getByText('15번째 줄이에요.').isVisible()))
+check('멈춘 뒤 입력창이 다시 열린다', await input().isEnabled())
+
+// 처리 중 새로고침 → 다시 붙어서 끝까지 받는다
+await newChat()
+await send('천천히 답해줘')
+await page.getByText('2번째 줄이에요.').waitFor()
+await page.reload()
+await openSidebar()
+await page.getByRole('button', { name: /^천천히 답해줘( 처리 중)?$/ }).first().click()
+await page.getByText('15번째 줄이에요.').waitFor({ timeout: 10_000 })
+check('처리 중에 새로고침해도 다시 붙어 끝까지 받는다', await page.getByText('1번째 줄이에요.').isVisible())
+
+// 메시지 수정 → 새 대화
+const bubble = page.getByText('천천히 답해줘', { exact: true }).last()
+await bubble.hover()
+await page.getByRole('button', { name: '수정' }).last().click()
+await page.getByLabel('메시지 고치기').fill('컨테이너 목록 보여줘')
+await page.getByRole('button', { name: '새 대화로 보내기' }).click()
+await page.getByText('실행 중인 컨테이너는 web 하나예요.').last().waitFor()
+await openSidebar()
+const rows = (re: RegExp) => page.getByRole('button', { name: re }).count()
+check(
+  '첫 메시지를 고쳐 보내면 그 문장을 제목으로 한 새 대화가 생기고 원래 대화는 남는다',
+  (await rows(/^컨테이너 목록 보여줘( 처리 중)?$/)) === 1 && (await rows(/^천천히 답해줘( 처리 중)?$/)) === 2,
+  [await rows(/^컨테이너 목록 보여줘( 처리 중)?$/), await rows(/^천천히 답해줘( 처리 중)?$/)],
+)
+// 서버 제목도 바뀌어서 목록을 다시 받아도 그대로다.
+await page.reload()
+await openSidebar()
+await page.getByRole('button', { name: /^컨테이너 목록 보여줘( 처리 중)?$/ }).waitFor()
+check('고친 대화의 제목은 서버에도 저장된다', true)
+await shot('04-forked')
+
+// 사이드바: 이름 바꾸기, 고정, 찾기
+const row = page.getByRole('button', { name: '안녕', exact: true })
+await row.hover()
+await page.getByLabel('안녕 이름 바꾸기').click()
+await page.getByLabel('대화 제목').fill('인사 대화')
+await page.getByLabel('대화 제목').press('Enter')
+await page.getByRole('button', { name: '인사 대화', exact: true }).hover()
+await page.getByLabel('인사 대화 고정', { exact: true }).click()
+check('고정하면 고정됨 묶음에 들어간다', await page.getByText('고정됨').isVisible())
+await page.getByLabel('대화 찾기').fill('인사')
+const visibleRows = await page.locator('aside nav > div').count()
+check('찾기로 걸러진다', visibleRows === 1, visibleRows)
+await shot('05-sidebar')
+await page.getByLabel('대화 찾기').fill('')
+
+// 새로고침해도 이름과 고정이 남는다(서버 저장)
+await page.reload()
+await openSidebar()
+await page.getByRole('button', { name: '인사 대화', exact: true }).waitFor()
+check('이름과 고정이 서버에 저장된다', await page.getByText('고정됨').isVisible())
+
+// 설정 화면
+await page.getByLabel('대화 목록 닫기').click()
+await page.getByLabel('설정').click()
+// 첫 탭은 API 키. 들어 있는 키는 가린 값으로만 보인다(맨 위에서 넣은 sk-or-v1-uismoke-0000).
+await page.getByText('sk-or-v1-…0000', { exact: true }).waitFor()
+check('API 키 탭에 가린 키(앞부분 + 끝 4자리)', !(await page.getByText('uismoke', { exact: false }).count()))
+await page.getByText('ptr_…0000', { exact: true }).waitFor()
+check('API 키 탭에 Portainer 키(가린 값)와 주소도 보인다', await page.getByText('https://127.0.0.1:9443', { exact: true }).isVisible())
+const orCard = page.getByRole('region', { name: 'OpenRouter 키' })
+await orCard.getByText('연결됨').waitFor()
+check(
+  'API 키 탭: 두 키가 같은 상자, OpenRouter 연결됨과 남은 크레딧(가짜 OpenRouter), 연결 설정 버튼은 없다',
+  (await page.getByRole('region', { name: 'Portainer 키' }).isVisible()) &&
+    (await orCard.getByText('$7.50 (충전 $10.00)').isVisible()) &&
+    (await page.getByRole('button', { name: '연결 설정 열기' }).count()) === 0,
+)
+await page.getByRole('region', { name: 'Portainer 키' }).getByText(/연결됨|연결 안 됨/).waitFor()
+await shot('06a-api-key')
+await orCard.getByLabel('OpenRouter 키').fill('sk-or-v1-bad-key-000000')
+await orCard.getByRole('button', { name: '저장' }).click()
+await orCard.getByText('OpenRouter가 이 키를 거부했어요', { exact: false }).waitFor()
+check('API 키 탭: 잘못된 키는 확인하고 저장하지 않는다', await page.getByText('sk-or-v1-…0000', { exact: true }).isVisible())
+// 일부러 거절당한 저장(PUT /api/setup 400)은 브라우저가 콘솔에 남긴다. 마지막 "콘솔 오류 없음" 검사에서 뺀다.
+for (let i = errors.length - 1; i >= 0; i--) if (errors[i].includes('status of 400')) errors.splice(i, 1)
+await page.getByRole('button', { name: '정책' }).click()
+await page.getByText('자동 허용 (승인 없이 실행)').waitFor()
+check('정책: 자동 허용·거부 규칙 설명', (await page.getByText('조회(GET 요청)').isVisible()) && (await page.getByText('컨테이너 안 명령 실행(exec)').isVisible()))
+check(
+  '정책: 안전 모드는 쉬운 제목, 훅은 "안전 검사"로 묶고 파일 이름은 자세히에',
+  (await page.getByText('기본 동작: 모르는 작업은 묻기 (strict)').isVisible()) &&
+    (await page.getByText('안전 검사 (정책 칸과 상관없이 항상 실행)').isVisible()) &&
+    (await page.getByText('자세히 (이벤트·파일 이름)').isVisible()),
+)
+await shot('06-policy')
+await page.getByRole('button', { name: '승인 기록' }).click()
+await page.getByText('nginx 삭제', { exact: false }).first().waitFor().catch(() => {})
+check('승인 기록에 방금 승인한 카드', await page.getByText('컨테이너 nginx-web 삭제').first().isVisible())
+await page.getByRole('button', { name: '백업' }).click()
+await page.getByText('지우기 직전에 Agent 백업 훅이', { exact: false }).waitFor()
+check('백업 화면', true)
+await page.getByRole('button', { name: '정보' }).click()
+await page.getByText('v1.148.0-fake').waitFor()
+// AI 설정 상자: 할 수 있는 일은 쉬운 말, 원래 도구 이름·실행 명령은 자세히에. 도구 수는 그 상자에서 확인한다.
+await page.getByRole('button', { name: '실제 연결 확인' }).click()
+await page.getByText('2개 모두 연결됨').waitFor()
+check(
+  '정보: AI 설정 상자(쉬운 도구 이름, 원래 이름은 자세히에), 도구 수 상자는 따로 없다',
+  (await page.getByText('Docker 조회·관리, 환경 목록').isVisible()) &&
+    !(await page.getByText('docker_proxy, EndpointList').isVisible()) &&
+    (await page.getByText('쓸 수 있는 도구 수').count()) === 0,
+)
+await page.getByText('켜져 있음(WEB이 띄우지 않음)').waitFor()
+check('정보: Agent 실행 상태(AGENT_BIN 없음), 다시 시작 버튼 없음, 배너 없음', (await page.getByRole('button', { name: '다시 시작' }).count()) === 0 && (await page.getByRole('status').count()) === 0)
+await shot('07-info')
+check('설정에 모델 탭이 없다(입력창에서 고른다)', (await page.getByRole('button', { name: '모델', exact: true }).count()) === 0)
+check('설정에 계정 탭이 없다', (await page.getByRole('button', { name: '계정' }).count()) === 0)
+await page.getByRole('button', { name: '알림' }).click()
+check('알림 화면', await page.getByText('승인이 필요하면 브라우저 알림 보내기').isVisible())
+await page.getByLabel('설정 닫기').click()
+
+// 입력창 모델 선택: 찾아서 고르면 버튼 이름이 바뀌고 서버에 저장된다
+await page.getByLabel('모델 선택').click()
+await page.getByText('전체 (3개)').waitFor()
+check('모델 목록에 권장과 전체', (await page.getByText('권장', { exact: true }).isVisible()) && (await page.getByRole('button', { name: /deepseek-v4\.1-flash/ }).isVisible()))
+await page.getByLabel('모델 찾기').fill('gemini')
+check('모델 찾기로 걸러진다', (await page.getByRole('dialog', { name: '모델 고르기' }).getByRole('button').count()) === 1)
+await shot('14-model-picker')
+await page.getByRole('button', { name: /gemini-3-flash/ }).click()
+await page.getByRole('dialog', { name: '모델 고르기' }).waitFor({ state: 'detached' })
+check('고른 모델이 입력창 버튼에 보인다', (await page.getByLabel('모델 선택').innerText()).includes('gemini-3-flash'))
+check('고른 모델이 서버에 저장된다', ((await (await page.request.get(`${URL}api/settings`)).json()) as { model: string }).model === 'openrouter/google/gemini-3-flash')
+await page.getByLabel('모델 선택').click()
+await page.getByRole('button', { name: /deepseek-v4\.1-flash/ }).click()
+await page.getByRole('dialog', { name: '모델 고르기' }).waitFor({ state: 'detached' })
+
+// 도움말은 사이드바 맨 아래(2026-11-11 회의: + 메뉴에서 뺌). + 는 바로 파일 고르기다.
+check('+ 메뉴에 도움말이 없다', (await page.getByText('무엇을 할 수 있나요?').count()) === 0)
+await openSidebar()
+await page.getByRole('button', { name: '무엇을 할 수 있나요?' }).click()
+check('도움말에 안 되는 것 목록', await page.getByText('채팅으로는 할 수 없어요').isVisible())
+check(
+  '도움말에 볼륨 백업은 없다(백업 보류, 11-14)',
+  (await page.getByText('지금 볼륨 백업').count()) === 0 && (await page.getByText('지금 백업해줘', { exact: false }).count()) === 0,
+)
+await shot('08-help')
+await page.getByLabel('도움말 닫기').click()
+
+// 스택 배포 카드: 서비스 요약은 보이고 compose 원문은 접혀 있다(환경변수 값은 가림)
+await newChat()
+await send('스택 배포해줘')
+await page.getByText('승인이 필요해요').waitFor()
+check('스택 배포 카드 제목과 새로 만듦', (await page.getByText('스택 shop 배포', { exact: true }).isVisible()) && (await page.getByText('새로 만듦', { exact: true }).isVisible()))
+check('compose 원문은 접혀 있다', !(await page.getByText('POSTGRES_PASSWORD: ••••', { exact: false }).isVisible()))
+await page.getByText('compose 파일 보기').click()
+check('펼치면 환경변수 값을 가린 compose', await page.getByText('POSTGRES_PASSWORD: ••••', { exact: false }).isVisible())
+await shot('11-stack-card')
+await page.getByRole('button', { name: '거부' }).click()
+await page.getByText('승인되지 않아서 스택을 만들지 않았어요.').waitFor()
+
+// 승인 방식: 묻지 않기(YOLO) → 재시작은 카드 없이 실행되고 처리 과정에 남는다
+await page.getByLabel('설정', { exact: true }).click()
+await page.getByRole('button', { name: '정책' }).click()
+await page.getByRole('radio', { name: /매번 묻기/ }).waitFor()
+check('승인 방식은 두 가지', (await page.getByRole('radio').count()) === 2, await page.getByRole('radio').count())
+page.once('dialog', (d) => void d.accept())
+await page.getByRole('radio', { name: /묻지 않기/ }).check()
+await page.getByRole('radio', { name: /묻지 않기/ }).and(page.locator(':checked')).waitFor()
+await shot('12-approval-mode')
+check(
+  '묻지 않기면 정책 목록에도 알리고, 바로 볼 조회 체크박스는 없다',
+  (await page.getByText('모두 승인 없이 바로 실행돼요', { exact: false }).isVisible()) &&
+    (await page.getByRole('checkbox', { name: '컨테이너 로그' }).count()) === 0,
+)
+await page.getByLabel('설정 닫기').click()
+check('묻지 않기면 입력창 위에 늘 보인다', await page.getByText('묻지 않기(YOLO) 켜짐', { exact: false }).isVisible())
+await newChat()
+await send('web 재시작해줘')
+await page.getByText('web을 재시작했어요.').waitFor()
+check('재시작은 승인 카드 없이 실행', !(await page.getByText('승인이 필요해요').isVisible()))
+check('접힌 처리 과정에 자동 승인 건수', await page.getByText('자동 승인 1건', { exact: false }).isVisible())
+await page.getByText('처리 과정 보기', { exact: false }).last().click()
+check('펼치면 자동 승인함 줄', await page.getByText('자동 승인함: 컨테이너 web 재시작').isVisible())
+check(
+  '작업이 끝나면 Portainer 그 화면으로 가는 버튼',
+  (await page.getByRole('link', { name: '컨테이너 web ↗' }).getAttribute('href')) === 'https://localhost:9443/#!/1/docker/containers/web',
+)
+await shot('13-auto-approved')
+await page.getByLabel('설정', { exact: true }).click()
+await page.getByRole('button', { name: '정책' }).click()
+await page.getByRole('radio', { name: /매번 묻기/ }).check()
+await page.getByRole('radio', { name: /매번 묻기/ }).and(page.locator(':checked')).waitFor()
+await page.getByRole('button', { name: '승인 기록' }).click()
+await page.getByText('자동 승인', { exact: false }).first().waitFor()
+check('승인 기록에 자동 승인으로 남는다', true)
+await page.getByLabel('설정 닫기').click()
+check('매번 묻기로 돌리면 표시가 사라진다', !(await page.getByText('묻지 않기(YOLO) 켜짐', { exact: false }).isVisible()))
+
+// 여러 개 골라 지우기: 모두 선택은 고정한 대화를 빼고 고른다
+await openSidebar()
+await page.getByRole('button', { name: '선택', exact: true }).click()
+await page.getByLabel('모두 선택').check()
+page.once('dialog', (d) => void d.accept())
+await page.getByRole('button', { name: /^삭제 \(\d+개\)$/ }).click()
+// 고르는 중에도 제목은 보이므로, 사이드바에서 지운 제목이 사라질 때까지 기다린다.
+// waitForFunction은 화면의 CSP(script-src 'self')에 막혀서 로케이터로 기다린다.
+await page.locator('aside nav', { hasText: '인사 대화', hasNotText: '천천히 답해줘' }).waitFor()
+check(
+  '여러 개 골라 지우면 고정한 대화만 남는다',
+  (await page.getByRole('button', { name: '인사 대화', exact: true }).isVisible()) && (await rows(/^컨테이너 목록 보여줘( 처리 중)?$/)) === 0,
+)
+await shot('10-bulk-delete')
+await page.getByLabel('대화 목록 닫기').click()
+
+// 정책 칸 옮기기(server/policy.ts). Agent 설정 파일이 있을 때만 칸 화면이 나온다. 백엔드는 AGENT_ENV_FILE 옆 <AGENT_NAME>.yaml을 본다.
+if (envFile) {
+  const yamlFile = join(dirname(envFile), `${process.env.AGENT_NAME ?? 'agent'}.yaml`)
+  const base = [
+    'agents:',
+    '  root:',
+    '    model: x',
+    'permissions:',
+    '  allow:',
+    '    - "docker_proxy:method=GET:path=/containers/json" # 컨테이너 목록',
+    '    - "EndpointList"',
+    '  deny:',
+    '    - "docker_proxy:method=POST:path=*/containers/create*"',
+    '    - "docker_proxy:method=DELETE:path=*/volumes/*"',
+    '',
+  ].join('\n')
+  writeFileSync(yamlFile, base)
+  try {
+    await page.getByLabel('설정', { exact: true }).click()
+    await page.getByRole('button', { name: '정책' }).click()
+    await page.getByText('작업별 허용·묻기·막기').waitFor()
+    const deny = page.getByRole('region', { name: '막기 칸' })
+    check(
+      '정책: 설정 파일이 있으면 세 칸 화면(잠긴 항목 포함), 예전 규칙 목록은 없다',
+      (await page.getByRole('region', { name: '허용 칸' }).getByRole('button', { name: '컨테이너 목록' }).isVisible()) &&
+        (await deny.getByRole('button', { name: '볼륨 삭제' }).getAttribute('aria-disabled')) === 'true' &&
+        !(await page.getByText('자동 허용 (승인 없이 실행)').isVisible()),
+    )
+    check(
+      '정책: 칸 화면이 있으면 승인 방식 문구도 칸 기준(묻기 칸, 막기 칸)',
+      (await page.getByText('묻기 칸의 작업마다 승인 카드를 띄워요', { exact: false }).isVisible()) &&
+        (await page.getByText('어느 방식이든 막기 칸과 안전 검사가 막는 작업은', { exact: false }).isVisible()),
+    )
+    // 눌러서 옮기기(폰·키보드). 바꾸는 작업을 허용으로 옮기면 확인 창: 취소하면 그대로, 확인하면 옮긴다
+    let asked = ''
+    page.once('dialog', (d) => {
+      asked = d.message()
+      void d.dismiss()
+    })
+    await page.getByRole('button', { name: '컨테이너 시작', exact: true }).click()
+    await page.getByRole('group', { name: '컨테이너 시작 옮기기' }).getByRole('button', { name: '허용(으)로' }).click()
+    check(
+      '정책: 바꾸는 작업을 허용으로 옮기면 확인 창, 취소하면 그대로',
+      asked.includes('승인 카드 없이 바로 실행돼요') &&
+        (await page.getByRole('region', { name: '묻기 칸' }).getByRole('button', { name: '컨테이너 시작', exact: true }).isVisible()),
+      asked,
+    )
+    page.once('dialog', (d) => void d.accept())
+    await page.getByRole('button', { name: '컨테이너 시작', exact: true }).click()
+    await page.getByRole('group', { name: '컨테이너 시작 옮기기' }).getByRole('button', { name: '허용(으)로' }).click()
+    // 끌어다 놓기
+    await page.getByRole('region', { name: '허용 칸' }).getByRole('button', { name: '컨테이너 목록' }).dragTo(deny, { targetPosition: { x: 40, y: 20 } })
+    await page.getByRole('button', { name: '2개 바꾼 것 저장하고 Agent 다시 시작' }).waitFor()
+    check(
+      '정책: 눌러서·끌어서 옮기면 그 칸으로 가고 저장 버튼에 바꾼 수',
+      (await page.getByRole('region', { name: '허용 칸' }).getByRole('button', { name: /^컨테이너 시작/ }).isVisible()) &&
+        (await deny.getByRole('button', { name: /^컨테이너 목록/ }).isVisible()),
+    )
+    await shot('14-policy-board')
+    await page.getByRole('button', { name: '2개 바꾼 것 저장하고 Agent 다시 시작' }).click()
+    await page.getByText('Agent를 직접 다시 시작해야 적용돼요', { exact: false }).waitFor()
+    const saved = readFileSync(yamlFile, 'utf8')
+    check(
+      '정책: 저장하면 설정 파일에 적고(WEB이 띄운 Agent가 아니면 직접 다시 시작 안내)',
+      saved.includes('- "docker_proxy:method=POST:path=/containers/*/start"') && /deny:[\s\S]*containers\/json/.test(saved),
+      saved,
+    )
+    await page.getByLabel('설정 닫기').click()
+    await openSidebar()
+    await page.getByRole('button', { name: '무엇을 할 수 있나요?' }).click()
+    await page.getByText('컨테이너: 컨테이너 시작', { exact: false }).waitFor()
+    check(
+      '정책: 도움말이 정책 칸대로(허용한 시작은 바로 실행, 막은 목록 예시는 막힘)',
+      (await page.getByText('막힘 · 실행 중인 컨테이너 목록 보여줘').isVisible()) && (await page.getByText('승인 · web 컨테이너 재시작해줘').isVisible()),
+    )
+    await shot('16-help-policy')
+    await page.getByLabel('도움말 닫기').click()
+    await page.getByLabel('설정', { exact: true }).click()
+    await page.getByRole('button', { name: '정책' }).click()
+    await page.getByText('작업별 허용·묻기·막기').waitFor()
+    await page.getByRole('button', { name: '기본값으로' }).click()
+    await page.getByRole('button', { name: '2개 바꾼 것 저장하고 Agent 다시 시작' }).click()
+    await page.getByText('Agent를 직접 다시 시작해야 적용돼요', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '기본값으로' }).waitFor({ state: 'detached' })
+    check('정책: 기본값으로 되돌리면 설정 파일이 처음 그대로', readFileSync(yamlFile, 'utf8') === base)
+    await page.setViewportSize({ width: 375, height: 760 })
+    await shot('15-policy-board-mobile')
+    check('정책: 좁은 화면에서도 가로 스크롤 없음', !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)))
+    await page.setViewportSize({ width: 1280, height: 860 })
+    await page.getByLabel('설정 닫기').click()
+  } finally {
+    rmSync(yamlFile, { force: true })
+  }
+}
+
+// 좁은 화면
+await page.setViewportSize({ width: 375, height: 760 })
+await shot('09-mobile')
+const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
+check('360px대 화면에서 가로 스크롤 없음', !overflow)
+
+check('콘솔 오류 없음', errors.length === 0, errors)
+await browser.close()
+console.info(failures ? `${failures} failure(s)` : 'all passed')
+process.exit(failures ? 1 : 0)

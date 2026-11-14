@@ -1,0 +1,10 @@
+[
+  { "provider": "openrouter", "model": "meta-llama/llama-4-maverick", "default": true },
+  { "provider": "dmr", "model": "ai/qwen3:latest" },
+  { "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash" },
+  { "provider": "openrouter", "model": "nvidia/nemotron-3-ultra-550b-a55b:free" },
+  { "provider": "openrouter", "model": "google/gemini-3-flash" },
+  { "provider": "openrouter", "model": "google/gemini-3-flash" },
+  { "provider": "openrouter", "model": "bad model name" },
+  { "provider": 7, "model": "x" }
+]

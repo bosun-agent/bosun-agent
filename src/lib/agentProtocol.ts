@@ -1,0 +1,290 @@
+// WEB ↔ AI Agent 인터페이스 타입. 브라우저 ↔ WEB 백엔드 엔드포인트와 이벤트 모양이다.
+// 목업(mockAgent.ts)과 실제 클라이언트가 모두 이 타입의 이벤트 스트림을 내보낸다.
+
+export interface ProposedAction {
+  tool: string
+  target?: string
+  params?: Record<string, unknown>
+}
+
+export interface RiskReason {
+  code: string
+  message: string
+}
+
+// 승인 카드 맨 위에 붙는 한눈에 보는 위험도. high: 되돌릴 수 없거나 호스트까지 영향,
+// medium: 서비스가 멈추거나 끊김, low: 새로 만들거나 실행, unknown: WEB이 모르는 도구라 판단할 수 없음.
+export interface RiskLevel {
+  level: 'high' | 'medium' | 'low' | 'unknown'
+  label: string
+}
+
+export type ProgressStep = 'loading_tools' | 'understanding'
+
+export type AgentEvent =
+  | { type: 'progress'; step: ProgressStep }
+  | { type: 'text_delta'; delta: string }
+  | {
+      type: 'tool_status'
+      tool: string
+      status: 'running' | 'succeeded' | 'failed'
+      summary: string
+      // 도구 호출 ID. 모델이 도구를 한꺼번에 여러 개 부르면 시작·결과를 이걸로 짝짓는다
+      callId?: string
+      // 바꾸는 작업이 성공했을 때만: 결과를 확인할 Portainer 화면(PORTAINER_URL 뒤에 붙일 경로)
+      link?: PortainerLink
+    }
+  | {
+      type: 'approval_required'
+      approvalId: string
+      summary: string
+      action: ProposedAction
+      reasons: RiskReason[]
+      risk?: RiskLevel
+      expiresAt: string
+    }
+  // 승인 방식(ApprovalMode)에 따라 WEB이 카드 없이 대신 승인했다. 처리 과정에 한 줄로 남긴다.
+  | { type: 'auto_approved'; approvalId: string; tool: string; summary: string; risk?: RiskLevel }
+  // detail: 무엇이 왜 막혔는지 한 줄(훅이 준 사유의 첫 문장). 사유가 없는 차단에는 없다.
+  | { type: 'rejected'; code: string; reason: string; detail?: string }
+  // 다시 붙기(GET .../stream)에서만 온다. 앞에 보낸 approval_required가 이미 결정됐다.
+  | { type: 'approval_resolved'; approvalId: string; status: Exclude<ApprovalStatus, 'pending'> }
+  | { type: 'error'; code: string; message: string }
+  | { type: 'done' }
+
+// AI가 한 작업이 실제로 됐는지 확인하러 갈 Portainer 화면. label은 "컨테이너 web", path는 `#!/1/docker/containers/web`처럼
+// Portainer 주소 뒤에 붙는 부분이다. 지운 대상은 목록 화면으로 간다.
+export interface PortainerLink {
+  label: string
+  path: string
+}
+
+export type ApprovalDecision = 'approve' | 'deny'
+
+// ---- 대화 목록과 복원 ----
+
+export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled'
+
+export type RestoredCard =
+  | {
+      kind: 'approval'
+      approvalId: string
+      status: ApprovalStatus
+      summary: string
+      action: ProposedAction
+      reasons: RiskReason[]
+      risk?: RiskLevel
+      expiresAt: string
+      // WEB이 승인 방식에 따라 대신 승인한 카드(status approved). 화면에 카드로 띄운 적은 없다.
+      auto?: true
+    }
+  | { kind: 'rejected'; code: string; reason: string; detail?: string }
+
+export type RestoredMessage =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; cards?: RestoredCard[] }
+
+export interface SessionSummary {
+  sessionId: string
+  title: string
+  updatedAt: string
+  // WEB 백엔드가 이 대화를 처리하고 있다(승인 대기 포함). 화면은 다시 붙어서 받는다(GET .../stream).
+  running?: boolean
+  pinned?: boolean
+  inputTokens?: number
+  outputTokens?: number
+}
+
+// 실제 클라이언트도 이 모양을 구현하면 App.tsx는 바꿀 필요가 없다.
+// 목록·복원은 서버가 있어야 하므로 목업에는 없다.
+// 설정 화면 값. model이 null이면 agent.yaml에 적힌 모델을 쓴다.
+// apiKey는 키 값 없이 상태만 준다. editable이 false면 WEB 백엔드에 Agent env 파일 경로가 없다.
+export interface Settings {
+  model: string | null
+  // 권장 모델(AGENT_MODELS). 전체 목록은 GET /api/models
+  models: string[]
+  // masked: 가린 키(앞부분 + … + 끝 4자리). 키가 있을 때만.
+  apiKey: { editable: boolean; set: boolean; masked?: string }
+  // 승인 방식. 카드를 띄울지 WEB이 대신 승인할지 정한다.
+  approvalMode: ApprovalMode
+  // 초보자용·숙련자용 Agent. 두 Agent를 띄운 설치에서만 있다(AGENT_NAME이 beginner나 expert).
+  agentMode?: AgentMode
+  // 정책 차단 안내의 "Portainer 열기" 링크. WEB 백엔드에 PORTAINER_URL이 없으면 빠진다.
+  portainerUrl?: string
+  // PUT /api/settings/api-key 응답에만 있다. 새 키를 적용하려고 Agent를 다시 시작했는지(AgentRestart).
+  agentRestart?: AgentRestart
+}
+
+// 입력창 모델 선택(GET /api/models). recommended는 AGENT_MODELS(detail: agent.yaml 이름이면 실제 provider/model),
+// models는 docker-agent models가 준 나머지(키가 있는 provider). error면 전체 목록 없이 권장만 고른다.
+export interface ModelCatalog {
+  current: string | null
+  recommended: { id: string; detail?: string }[]
+  models: string[]
+  error?: 'unavailable' | 'failed'
+}
+
+// ask: 매번 묻기(기본), never: 묻지 않기(YOLO, 삭제까지 모두 바로 실행).
+// 정책 훅과 permissions.deny는 승인보다 먼저 돌아서 어느 방식이든 그대로 막는다.
+export type ApprovalMode = 'ask' | 'never'
+
+// beginner: 바꾸기 전에 계획을 먼저 보여 준다. expert: 계획 없이 바로 승인 카드를 띄운다. 권한과 훅은 같다.
+export type AgentMode = 'beginner' | 'expert'
+
+// Agent 다시 시작 요청 결과. started: 지금 다시 시작함, waiting: 처리 중인 대화가 끝나면 다시 시작함,
+// manual: WEB이 띄운 Agent가 아니라서 사람이 다시 띄워야 함.
+export type AgentRestart = 'started' | 'waiting' | 'manual'
+
+// 설정 > 정책의 허용·묻기·막기 칸(GET /api/policy, server/policy.ts).
+export type PolicyBucket = 'allow' | 'ask' | 'deny'
+
+export interface PolicyItem {
+  id: string
+  label: string
+  group: string
+  bucket: PolicyBucket
+  // Agent 기준 설정 파일에 적힌 칸
+  defaultBucket: PolicyBucket
+  // hook: 정책 훅이 막아서 옮겨도 실행되지 않으므로 잠근다
+  lock?: 'hook'
+  // 설명 없는 규칙(원문 그대로 보여 준다)
+  raw?: boolean
+  // 바꾸는 작업(조회가 아님). 허용 칸으로 옮길 때 확인을 받는다.
+  change?: boolean
+}
+
+export interface PolicyState {
+  // false면 설정 파일을 찾거나 읽지 못했다(reason)
+  editable: boolean
+  reason?: string
+  files: string[]
+  items: PolicyItem[]
+  // 기본값과 다른 칸에 있는 항목 수
+  changed: number
+}
+
+// WEB 백엔드가 띄운 Docker Agent 상태(GET /api/agent).
+export interface AgentProcessStatus {
+  // false면 WEB이 Agent를 띄우지 않는다(AGENT_BIN 없음). AGENT_URL에 붙기만 한다.
+  managed: boolean
+  // off: 관리 안 함, starting·restarting: 켜는 중, running: 켜짐, external: 이미 떠 있던 Agent를 씀, crashed: 멈춤(다시 시작 필요)
+  state: 'off' | 'starting' | 'restarting' | 'running' | 'external' | 'crashed'
+  // 이 백엔드가 뜬 뒤 Agent를 다시 띄운 횟수
+  restarts: number
+  // 처리 중인 대화가 끝나면 다시 시작한다
+  pendingRestart?: boolean
+  // 마지막 오류(가림). running이면 없다
+  error?: string
+  // Agent가 /health에 답하는지. GET /api/agent가 그때 확인한다
+  reachable?: boolean
+}
+
+// 설정의 정보·정책 화면(GET /api/system). agent.yaml에서 고른 값만 온다.
+export interface AgentConfigSummary {
+  agents: {
+    name: string
+    description?: string
+    model?: string
+    safety?: string
+    maxIterations?: number
+    instruction?: string
+    toolsets: { type: string; command?: string; args: string[]; tools: string[]; env: string[]; callTimeout?: string }[]
+    hooks: { event: string; scripts: string[]; matchers: string[] }[]
+  }[]
+  models: { name: string; provider?: string; model?: string; maxTokens?: number }[]
+  permissions: { allow: string[]; ask: string[]; deny: string[] }
+}
+
+export interface SystemInfo {
+  web: { version: string; maxTurns: number; running: number; approvalTimeoutSec: number }
+  agent: { name: string; reachable: boolean; version?: string; ready?: boolean; error?: string }
+  config?: AgentConfigSummary
+}
+
+// 승인 기록 한 줄(GET /api/audit). 대화를 지웠으면 summary가 없다.
+export interface AuditRecord {
+  at: string
+  // local: 화면에서 누른 결정, system: 승인 시간이 지나 자동 거부, auto: 승인 방식에 따라 WEB이 대신 승인,
+  // policy: 설정 > 정책의 허용 칸이라 Agent가 묻지 않고 실행한 바꾸는 작업
+  user: string
+  sessionId: string
+  approvalId: string
+  tool: string
+  decision: ApprovalStatus
+  summary?: string
+  target?: string
+}
+
+// 삭제 전 백업 한 건(GET /api/backups). Agent 백업 훅이 저장한 inspect에서 고른 값만 온다.
+export interface BackupRecord {
+  id: number
+  at: string
+  sessionId: string
+  environmentId: string
+  // container | image | network
+  kind: string
+  target: string
+  summary: Record<string, string>
+  // 백업은 승인 전에 만들어져서 거부한 삭제도 남는다. 같은 대화의 승인 카드와 짝지은 결과.
+  // deleted: 승인함, kept: 거부·만료·취소(지우지 않음), pending: 아직 결정 전, unknown: 짝을 찾지 못함
+  outcome: 'deleted' | 'kept' | 'pending' | 'unknown'
+}
+
+// 대화 사용량(GET /api/sessions/{id}/usage). cost는 달러다.
+export interface SessionUsage {
+  inputTokens: number
+  outputTokens: number
+  cost?: number
+}
+
+// 전체 사용량(GET /api/usage). 턴마다 WEB이 기록한 값의 합이다. 대화를 지워도 남는다.
+export interface UsageTotals {
+  today: Required<SessionUsage>
+  month: Required<SessionUsage>
+  total: Required<SessionUsage>
+}
+
+export interface AgentClient {
+  createSession(): Promise<string>
+  sendMessage(sessionId: string, text: string): AsyncIterable<AgentEvent>
+  // reason: 승인 시간이 지나 브라우저가 거부를 보낼 때만 'expired'
+  sendDecision(
+    sessionId: string,
+    approvalId: string,
+    decision: ApprovalDecision,
+    reason?: 'expired',
+  ): AsyncIterable<AgentEvent>
+  listSessions?(): Promise<SessionSummary[]>
+  // running이면 그 턴의 답은 빠져 있다. attach로 다시 붙어서 받는다.
+  loadMessages?(sessionId: string): Promise<{ messages: RestoredMessage[]; running: boolean }>
+  // 처리 중인 턴에 다시 붙는다. 이 턴의 이벤트를 처음부터 받는다.
+  attach?(sessionId: string): AsyncIterable<AgentEvent>
+  // 처리를 멈춘다. 붙어 있는 스트림은 error(STOPPED)로 끝난다.
+  stop?(sessionId: string): Promise<void>
+  getSettings?(): Promise<Settings>
+  saveModel?(model: string): Promise<Settings>
+  saveApprovalMode?(mode: ApprovalMode): Promise<Settings>
+  saveAgentMode?(mode: AgentMode): Promise<Settings>
+  getModels?(): Promise<ModelCatalog>
+  // 저장해도 Docker Agent를 다시 시작해야 적용된다.
+  saveApiKey?(apiKey: string): Promise<Settings>
+  // 서버 대화 삭제. 처리 중인 대화는 서버가 409로 거절한다.
+  deleteSession?(sessionId: string): Promise<void>
+  renameSession?(sessionId: string, title: string): Promise<void>
+  pinSession?(sessionId: string, pinned: boolean): Promise<void>
+  // turn번째 사용자 메시지 직전까지 복사한 새 대화
+  forkSession?(sessionId: string, turn: number): Promise<{ sessionId: string; title: string }>
+  exportUrl?(sessionId: string): string
+  getUsage?(sessionId: string): Promise<SessionUsage>
+  getUsageTotals?(): Promise<UsageTotals>
+  getSystem?(): Promise<SystemInfo>
+  getToolCount?(): Promise<number>
+  getAudit?(limit?: number): Promise<AuditRecord[]>
+  // available: false면 WEB 백엔드에 백업 파일 위치가 없다(BACKUP_DB, AGENT_ENV_FILE).
+  getBackups?(): Promise<{ available: boolean; records: BackupRecord[] }>
+  getAgentStatus?(): Promise<AgentProcessStatus>
+  restartAgent?(): Promise<{ restart: AgentRestart; status: AgentProcessStatus }>
+  getPolicy?(): Promise<PolicyState>
+  // 항목 id → 칸. 저장하면 Agent 설정 파일에 적고 Agent를 다시 시작한다.
+  savePolicy?(buckets: Record<string, PolicyBucket>): Promise<PolicyState & { restart: AgentRestart }>
+}
