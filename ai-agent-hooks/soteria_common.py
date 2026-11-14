@@ -36,7 +36,8 @@ JOB_RE = re.compile(r"bosun-[a-z0-9_.-]{1,40}-\d{8}T\d{6}-[0-9a-f]{6}")
 
 def job_label(vol):
     """작업 번호에 넣을 짧은 이름(볼륨 이름을 소문자·40자 이내로)."""
-    return (re.sub(r"[^a-z0-9_.-]", "-", vol.lower()).strip("-.") or "vol")[:40]
+    # 11/15: soteria fix 브랜치는 job_id에 ".."이 있으면 400으로 거부한다 → 점 여러 개는 하나로
+    return (re.sub(r"\.{2,}", ".", re.sub(r"[^a-z0-9_.-]", "-", vol.lower())).strip("-.") or "vol")[:40]
 BYTES_PER_SEC = 60 * 1024 * 1024   # 11/9 시험: 1GB(압축 안 되는 자료) 약 17초 → 보수적으로 초당 60MB
 # 백업 대상에서 빼는 관리용 스택·볼륨(창구 자신, 정시 백업, Portainer)
 MANAGED_STACKS = {"bosun-backup", "bosun-soteria"}
