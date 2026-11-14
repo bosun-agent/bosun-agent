@@ -1,5 +1,4 @@
 import { withoutLeakedToolCall } from './translate.ts'
-import type { ReadChoice } from '../src/lib/agentProtocol.ts'
 // 브라우저 ↔ WEB 백엔드 엔드포인트.
 
 import { readFileSync } from 'node:fs'
@@ -26,6 +25,7 @@ import { config } from './config.ts'
 import { LOCAL_USER, localOnly } from './guard.ts'
 import { maskText } from './mask.ts'
 import { clearModelCatalog, modelCatalog } from './models.ts'
+import { choicesFrom, policyState, savePolicy } from './policy.ts'
 import {
   APPROVAL_MODES,
   currentModel,
@@ -36,8 +36,6 @@ import {
   validApiKey,
   validModelRef,
   saveAgentMode,
-  saveAutoReads,
-  validAutoReads,
 } from './settings.ts'
 import { applySetup, setupStatus, type SetupInput } from './setup.ts'
 import { cardSummaries, cardsFor, copyCards, deleteCards, pinnedSessions, recentDecisions, setPinned, usageSince } from './store.ts'
@@ -345,14 +343,11 @@ app.post('/api/sessions/:id/approvals/:approvalId', async (c) => {
 // 설정 화면. 모델 선택과 API 키.
 app.get('/api/settings', (c) => c.json(getSettings()))
 
-// 모델, 승인 방식, Agent 종류, 바로 실행할 조회. 보낸 것만 바꾼다.
+// 모델, 승인 방식, Agent 종류. 보낸 것만 바꾼다.
 app.put('/api/settings', async (c) => {
-  const body = await jsonBody<{ model: unknown; approvalMode: unknown; agentMode: unknown; autoReads: unknown }>(c)
-  if (body.model === undefined && body.approvalMode === undefined && body.agentMode === undefined && body.autoReads === undefined) {
+  const body = await jsonBody<{ model: unknown; approvalMode: unknown; agentMode: unknown }>(c)
+  if (body.model === undefined && body.approvalMode === undefined && body.agentMode === undefined) {
     throw new HttpError(400, 'BAD_REQUEST', '바꿀 설정이 없어요.')
-  }
-  if (body.autoReads !== undefined && !validAutoReads(body.autoReads)) {
-    throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 조회예요.')
   }
   if (body.approvalMode !== undefined && !APPROVAL_MODES.includes(body.approvalMode as ApprovalMode)) {
     throw new HttpError(400, 'BAD_REQUEST', '승인 방식은 ask, never 중 하나예요.')
@@ -366,7 +361,6 @@ app.put('/api/settings', async (c) => {
   if (body.agentMode !== undefined && !saveAgentMode(body.agentMode)) {
     throw new HttpError(400, 'BAD_REQUEST', '이 설치에서는 고를 수 없는 Agent예요.')
   }
-  if (body.autoReads !== undefined) saveAutoReads(body.autoReads as ReadChoice[])
   if (body.approvalMode !== undefined) {
     saveApprovalMode(body.approvalMode)
     console.info(`[settings] approval mode: ${body.approvalMode}`)
@@ -449,6 +443,22 @@ app.get('/api/agent', async (c) => {
 app.post('/api/agent/restart', (c) => {
   const restart = restartAgent()
   return c.json({ restart, status: agentStatus() })
+})
+
+// 설정 > 정책의 허용·묻기·막기 칸(server/policy.ts). 저장하면 Agent 설정 파일에 적고 Agent를 다시 시작한다.
+app.get('/api/policy', (c) => c.json(policyState()))
+
+app.put('/api/policy', async (c) => {
+  const body = await jsonBody<{ buckets: unknown }>(c)
+  const choices = choicesFrom(body.buckets)
+  if (typeof choices === 'string') throw new HttpError(400, 'BAD_REQUEST', choices)
+  try {
+    const { changed } = savePolicy(choices)
+    console.info(`[policy] ${Object.keys(choices).length} item(s) moved; files written: ${changed.length}`)
+  } catch (err) {
+    throw new HttpError(500, 'POLICY_NOT_SAVED', `Agent 설정 파일에 적지 못했어요: ${(err as Error).message}`)
+  }
+  return c.json({ ...policyState(), restart: restartAgent() })
 })
 
 // 정보·정책 화면. Docker Agent 상태와 agent.yaml 요약(server/system.ts).

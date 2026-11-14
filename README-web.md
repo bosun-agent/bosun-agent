@@ -98,6 +98,15 @@ Agent 상태는 화면 위쪽 안내와 **설정 > 정보**에 나온다. 무엇
 
 설정 > 정책 맨 위에서 고른다. **매번 묻기**(기본)와 **묻지 않기**(YOLO, 삭제까지 바로 실행. 단 WEB이 설명할 수 없는 도구는 정책 훅이 안 걸려서 늘 카드를 띄운다) 중 하나다. 묻지 않는 작업은 WEB 백엔드가 Agent에 바로 승인을 보내고, 처리 과정에 "자동 승인함" 줄과 승인 기록에 "자동 승인"으로 남긴다. Agent 정책 훅과 항상 거부 규칙은 승인보다 먼저 돌아서 어느 방식이든 그대로 막는다. 다른 대화가 같은 대상의 결정을 기다리고 있으면 묻지 않기여도 카드를 띄운다.
 
+### 작업별 허용·묻기·막기
+
+설정 > 정책에서 작업(컨테이너 시작, 로그 조회, 스택 만들기 등)을 **허용·묻기·막기** 세 칸 사이로 끌어다 놓거나, 눌러서 옮길 칸을 고른다. 저장하면 WEB 백엔드가 Agent 설정 파일(`AGENT_CONFIG` 폴더의 yaml 모두, 없으면 `AGENT_ENV_FILE` 옆 `<AGENT_NAME>.yaml`)의 `permissions`에서 옮긴 줄만 바꾸고 Agent를 다시 시작한다(`server/policy.ts`). 나머지 글자와 주석은 그대로 둔다.
+
+- 사용자가 바꾼 항목만 WEB 저장소에 둔다. WEB이 Agent를 켤 때마다 다시 적으므로, Agent 담당이 기준 설정 파일을 새로 만들어도 사용자 선택이 남는다. "기본값으로"를 저장하면 기준 파일 그대로 돌아간다.
+- 정책 훅(`tool_input_transform_direct_policy_guard.py`의 허용 목록)이 막는 작업은 permissions를 바꿔도 실행되지 않으므로 잠가 둔다(자물쇠 표시). 훅이 사용자 선택을 읽게 되면 풀 수 있다.
+- 바꾸는 작업(시작·중지·삭제·스택 등)을 허용 칸으로 옮길 때는 확인 창을 띄운다(막지는 않는다). 허용 칸이라 Agent가 묻지 않고 실행한 바꾸는 작업은 승인 기록에 "허용 칸이라 바로 실행"(user `policy`)으로 남긴다. 조회는 남기지 않는다.
+- 예전의 "승인 없이 바로 볼 조회" 설정은 없앴다(11-14). 조회를 바로 실행하려면 허용 칸으로 옮긴다. Agent 설정 파일을 찾지 못하면 예전처럼 규칙 목록만 보여준다.
+
 ### 로그인 없음
 
 이 PC에서만 쓰므로 로그인이 없다. 대신 백엔드는 `127.0.0.1`에서만 뜨고(`HOST`를 다른 주소로 주면 시작하지 않는다), Host·Origin이 localhost·127.0.0.1·[::1]이 아닌 요청과 `X-Bosun` 헤더가 없는 변경 요청은 403이다(`server/guard.ts`). 다른 PC에서 접속하게 열지 않는다.
@@ -171,6 +180,7 @@ docker compose up -d --build                 # 화면 http://127.0.0.1:3001
 | `app.ts` | 브라우저용 `/api/*`, 보안 헤더, 화면 파일(`STATIC_DIR`) |
 | `turns.ts` | 대화마다 한 턴의 Agent 스트림과 승인 요청 관리: `tool_call_confirmation` → 카드, `/resume`으로 결정 전달, 만료, 스트림 이어붙이기, 멈추기, 다시 붙기(이 턴의 이벤트 기록) |
 | `system.ts` | 정보·정책 화면 값: Docker Agent 상태와 agent.yaml에서 고른 필드 |
+| `policy.ts` | 정책 칸 옮기기: 작업 목록(훅이 막는 것은 잠금), 사용자 선택 저장, Agent를 켤 때 agent.yaml permissions에 적기 |
 | `backups.ts` | 백업 화면: Agent 백업 훅의 SQLite를 읽기만 한다. inspect에서 고른 값만 보낸다 |
 | `translate.ts` | Docker Agent 이벤트 → 화면 이벤트, 정책 차단 판별 |
 | `tools.ts` | 도구 호출(`docker_proxy` method·path, `EndpointList`, 스택 도구) → 화면 문구, 승인 카드 템플릿. 스택은 compose를 읽어 서비스·포트·마운트·권한을 보여준다 |
@@ -178,7 +188,7 @@ docker compose up -d --build                 # 화면 http://127.0.0.1:3001
 | `mask.ts` | 알려진 비밀값 형식 가리기 |
 | `store.ts` | 승인·차단 카드, 승인 감사 기록, 고정한 대화, 설정 값, 턴별 사용량(SQLite, `server/data/web.db`. 커밋하지 않는다) |
 | `guard.ts` | 이 PC의 화면만 `/api`를 부르게 막기: Host·Origin 루프백 검사, `X-Bosun` 헤더 검사 |
-| `settings.ts` | 설정 값: 고른 모델, 승인 방식, 바로 볼 조회, API 키를 Agent env 파일에 쓰기 |
+| `settings.ts` | 설정 값: 고른 모델, 승인 방식, API 키를 Agent env 파일에 쓰기 |
 | `models.ts` | 입력창 모델 선택의 전체 목록(`docker-agent models --format json`, 10분 기억, API 키를 바꾸면 다시 받음) |
 | `config.ts` | 환경변수 읽기 |
 | `agentProcess.ts` | Docker Agent를 자식 프로세스로 띄우고 관리: 죽으면 다시 띄우기, API 키를 바꾸면 다시 시작, 남은 Agent 정리(PID 파일) |

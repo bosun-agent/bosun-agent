@@ -1,9 +1,9 @@
 // WEB 백엔드가 Agent를 띄우고 관리하는 흐름(server/agentProcess.ts)을 가짜 Agent로 확인한다.
-// 실행: npm run test:agent. 이 스크립트가 백엔드를 직접 띄우고 끈다(포트 13011~13013, 가짜 Agent 18090~18092).
+// 실행: npm run test:agent. 이 스크립트가 백엔드를 직접 띄우고 끈다(포트 13011~13014, 가짜 Agent 18090~18093).
 // 다른 백엔드·가짜 Agent는 띄워 두지 않아도 된다.
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentProcessStatus } from '../../src/lib/agentProtocol.ts'
@@ -133,6 +133,28 @@ try {
   backends.push(webC)
   s = await waitFor(C, (x) => x.restarts >= 1 && x.state === 'running', 15_000)
   check('Agent가 죽으면 잠시 뒤 다시 띄운다', s !== null && s.restarts >= 1, s)
+
+  // 7. 정책 칸을 저장하면 설정 폴더의 yaml 모두에 적고 다시 시작한다. 누가 파일을 덮어써도 다음에 켤 때 다시 적는다
+  const D = 13014
+  const policyDir = join(dir, 'agents')
+  mkdirSync(policyDir)
+  const base = 'agents:\n  root:\n    model: x\npermissions:\n  allow:\n    - "EndpointList"\n'
+  writeFileSync(join(policyDir, 'beginner.yaml'), base)
+  writeFileSync(join(policyDir, 'expert.yaml'), base)
+  const webD = startBackend(D, 18093, { AGENT_CONFIG: policyDir }, join(dir, 'd.db'))
+  backends.push(webD)
+  s = await waitFor(D, (x) => x.state === 'running')
+  const start = 'docker_proxy:method=POST:path=/containers/*/start'
+  const savedPolicy = (await (
+    await fetch(`http://127.0.0.1:${D}/api/policy`, { method: 'PUT', headers: H, body: JSON.stringify({ buckets: { container_start: 'allow' } }) })
+  ).json()) as { restart?: string; files?: string[] }
+  s = await waitFor(D, (x) => x.state === 'running' && x.restarts === 1)
+  const both = ['beginner.yaml', 'expert.yaml'].every((f) => readFileSync(join(policyDir, f), 'utf8').includes(start))
+  check('정책 저장: 폴더의 yaml 두 개에 적고 Agent를 다시 시작한다', savedPolicy.restart === 'started' && s?.restarts === 1 && both, [savedPolicy, s])
+  writeFileSync(join(policyDir, 'beginner.yaml'), base)
+  await fetch(`http://127.0.0.1:${D}/api/agent/restart`, { method: 'POST', headers: H })
+  s = await waitFor(D, (x) => x.state === 'running' && x.restarts === 2)
+  check('정책: 기준 파일로 덮여도 Agent를 켤 때 사용자 선택을 다시 적는다', readFileSync(join(policyDir, 'beginner.yaml'), 'utf8').includes(start), readFileSync(join(policyDir, 'beginner.yaml'), 'utf8'))
 } finally {
   for (const proc of backends) killBackend(proc, true)
   await sleep(500)

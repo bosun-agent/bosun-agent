@@ -851,25 +851,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   await post(`/api/sessions/${s3}/messages`, { text: '안녕 제목 테스트' })
   check('새 대화는 고정 제목으로 만들고 첫 메시지로 바꾼다', before === '새 대화' && (await listed()) === '안녕 제목 테스트', [before, await listed()])
 
-  const settings = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { agentMode?: string; autoReads: string[] }
+  const settings = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { agentMode?: string; autoReads?: string[] }
   check('파일 하나인 설치는 Agent 종류를 못 고른다', settings.agentMode === undefined && (await put({ agentMode: 'expert' })).status === 400, settings.agentMode)
-  check('바로 실행할 조회 기본은 없음, 모르는 값은 400', settings.autoReads.length === 0 && (await put({ autoReads: ['exec'] })).status === 400, settings.autoReads)
+  // "승인 없이 바로 볼 조회"는 없앴다(2026-11-14). 조회를 바로 실행하려면 설정 > 정책에서 허용 칸으로 옮긴다.
+  check('바로 볼 조회 설정은 없다(보내도 바꿀 것 없음 400)', settings.autoReads === undefined && (await put({ autoReads: ['logs'] })).status === 400, settings)
 
   const s4 = await newSession()
   const asked = await post(`/api/sessions/${s4}/messages`, { text: '로그 확인해줘' })
-  check('고르기 전에는 조회도 승인 카드', last(asked.events) === 'approval_required', types(asked.events))
+  check('로그 조회는 승인 카드', last(asked.events) === 'approval_required', types(asked.events))
   check('로그 조회 카드 제목에 대상과 종류', /^컨테이너 \S+ 로그 조회$/.test(approvalOf(asked.events)?.summary ?? ''), approvalOf(asked.events)?.summary)
   await deny(s4, approvalOf(asked.events)!.approvalId)
-  const saved = await put({ autoReads: ['logs'] })
-  check('바로 실행할 조회 저장', saved.status === 200 && ((await saved.json()) as { autoReads: string[] }).autoReads[0] === 'logs')
-  const s5 = await newSession()
-  const auto = await post(`/api/sessions/${s5}/messages`, { text: '로그 확인해줘' })
-  check('고른 조회는 카드 없이 실행', types(auto.events).includes('auto_approved') && !types(auto.events).includes('approval_required') && text(auto.events).includes('로그를 봤어요'), types(auto.events))
-  const s6 = await newSession()
-  const still = await post(`/api/sessions/${s6}/messages`, { text: '재시작해줘' })
-  check('고른 조회가 아니면 그대로 카드', last(still.events) === 'approval_required', types(still.events))
-  await deny(s6, approvalOf(still.events)!.approvalId)
-  await put({ autoReads: [] })
 }
 
 // ---- 입력창 모델 선택(GET /api/models). 가짜 Agent에는 실행 파일이 없어 dev.env MODEL_CATALOG_FILE을 읽는다 ----
@@ -955,13 +946,191 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   check(`경우별 Portainer 화면 주소(${cases.length}가지)`, wrong.length === 0, wrong)
 }
 
+// ---- 허용 칸이라 묻지 않고 실행된 바꾸는 작업도 승인 기록에 남는다(조회는 남기지 않는다) ----
 {
-  // 승인 감사 기록에는 화면에서 누른 결정이 local로 남는다(만료 자동 거부는 system).
+  type Audit = { records: { user: string; decision: string; summary?: string; target?: string; tool: string }[] }
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '허용 칸 재시작' })
+  const audit = (await fetch(`${BASE}/api/audit?sessionId=${s}`).then((res) => res.json())) as Audit
+  check(
+    '허용 칸 재시작: 카드 없이 실행되고 승인 기록에 policy로 남는다',
+    !types(r.events).includes('approval_required') &&
+      text(r.events).includes('바로 재시작했어요') &&
+      audit.records.length === 1 &&
+      audit.records[0].user === 'policy' &&
+      audit.records[0].decision === 'approved' &&
+      audit.records[0].summary === '컨테이너 web 재시작',
+    { types: types(r.events), audit },
+  )
+  await post(`/api/sessions/${s}/messages`, { text: '목록 보여줘' })
+  const after = (await fetch(`${BASE}/api/audit?sessionId=${s}`).then((res) => res.json())) as Audit
+  check('묻지 않고 실행된 조회는 승인 기록에 남기지 않는다', after.records.length === 1, after.records)
+}
+
+{
+  // 승인 감사 기록에는 화면에서 누른 결정이 local로 남는다(만료 자동 거부는 system, 허용 칸이라 바로 실행은 policy).
   const db = process.env.WEB_DB_PATH
   if (db && db !== ':memory:') {
     const { DatabaseSync } = await import('node:sqlite')
     const users = new DatabaseSync(db).prepare("SELECT DISTINCT user FROM approval_audit WHERE user != 'system'").all()
-    check('승인 감사 기록의 user는 local 또는 auto(대신 승인)', users.every((u) => u.user === 'local' || u.user === 'auto'), users)
+    check('승인 감사 기록의 user는 local, auto(대신 승인), policy(허용 칸)', users.every((u) => ['local', 'auto', 'policy'].includes(String(u.user))), users)
+  }
+}
+
+// ---- 정책 칸 옮기기(server/policy.ts) ----
+// 원래 허용이라 카드가 안 뜨던 조회도 묻기로 옮기면 카드가 뜬다. 제목이 무엇을 보는지 알려야 한다(11-14 실측: "컨테이너 조회", "조회").
+{
+  const { approvalCard } = await import('../tools.ts')
+  const title = (path: string) => approvalCard('docker_proxy', { environment_id: 1, method: 'GET', path }, new Map(), new Map()).summary
+  const got = ['/containers/json', '/v1.45/version', '/info', '/system/df', '/_ping', '/images/json', '/volumes', '/networks', '/networks/backend', '/containers/web/stats'].map(title)
+  check(
+    '정책: 묻기로 옮긴 목록·Docker 상태 조회의 카드 제목',
+    JSON.stringify(got) ===
+      JSON.stringify([
+        '컨테이너 목록 조회',
+        'Docker 버전 조회',
+        'Docker 정보 조회',
+        'Docker 디스크 사용량 조회',
+        'Docker 연결 확인',
+        '이미지 목록 조회',
+        '볼륨 목록 조회',
+        '네트워크 목록 조회',
+        '네트워크 backend 상세 조회',
+        '컨테이너 web 사용량 조회',
+      ]),
+    got,
+  )
+}
+
+// 진짜 Agent 설정과 같은 모양: 주석, 한 줄 끝 주석, 목록 뒤 주석, 80자 넘는 명령 줄.
+const POLICY_YAML = `agents:
+  root:
+    model: flash
+    safety: strict
+    toolsets:
+      - type: mcp
+        args: ["--from", "mcp-portainer==2.45.1"]
+    hooks:
+      tool_input_transform:
+        - matcher: "docker_proxy"
+          hooks:
+            - type: command
+              command: C:/Users/someone/AppData/Local/Programs/Python/Python313/python.exe -X utf8 C:/hooks/tool_input_transform_direct_policy_guard.py
+
+permissions:
+  allow:
+    # 민감하지 않은 조회만
+    - "docker_proxy:method=GET:path=/containers/json" # 컨테이너 목록
+    - "EndpointList" # 환경 목록 조회
+    - "docker_proxy:method=POST:path=/exec/*/start" # 백업 2단계
+  deny:
+    - "docker_proxy:method=POST:path=*/containers/create*" # 직접 생성 금지
+    - 'docker_proxy:path=*/containers/[^b]*/exec*'
+    - "docker_proxy:method=DELETE:path=*/volumes/*" # 볼륨 삭제
+    - "docker_proxy:path=*%*"
+    - "docker_proxy:path=*/custom-rule*" # 시원 님이 새로 넣은 규칙(카탈로그에 없음)
+  # deny는 글자 그대로 비교하는 보조 장치다.
+
+models:
+  flash:
+    provider: openrouter
+    model: deepseek/deepseek-v4.1-flash
+`
+{
+  const { applyChoices } = await import('../policy.ts')
+  const { parse } = await import('yaml')
+  check('정책: 옮긴 것이 없으면 파일 글 그대로', applyChoices(POLICY_YAML, { container_list: 'allow' }) === POLICY_YAML)
+  const out = applyChoices(POLICY_YAML, { container_list: 'deny', container_start: 'allow', 'raw:docker_proxy:path=*/custom-rule*': 'ask' })
+  const removed = POLICY_YAML.split('\n').filter((l) => !out.split('\n').includes(l))
+  const added = out.split('\n').filter((l) => !POLICY_YAML.split('\n').includes(l))
+  const p = parse(out).permissions
+  check(
+    '정책: permissions에서 옮긴 줄만 바뀌고 나머지(긴 명령 줄·주석)는 그대로',
+    JSON.stringify(removed) ===
+      JSON.stringify(['    - "docker_proxy:method=GET:path=/containers/json" # 컨테이너 목록', '    - "docker_proxy:path=*/custom-rule*" # 시원 님이 새로 넣은 규칙(카탈로그에 없음)']) &&
+      added.length === 4 &&
+      out.includes('# deny는 글자 그대로 비교하는 보조 장치다.') &&
+      out.split('# deny는 글자 그대로').length === 2,
+    { removed, added },
+  )
+  check(
+    '정책: 옮긴 패턴이 그 칸에 들어간다',
+    p.allow.includes('docker_proxy:method=POST:path=/containers/*/start') &&
+      p.deny.includes('docker_proxy:method=GET:path=/containers/json') &&
+      p.ask.includes('docker_proxy:path=*/custom-rule*'),
+    p,
+  )
+  const noPerms = applyChoices('agents:\n  root:\n    model: x\n', { stack_create: 'allow' })
+  check('정책: permissions가 없던 파일에는 새로 만든다', JSON.stringify(parse(noPerms).permissions) === '{"allow":["StackCreateDockerStandaloneString"]}', noPerms)
+}
+
+{
+  // 백엔드는 AGENT_CONFIG가 없으면 AGENT_ENV_FILE 옆 <AGENT_NAME>.yaml을 고친다(테스트에서는 임시 폴더).
+  const envFile = process.env.AGENT_ENV_FILE
+  const yamlFile = envFile ? `${dirname(envFile)}/${process.env.AGENT_NAME ?? 'agent'}.yaml` : ''
+  let existed = true
+  try {
+    readFileSync(yamlFile)
+  } catch {
+    existed = false
+  }
+  if (!yamlFile || existed) {
+    console.info('skip 정책 칸 API(설정 파일 자리가 없거나 이미 파일이 있음)')
+  } else {
+    const { parse } = await import('yaml')
+    type Policy = { editable: boolean; changed: number; items: { id: string; bucket: string; defaultBucket: string; lock?: string; raw?: boolean }[]; restart?: string }
+    const getPolicy = async () => (await (await fetch(`${BASE}/api/policy`)).json()) as Policy
+    const putPolicy = (buckets: Record<string, string>) =>
+      fetch(`${BASE}/api/policy`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ buckets }) })
+    const before = await getPolicy()
+    check('정책: 설정 파일이 없으면 칸 화면을 못 쓴다', before.editable === false, before)
+    writeFileSync(yamlFile, POLICY_YAML)
+    try {
+      const s = await getPolicy()
+      const item = (id: string) => s.items.find((i) => i.id === id)
+      check(
+        '정책: 파일 칸 그대로 항목을 나눈다(잠금·원문 규칙 포함, 내부 규칙은 안 보임)',
+        s.editable &&
+          item('container_list')?.bucket === 'allow' &&
+          item('container_start')?.bucket === 'ask' &&
+          item('container_create')?.lock === 'hook' &&
+          item('exec_other')?.lock === 'hook' &&
+          item('raw:docker_proxy:path=*/custom-rule*')?.bucket === 'deny' &&
+          !s.items.some((i) => i.id === 'backup_exec_start' || i.id === 'encoded_path'),
+        s.items,
+      )
+      const all = (moves: Record<string, string>) => ({ ...Object.fromEntries(s.items.map((i) => [i.id, i.defaultBucket])), ...moves })
+      check('정책: 잠긴 항목은 옮길 수 없다(400)', (await putPolicy(all({ volume_delete: 'allow' }))).status === 400)
+      check('정책: 모르는 항목·칸은 400', (await putPolicy({ nope: 'allow' })).status === 400 && (await putPolicy({ container_start: 'maybe' })).status === 400)
+      const saved = (await (await putPolicy(all({ container_start: 'allow', container_list: 'deny' }))).json()) as Policy
+      const file = parse(readFileSync(yamlFile, 'utf8')) as { permissions: Record<string, string[]> }
+      check(
+        '정책: 저장하면 파일에 적고 Agent 다시 시작을 알린다(이 테스트는 WEB이 띄운 Agent가 아니라 manual)',
+        saved.changed === 2 &&
+          saved.restart === 'manual' &&
+          file.permissions.allow.includes('docker_proxy:method=POST:path=/containers/*/start') &&
+          file.permissions.deny.includes('docker_proxy:method=GET:path=/containers/json'),
+        { saved, file: file.permissions },
+      )
+      // Agent 담당이 기준 파일을 다시 만들면(덮어쓰면) 그 파일을 새 기준으로 보고 사용자 선택을 다시 얹는다.
+      writeFileSync(yamlFile, POLICY_YAML.replace('    - "EndpointList" # 환경 목록 조회\n', ''))
+      const again = await getPolicy()
+      check('정책: 기준 파일이 바뀌어도 사용자 선택은 남는다', again.items.find((i) => i.id === 'container_start')?.bucket === 'allow' && again.items.find((i) => i.id === 'env_list')?.defaultBucket === 'ask', again.items)
+      await putPolicy(Object.fromEntries(again.items.map((i) => [i.id, i.bucket])))
+      const reapplied = readFileSync(yamlFile, 'utf8')
+      check('정책: 다시 적용하면 새 기준 위에 선택이 들어간다', reapplied.includes('/containers/*/start') && !reapplied.includes('EndpointList'), reapplied)
+      // 기본값으로 되돌리면 기준 파일 글 그대로
+      const back = (await (await putPolicy(Object.fromEntries(again.items.map((i) => [i.id, i.defaultBucket])))).json()) as Policy
+      check(
+        '정책: 기본값으로 되돌리면 기준 파일 그대로',
+        back.changed === 0 && readFileSync(yamlFile, 'utf8') === POLICY_YAML.replace('    - "EndpointList" # 환경 목록 조회\n', ''),
+      )
+      writeFileSync(yamlFile, 'agents: [broken')
+      const broken = await getPolicy()
+      check('정책: 깨진 설정 파일이면 칸 화면 대신 이유', broken.editable === false && /읽지 못했어요/.test((broken as { reason?: string }).reason ?? ''), broken)
+    } finally {
+      rmSync(yamlFile, { force: true })
+    }
   }
 }
 

@@ -9,6 +9,7 @@ import type {
   AuditRecord,
   BackupRecord,
   ModelCatalog,
+  PolicyState,
   RestoredMessage,
   SessionSummary,
   SessionUsage,
@@ -110,8 +111,6 @@ export const httpAgent: AgentClient = {
 
   saveAgentMode: (agentMode) => json<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ agentMode }) }),
 
-  saveAutoReads: (autoReads) => json<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ autoReads }) }),
-
   getModels: () => json<ModelCatalog>('/api/models'),
 
   async deleteSession(sessionId) {
@@ -153,4 +152,14 @@ export const httpAgent: AgentClient = {
   getAgentStatus: () => json<AgentProcessStatus>('/api/agent'),
 
   restartAgent: () => json<{ restart: AgentRestart; status: AgentProcessStatus }>('/api/agent/restart', { method: 'POST' }),
+
+  getPolicy: () => json<PolicyState>('/api/policy'),
+
+  // 파일에 못 적은 이유(서버 message)를 화면에 그대로 보여 준다.
+  async savePolicy(buckets) {
+    const res = await apiFetch('/api/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ buckets }) })
+    const body = (await res.json().catch(() => null)) as (PolicyState & { restart: AgentRestart; message?: string }) | null
+    if (!res.ok || !body) throw new Error(body?.message ?? `정책을 저장하지 못했어요(${res.status}).`)
+    return body
+  },
 }

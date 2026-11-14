@@ -121,6 +121,14 @@ const alwaysLeak = new Set<string>()
 
 const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
   {
+    // 설정 > 정책에서 허용 칸으로 옮긴 바꾸는 작업: Agent가 묻지 않고 바로 실행한다(permissions.allow).
+    match: /허용 칸 재시작/,
+    run: async (r) => {
+      await r.tool('docker_proxy', { environment_id: 1, method: 'POST', path: '/containers/web/restart' }, { output: '' })
+      await r.say('web을 바로 재시작했어요.')
+    },
+  },
+  {
     // 비밀값 가리기 훅이 실패하면 결과가 안내 문구로 바뀐다.
     match: /숨김 결과/,
     run: async (r) => {

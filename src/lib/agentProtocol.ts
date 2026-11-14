@@ -109,8 +109,6 @@ export interface Settings {
   approvalMode: ApprovalMode
   // 초보자용·숙련자용 Agent. 두 Agent를 띄운 설치에서만 있다(AGENT_NAME이 beginner나 expert).
   agentMode?: AgentMode
-  // 승인 카드 없이 바로 실행하기로 고른 조회. WEB이 대신 승인한다.
-  autoReads: ReadChoice[]
   // 정책 차단 안내의 "Portainer 열기" 링크. WEB 백엔드에 PORTAINER_URL이 없으면 빠진다.
   portainerUrl?: string
   // PUT /api/settings/api-key 응답에만 있다. 새 키를 적용하려고 Agent를 다시 시작했는지(AgentRestart).
@@ -133,13 +131,37 @@ export type ApprovalMode = 'ask' | 'never'
 // beginner: 바꾸기 전에 계획을 먼저 보여 준다. expert: 계획 없이 바로 승인 카드를 띄운다. 권한과 훅은 같다.
 export type AgentMode = 'beginner' | 'expert'
 
-// 사용자가 "바로 실행"으로 바꿀 수 있는 조회. 바뀌는 것이 없고, 비밀값 가리기와 안전한 필드 제한은 그대로 돈다.
-export const READ_CHOICES = ['logs', 'container_inspect', 'top', 'image_inspect', 'volume_inspect', 'stack_file'] as const
-export type ReadChoice = (typeof READ_CHOICES)[number]
-
 // Agent 다시 시작 요청 결과. started: 지금 다시 시작함, waiting: 처리 중인 대화가 끝나면 다시 시작함,
 // manual: WEB이 띄운 Agent가 아니라서 사람이 다시 띄워야 함.
 export type AgentRestart = 'started' | 'waiting' | 'manual'
+
+// 설정 > 정책의 허용·묻기·막기 칸(GET /api/policy, server/policy.ts).
+export type PolicyBucket = 'allow' | 'ask' | 'deny'
+
+export interface PolicyItem {
+  id: string
+  label: string
+  group: string
+  bucket: PolicyBucket
+  // Agent 기준 설정 파일에 적힌 칸
+  defaultBucket: PolicyBucket
+  // hook: 정책 훅이 막아서 옮겨도 실행되지 않으므로 잠근다
+  lock?: 'hook'
+  // 설명 없는 규칙(원문 그대로 보여 준다)
+  raw?: boolean
+  // 바꾸는 작업(조회가 아님). 허용 칸으로 옮길 때 확인을 받는다.
+  change?: boolean
+}
+
+export interface PolicyState {
+  // false면 설정 파일을 찾거나 읽지 못했다(reason)
+  editable: boolean
+  reason?: string
+  files: string[]
+  items: PolicyItem[]
+  // 기본값과 다른 칸에 있는 항목 수
+  changed: number
+}
 
 // WEB 백엔드가 띄운 Docker Agent 상태(GET /api/agent).
 export interface AgentProcessStatus {
@@ -182,7 +204,8 @@ export interface SystemInfo {
 // 승인 기록 한 줄(GET /api/audit). 대화를 지웠으면 summary가 없다.
 export interface AuditRecord {
   at: string
-  // local: 화면에서 누른 결정, system: 승인 시간이 지나 자동 거부, auto: 승인 방식에 따라 WEB이 대신 승인
+  // local: 화면에서 누른 결정, system: 승인 시간이 지나 자동 거부, auto: 승인 방식에 따라 WEB이 대신 승인,
+  // policy: 설정 > 정책의 허용 칸이라 Agent가 묻지 않고 실행한 바꾸는 작업
   user: string
   sessionId: string
   approvalId: string
@@ -242,7 +265,6 @@ export interface AgentClient {
   saveModel?(model: string): Promise<Settings>
   saveApprovalMode?(mode: ApprovalMode): Promise<Settings>
   saveAgentMode?(mode: AgentMode): Promise<Settings>
-  saveAutoReads?(reads: ReadChoice[]): Promise<Settings>
   getModels?(): Promise<ModelCatalog>
   // 저장해도 Docker Agent를 다시 시작해야 적용된다.
   saveApiKey?(apiKey: string): Promise<Settings>
@@ -262,4 +284,7 @@ export interface AgentClient {
   getBackups?(): Promise<{ available: boolean; records: BackupRecord[] }>
   getAgentStatus?(): Promise<AgentProcessStatus>
   restartAgent?(): Promise<{ restart: AgentRestart; status: AgentProcessStatus }>
+  getPolicy?(): Promise<PolicyState>
+  // 항목 id → 칸. 저장하면 Agent 설정 파일에 적고 Agent를 다시 시작한다.
+  savePolicy?(buckets: Record<string, PolicyBucket>): Promise<PolicyState & { restart: AgentRestart }>
 }

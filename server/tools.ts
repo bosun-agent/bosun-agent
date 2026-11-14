@@ -5,7 +5,7 @@
 // 도구 인자는 승인 카드에 허용 목록으로 고른 값만 싣고, 처리 과정에는 싣지 않는다.
 
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { PortainerLink, ProposedAction, ReadChoice, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
+import type { PortainerLink, ProposedAction, RiskLevel, RiskReason } from '../src/lib/agentProtocol.ts'
 import type { HookExplanation } from './agentClient.ts'
 import { maskText } from './mask.ts'
 
@@ -218,16 +218,32 @@ function titled(resource: string, target: string | undefined, verb: string): str
   return target ? `${resource} ${target} ${verb}` : `${resource} ${verb}`
 }
 
-// 민감한 조회 경로(READ_PATHS와 같은 범위)의 대상과 동작. 이미지 이름에는 `/`가 들어간다.
-const CONTAINER_READS: Record<string, string> = { logs: '로그 조회', json: '상세 조회', top: '프로그램 목록 조회' }
+// 대상이 있는 조회(로그·상세 등)의 대상과 동작. 이미지 이름에는 `/`가 들어간다.
+const CONTAINER_READS: Record<string, string> = { logs: '로그 조회', json: '상세 조회', top: '프로그램 목록 조회', stats: '사용량 조회' }
 function readTitle(kind: string, rest: string[]): { target: string; verb: string } | undefined {
   const last = rest.at(-1) ?? ''
   if (kind === 'containers' && rest.length === 2 && CONTAINER_READS[last]) return { target: rest[0], verb: CONTAINER_READS[last] }
   if (kind === 'images' && rest.length >= 2 && (last === 'json' || last === 'history')) {
     return { target: rest.slice(0, -1).join('/'), verb: last === 'json' ? '상세 조회' : '이력 조회' }
   }
-  if (kind === 'volumes' && rest.length === 1) return { target: rest[0], verb: '상세 조회' }
+  if ((kind === 'volumes' || kind === 'networks') && rest.length === 1) return { target: rest[0], verb: '상세 조회' }
   return undefined
+}
+
+// 목록·Docker 상태 조회. 원래 허용이라 카드가 안 떴지만, 설정 > 정책에서 묻기로 옮기면 카드 제목이 된다(2026-11-14).
+const SYSTEM_READS: Record<string, string> = {
+  _ping: 'Docker 연결 확인',
+  version: 'Docker 버전 조회',
+  info: 'Docker 정보 조회',
+  'system/df': 'Docker 디스크 사용량 조회',
+}
+function listTitle(kind: string, rest: string[]): string | undefined {
+  const system = SYSTEM_READS[[kind, ...rest].join('/')]
+  if (system) return system
+  const resource = RESOURCES[kind]
+  if (!resource) return undefined
+  const list = rest.length === 0 || (rest.length === 1 && rest[0] === 'json' && (kind === 'containers' || kind === 'images'))
+  return list ? `${resource} 목록 조회` : undefined
 }
 
 function dockerRequest(
@@ -238,11 +254,12 @@ function dockerRequest(
 ): ToolAction {
   const [kind, ...rest] = pathParts(path)
   const resource = RESOURCES[kind]
-  // 목록 조회는 permissions.allow라 묻지 않는다. 로그·상세처럼 민감한 조회는 승인 카드가 뜨고,
-  // 설정에서 바로 실행으로 고르면 처리 과정·승인 기록에 남는다. 무엇을 봤는지 알 수 있게 대상과 종류를 적는다.
+  // 어느 조회든 설정 > 정책에서 묻기로 옮길 수 있으니, 카드·처리 과정·승인 기록에서 무엇을 봤는지 알 수 있게 대상과 종류를 적는다.
   if (method === 'GET' || method === 'HEAD') {
     const read = readTitle(kind, rest)
     if (resource && read) return { label: read.verb, summary: titled(resource, read.target, read.verb), target: read.target, risk: { level: 'low', label: '조회' } }
+    const list = listTitle(kind, rest)
+    if (list) return { label: '조회', summary: list, risk: { level: 'low', label: '조회' } }
     return { label: '조회', summary: resource ? `${resource} 조회` : '조회', risk: { level: 'low', label: '조회' } }
   }
   if (!resource) return { label: '변경' }
@@ -401,28 +418,6 @@ export function withHookExplanation(card: ApprovalCard, hook: HookExplanation | 
 // 훅 설명의 "'이름' 컨테이너(짧은 ID)"에서 이름을 배운다. 백엔드를 다시 켠 뒤 모델이 기억한 ID로 바로 불러도 카드에 이름이 나온다.
 export function learnHookName(names: Map<string, string>, hook: HookExplanation | undefined): void {
   for (const m of hook?.reason?.matchAll(/'([^']+)' 컨테이너\(([0-9a-f]{12})\)/g) ?? []) names.set(m[2], m[1])
-}
-
-// ---- 승인 없이 바로 실행할 수 있는 조회 ----
-// 설정에서 고른 조회만 WEB이 대신 승인한다. 표에 정확히 맞는 GET만 해당한다.
-
-const REF = '[A-Za-z0-9][A-Za-z0-9_.-]*'
-const READ_PATHS: [RegExp, ReadChoice][] = [
-  [new RegExp(`^/containers/${REF}/logs$`), 'logs'],
-  [new RegExp(`^/containers/${REF}/json$`), 'container_inspect'],
-  [new RegExp(`^/containers/${REF}/top$`), 'top'],
-  [/^\/images\/[A-Za-z0-9][A-Za-z0-9_./:@-]*\/(?:json|history)$/, 'image_inspect'],
-  [new RegExp(`^/volumes/${REF}$`), 'volume_inspect'],
-]
-
-export function readChoice(tool: string, args: Record<string, unknown>): ReadChoice | undefined {
-  if (tool === 'StackFileInspect') return 'stack_file'
-  if (tool !== 'docker_proxy' || (str(args.method) ?? 'GET').toUpperCase() !== 'GET') return undefined
-  const path = (str(args.path) ?? '').replace(/^\/v\d+(\.\d+)?(?=\/)/, '')
-  if (/[?#%\\]|\.\.|\/\//.test(path)) return undefined
-  const choice = READ_PATHS.find(([re]) => re.test(path))?.[1]
-  // 끝나지 않는 로그 받기는 조회로 치지 않는다.
-  return choice === 'logs' && truthy(objectArg(args.query_params).follow) ? undefined : choice
 }
 
 // ---- ID → 이름 ----
@@ -737,6 +732,14 @@ const STACK_READS: Record<string, string> = {
   StackList: '스택 목록 조회',
   StackInspect: '스택 조회',
   StackFileInspect: '스택 파일 조회',
+}
+
+// 바꾸는 호출인지. 조회가 아니면(모르는 도구 포함) 바꾸는 것으로 본다.
+// 허용 칸이라 승인 없이 실행된 바꾸는 호출을 승인 기록에 남길 때 쓴다(turns.ts).
+export function isChange(tool: string, args: Record<string, unknown>): boolean {
+  if (tool === 'EndpointList' || STACK_READS[tool]) return false
+  if (tool === 'docker_proxy') return !['GET', 'HEAD'].includes((str(args.method) ?? 'GET').toUpperCase())
+  return true
 }
 
 function stackAction(tool: string, args: Record<string, unknown>, stacks: ReadonlyMap<string, StackInfo>): ToolAction | undefined {
