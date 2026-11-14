@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from 'react'
-import type { AgentRestart, PolicyBucket, PolicyItem, PolicyState, ReadChoice, Settings } from '../lib/agentProtocol'
+import type { AgentRestart, PolicyBucket, PolicyItem, PolicyState, Settings } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 
 // 설정 > 정책: 작업을 허용·묻기·막기 칸으로 옮긴다(2026-11-11 회의). 끌어다 놓거나, 눌러서 옮길 칸을 고른다(폰·키보드).
@@ -12,16 +12,6 @@ const COLUMNS: { bucket: PolicyBucket; title: string; help: string; tone: string
 ]
 
 const TITLE: Record<PolicyBucket, string> = { allow: '허용', ask: '묻기', deny: '막기' }
-
-// WEB의 "승인 없이 바로 볼 조회"와 같은 작업. 묻기 칸에 있어도 WEB이 대신 승인한다.
-const READ_ITEM: Partial<Record<string, ReadChoice>> = {
-  container_logs: 'logs',
-  container_inspect: 'container_inspect',
-  container_top: 'top',
-  image_inspect: 'image_inspect',
-  volume_inspect: 'volume_inspect',
-  stack_file: 'stack_file',
-}
 
 const RESTART_TEXT: Record<AgentRestart, string> = {
   started: '저장했어요. AI Agent를 다시 시작하고 있어요. 새로 시작한 뒤부터 적용돼요.',
@@ -50,7 +40,6 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
   const dirty = Object.keys(draft).length
   const customized = state.items.some((it) => !it.lock && bucketOf(it) !== it.defaultBucket)
   const never = settings?.approvalMode === 'never'
-  const autoReads = new Set(never ? [] : (settings?.autoReads ?? []))
 
   const columns = useMemo(
     () =>
@@ -65,7 +54,15 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
   function move(id: string, to: PolicyBucket) {
     const item = state.items.find((it) => it.id === id)
     setOpen(null)
-    if (!item || item.lock) return
+    if (!item || item.lock || bucketOf(item) === to) return
+    // 바꾸는 작업을 허용으로 옮길 때만 한 번 묻는다(묻지 않기를 켤 때처럼). 막지는 않는다.
+    if (
+      to === 'allow' &&
+      item.change &&
+      !window.confirm(`'${item.label}'을(를) 허용으로 옮기면 승인 카드 없이 바로 실행돼요. AI가 대상을 잘못 골라도 멈출 기회가 없어요. 옮길까요?`)
+    ) {
+      return
+    }
     setMessage(null)
     setDraft((d) => {
       const next = { ...d }
@@ -142,7 +139,6 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
                   {items.map((it) => {
                     const moved = draft[it.id] !== undefined
                     const differs = !it.lock && bucketOf(it) !== it.defaultBucket
-                    const webAuto = bucketOf(it) === 'ask' && READ_ITEM[it.id] !== undefined && autoReads.has(READ_ITEM[it.id]!)
                     return (
                       <li key={it.id} className="max-w-full">
                         <button
@@ -178,7 +174,6 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
                           )}
                           {it.label}
                           {differs && <span className="ml-1 text-[10px] text-navy-600">바뀜</span>}
-                          {webAuto && <span className="ml-1 rounded-full bg-navy-50 px-1 text-[10px] text-navy-700">WEB 자동 승인</span>}
                         </button>
                         {open === it.id && (
                           <span className="mt-0.5 flex flex-wrap gap-1" role="group" aria-label={`${it.label} 옮기기`}>
@@ -204,7 +199,7 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
         ))}
       </div>
       <p className="mt-2 text-xs text-neutral-500">
-        허용 칸은 승인 카드 없이 실행돼서 승인 기록이 남지 않아요. <LockIcon /> 표시는 정책 훅이 막는 작업이라 옮길 수 없어요.
+        허용 칸은 승인 카드 없이 실행되고, 바꾸는 작업이면 승인 기록에 "허용 칸이라 바로 실행"으로 남아요. <LockIcon /> 표시는 정책 훅이 막는 작업이라 옮길 수 없어요.
         저장하면 Agent 설정 파일({state.files.join(', ')})에 적고 AI Agent를 다시 시작해요.
       </p>
       <div className="mt-2 flex flex-wrap items-center justify-end gap-2">

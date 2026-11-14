@@ -145,13 +145,14 @@ function itemsOf(lists: Lists): (PolicyItem & { patterns: string[] })[] {
     const patterns = c.patterns!
     patterns.forEach((p) => claimed.add(p))
     const bucket = bucketOf(lists, patterns) ?? 'ask'
-    items.push({ id: c.id, label: c.label, group: c.group, bucket, defaultBucket: bucket, patterns })
+    items.push({ id: c.id, label: c.label, group: c.group, bucket, defaultBucket: bucket, ...(c.group !== '조회' ? { change: true } : {}), patterns })
   }
   for (const b of BUCKETS) {
     for (const p of lists[b]) {
       if (claimed.has(p)) continue
       claimed.add(p)
-      items.push({ id: RAW_PREFIX + p, label: p, group: '그 밖의 규칙', bucket: b, defaultBucket: b, raw: true, patterns: [p] })
+      // 무엇을 하는 규칙인지 모르므로 바꾸는 작업으로 본다(허용으로 옮길 때 확인).
+      items.push({ id: RAW_PREFIX + p, label: p, group: '그 밖의 규칙', bucket: b, defaultBucket: b, raw: true, change: true, patterns: [p] })
     }
   }
   return items

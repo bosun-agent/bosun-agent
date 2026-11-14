@@ -839,25 +839,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   await post(`/api/sessions/${s3}/messages`, { text: '안녕 제목 테스트' })
   check('새 대화는 고정 제목으로 만들고 첫 메시지로 바꾼다', before === '새 대화' && (await listed()) === '안녕 제목 테스트', [before, await listed()])
 
-  const settings = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { agentMode?: string; autoReads: string[] }
+  const settings = (await fetch(`${BASE}/api/settings`).then((r) => r.json())) as { agentMode?: string; autoReads?: string[] }
   check('파일 하나인 설치는 Agent 종류를 못 고른다', settings.agentMode === undefined && (await put({ agentMode: 'expert' })).status === 400, settings.agentMode)
-  check('바로 실행할 조회 기본은 없음, 모르는 값은 400', settings.autoReads.length === 0 && (await put({ autoReads: ['exec'] })).status === 400, settings.autoReads)
+  // "승인 없이 바로 볼 조회"는 없앴다(2026-11-14). 조회를 바로 실행하려면 설정 > 정책에서 허용 칸으로 옮긴다.
+  check('바로 볼 조회 설정은 없다(보내도 바꿀 것 없음 400)', settings.autoReads === undefined && (await put({ autoReads: ['logs'] })).status === 400, settings)
 
   const s4 = await newSession()
   const asked = await post(`/api/sessions/${s4}/messages`, { text: '로그 확인해줘' })
-  check('고르기 전에는 조회도 승인 카드', last(asked.events) === 'approval_required', types(asked.events))
+  check('로그 조회는 승인 카드', last(asked.events) === 'approval_required', types(asked.events))
   check('로그 조회 카드 제목에 대상과 종류', /^컨테이너 \S+ 로그 조회$/.test(approvalOf(asked.events)?.summary ?? ''), approvalOf(asked.events)?.summary)
   await deny(s4, approvalOf(asked.events)!.approvalId)
-  const saved = await put({ autoReads: ['logs'] })
-  check('바로 실행할 조회 저장', saved.status === 200 && ((await saved.json()) as { autoReads: string[] }).autoReads[0] === 'logs')
-  const s5 = await newSession()
-  const auto = await post(`/api/sessions/${s5}/messages`, { text: '로그 확인해줘' })
-  check('고른 조회는 카드 없이 실행', types(auto.events).includes('auto_approved') && !types(auto.events).includes('approval_required') && text(auto.events).includes('로그를 봤어요'), types(auto.events))
-  const s6 = await newSession()
-  const still = await post(`/api/sessions/${s6}/messages`, { text: '재시작해줘' })
-  check('고른 조회가 아니면 그대로 카드', last(still.events) === 'approval_required', types(still.events))
-  await deny(s6, approvalOf(still.events)!.approvalId)
-  await put({ autoReads: [] })
 }
 
 // ---- 입력창 모델 선택(GET /api/models). 가짜 Agent에는 실행 파일이 없어 dev.env MODEL_CATALOG_FILE을 읽는다 ----
@@ -900,17 +891,62 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   check('조회에는 Portainer 화면이 없다', !read.events.some((e) => e.type === 'tool_status' && e.link), read.events)
 }
 
+// ---- 허용 칸이라 묻지 않고 실행된 바꾸는 작업도 승인 기록에 남는다(조회는 남기지 않는다) ----
 {
-  // 승인 감사 기록에는 화면에서 누른 결정이 local로 남는다(만료 자동 거부는 system).
+  type Audit = { records: { user: string; decision: string; summary?: string; target?: string; tool: string }[] }
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '허용 칸 재시작' })
+  const audit = (await fetch(`${BASE}/api/audit?sessionId=${s}`).then((res) => res.json())) as Audit
+  check(
+    '허용 칸 재시작: 카드 없이 실행되고 승인 기록에 policy로 남는다',
+    !types(r.events).includes('approval_required') &&
+      text(r.events).includes('바로 재시작했어요') &&
+      audit.records.length === 1 &&
+      audit.records[0].user === 'policy' &&
+      audit.records[0].decision === 'approved' &&
+      audit.records[0].summary === '컨테이너 web 재시작',
+    { types: types(r.events), audit },
+  )
+  await post(`/api/sessions/${s}/messages`, { text: '목록 보여줘' })
+  const after = (await fetch(`${BASE}/api/audit?sessionId=${s}`).then((res) => res.json())) as Audit
+  check('묻지 않고 실행된 조회는 승인 기록에 남기지 않는다', after.records.length === 1, after.records)
+}
+
+{
+  // 승인 감사 기록에는 화면에서 누른 결정이 local로 남는다(만료 자동 거부는 system, 허용 칸이라 바로 실행은 policy).
   const db = process.env.WEB_DB_PATH
   if (db && db !== ':memory:') {
     const { DatabaseSync } = await import('node:sqlite')
     const users = new DatabaseSync(db).prepare("SELECT DISTINCT user FROM approval_audit WHERE user != 'system'").all()
-    check('승인 감사 기록의 user는 local 또는 auto(대신 승인)', users.every((u) => u.user === 'local' || u.user === 'auto'), users)
+    check('승인 감사 기록의 user는 local, auto(대신 승인), policy(허용 칸)', users.every((u) => ['local', 'auto', 'policy'].includes(String(u.user))), users)
   }
 }
 
 // ---- 정책 칸 옮기기(server/policy.ts) ----
+// 원래 허용이라 카드가 안 뜨던 조회도 묻기로 옮기면 카드가 뜬다. 제목이 무엇을 보는지 알려야 한다(11-14 실측: "컨테이너 조회", "조회").
+{
+  const { approvalCard } = await import('../tools.ts')
+  const title = (path: string) => approvalCard('docker_proxy', { environment_id: 1, method: 'GET', path }, new Map(), new Map()).summary
+  const got = ['/containers/json', '/v1.45/version', '/info', '/system/df', '/_ping', '/images/json', '/volumes', '/networks', '/networks/backend', '/containers/web/stats'].map(title)
+  check(
+    '정책: 묻기로 옮긴 목록·Docker 상태 조회의 카드 제목',
+    JSON.stringify(got) ===
+      JSON.stringify([
+        '컨테이너 목록 조회',
+        'Docker 버전 조회',
+        'Docker 정보 조회',
+        'Docker 디스크 사용량 조회',
+        'Docker 연결 확인',
+        '이미지 목록 조회',
+        '볼륨 목록 조회',
+        '네트워크 목록 조회',
+        '네트워크 backend 상세 조회',
+        '컨테이너 web 사용량 조회',
+      ]),
+    got,
+  )
+}
+
 // 진짜 Agent 설정과 같은 모양: 주석, 한 줄 끝 주석, 목록 뒤 주석, 80자 넘는 명령 줄.
 const POLICY_YAML = `agents:
   root:

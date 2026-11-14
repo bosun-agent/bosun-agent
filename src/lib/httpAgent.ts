@@ -111,8 +111,6 @@ export const httpAgent: AgentClient = {
 
   saveAgentMode: (agentMode) => json<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ agentMode }) }),
 
-  saveAutoReads: (autoReads) => json<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ autoReads }) }),
-
   getModels: () => json<ModelCatalog>('/api/models'),
 
   async deleteSession(sessionId) {

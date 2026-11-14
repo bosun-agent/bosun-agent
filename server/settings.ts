@@ -2,7 +2,7 @@
 // API 키는 Docker Agent env 파일(AGENT_ENV_FILE)에 쓴다. 키 값은 화면으로 돌려주지 않는다.
 
 import { chmodSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { READ_CHOICES, type AgentMode, type ApprovalMode, type ReadChoice, type Settings } from '../src/lib/agentProtocol.ts'
+import type { AgentMode, ApprovalMode, Settings } from '../src/lib/agentProtocol.ts'
 import { config } from './config.ts'
 import { getSetting, setSetting } from './store.ts'
 
@@ -20,7 +20,6 @@ export function getSettings(): Settings {
     apiKey: { editable: config.agentEnvFile !== '', set: apiKeySet(), ...maskedKey(config.agentKeyName) },
     approvalMode: approvalMode(),
     ...(agentModesEnabled() ? { agentMode: currentAgentName() as AgentMode } : {}),
-    autoReads: autoReads(),
     ...(config.portainerUrl ? { portainerUrl: config.portainerUrl } : {}),
   }
 }
@@ -58,25 +57,6 @@ export function saveAgentMode(mode: unknown): boolean {
   if (!agentModesEnabled() || !AGENT_MODES.includes(mode as AgentMode)) return false
   setSetting('agent_mode', mode as string)
   return true
-}
-
-// ---- 승인 없이 바로 실행할 조회 ----
-
-export function autoReads(): ReadChoice[] {
-  try {
-    const list = JSON.parse(getSetting('auto_reads') ?? '[]') as unknown
-    return Array.isArray(list) ? READ_CHOICES.filter((c) => list.includes(c)) : []
-  } catch {
-    return []
-  }
-}
-
-export function validAutoReads(value: unknown): value is ReadChoice[] {
-  return Array.isArray(value) && value.every((v) => READ_CHOICES.includes(v as ReadChoice))
-}
-
-export function saveAutoReads(reads: ReadChoice[]): void {
-  setSetting('auto_reads', JSON.stringify(reads))
 }
 
 // 권장 모델이나 전체 목록(catalog)에 없는 모델이면 false.

@@ -319,9 +319,9 @@ await page.getByRole('radio', { name: /묻지 않기/ }).check()
 await page.getByRole('radio', { name: /묻지 않기/ }).and(page.locator(':checked')).waitFor()
 await shot('12-approval-mode')
 check(
-  '묻지 않기면 바로 볼 조회 선택은 잠기고 정책 목록에도 알린다',
-  (await page.getByRole('checkbox', { name: '컨테이너 로그' }).isDisabled()) &&
-    (await page.getByText('모두 승인 없이 바로 실행돼요', { exact: false }).isVisible()),
+  '묻지 않기면 정책 목록에도 알리고, 바로 볼 조회 체크박스는 없다',
+  (await page.getByText('모두 승인 없이 바로 실행돼요', { exact: false }).isVisible()) &&
+    (await page.getByRole('checkbox', { name: '컨테이너 로그' }).count()) === 0,
 )
 await page.getByLabel('설정 닫기').click()
 check('묻지 않기면 입력창 위에 늘 보인다', await page.getByText('묻지 않기(YOLO) 켜짐', { exact: false }).isVisible())
@@ -341,12 +341,6 @@ await page.getByLabel('설정', { exact: true }).click()
 await page.getByRole('button', { name: '정책' }).click()
 await page.getByRole('radio', { name: /매번 묻기/ }).check()
 await page.getByRole('radio', { name: /매번 묻기/ }).and(page.locator(':checked')).waitFor()
-// 바로 볼 조회를 고르면 아래 정책 목록의 자동 허용에도 WEB 설정으로 같이 보인다
-await page.getByRole('checkbox', { name: '컨테이너 로그' }).check()
-await page.getByText('WEB 설정', { exact: true }).waitFor()
-check('고른 조회가 자동 허용 목록에 WEB 설정으로 보인다', !(await page.getByRole('checkbox', { name: '컨테이너 로그' }).isDisabled()))
-await page.getByRole('checkbox', { name: '컨테이너 로그' }).uncheck()
-await page.getByText('WEB 설정', { exact: true }).waitFor({ state: 'detached' })
 await page.getByRole('button', { name: '승인 기록' }).click()
 await page.getByText('자동 승인', { exact: false }).first().waitFor()
 check('승인 기록에 자동 승인으로 남는다', true)
@@ -397,7 +391,21 @@ if (envFile) {
         (await deny.getByRole('button', { name: '볼륨 삭제' }).getAttribute('aria-disabled')) === 'true' &&
         !(await page.getByText('자동 허용 (승인 없이 실행)').isVisible()),
     )
-    // 눌러서 옮기기(폰·키보드)
+    // 눌러서 옮기기(폰·키보드). 바꾸는 작업을 허용으로 옮기면 확인 창: 취소하면 그대로, 확인하면 옮긴다
+    let asked = ''
+    page.once('dialog', (d) => {
+      asked = d.message()
+      void d.dismiss()
+    })
+    await page.getByRole('button', { name: '컨테이너 시작', exact: true }).click()
+    await page.getByRole('group', { name: '컨테이너 시작 옮기기' }).getByRole('button', { name: '허용(으)로' }).click()
+    check(
+      '정책: 바꾸는 작업을 허용으로 옮기면 확인 창, 취소하면 그대로',
+      asked.includes('승인 카드 없이 바로 실행돼요') &&
+        (await page.getByRole('region', { name: '묻기 칸' }).getByRole('button', { name: '컨테이너 시작', exact: true }).isVisible()),
+      asked,
+    )
+    page.once('dialog', (d) => void d.accept())
     await page.getByRole('button', { name: '컨테이너 시작', exact: true }).click()
     await page.getByRole('group', { name: '컨테이너 시작 옮기기' }).getByRole('button', { name: '허용(으)로' }).click()
     // 끌어다 놓기

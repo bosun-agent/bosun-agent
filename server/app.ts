@@ -1,5 +1,4 @@
 import { withoutLeakedToolCall } from './translate.ts'
-import type { ReadChoice } from '../src/lib/agentProtocol.ts'
 // 브라우저 ↔ WEB 백엔드 엔드포인트.
 
 import { readFileSync } from 'node:fs'
@@ -37,8 +36,6 @@ import {
   validApiKey,
   validModelRef,
   saveAgentMode,
-  saveAutoReads,
-  validAutoReads,
 } from './settings.ts'
 import { applySetup, setupStatus, type SetupInput } from './setup.ts'
 import { cardSummaries, cardsFor, copyCards, deleteCards, pinnedSessions, recentDecisions, setPinned, usageSince } from './store.ts'
@@ -346,14 +343,11 @@ app.post('/api/sessions/:id/approvals/:approvalId', async (c) => {
 // 설정 화면. 모델 선택과 API 키.
 app.get('/api/settings', (c) => c.json(getSettings()))
 
-// 모델, 승인 방식, Agent 종류, 바로 실행할 조회. 보낸 것만 바꾼다.
+// 모델, 승인 방식, Agent 종류. 보낸 것만 바꾼다.
 app.put('/api/settings', async (c) => {
-  const body = await jsonBody<{ model: unknown; approvalMode: unknown; agentMode: unknown; autoReads: unknown }>(c)
-  if (body.model === undefined && body.approvalMode === undefined && body.agentMode === undefined && body.autoReads === undefined) {
+  const body = await jsonBody<{ model: unknown; approvalMode: unknown; agentMode: unknown }>(c)
+  if (body.model === undefined && body.approvalMode === undefined && body.agentMode === undefined) {
     throw new HttpError(400, 'BAD_REQUEST', '바꿀 설정이 없어요.')
-  }
-  if (body.autoReads !== undefined && !validAutoReads(body.autoReads)) {
-    throw new HttpError(400, 'BAD_REQUEST', '고를 수 없는 조회예요.')
   }
   if (body.approvalMode !== undefined && !APPROVAL_MODES.includes(body.approvalMode as ApprovalMode)) {
     throw new HttpError(400, 'BAD_REQUEST', '승인 방식은 ask, never 중 하나예요.')
@@ -367,7 +361,6 @@ app.put('/api/settings', async (c) => {
   if (body.agentMode !== undefined && !saveAgentMode(body.agentMode)) {
     throw new HttpError(400, 'BAD_REQUEST', '이 설치에서는 고를 수 없는 Agent예요.')
   }
-  if (body.autoReads !== undefined) saveAutoReads(body.autoReads as ReadChoice[])
   if (body.approvalMode !== undefined) {
     saveApprovalMode(body.approvalMode)
     console.info(`[settings] approval mode: ${body.approvalMode}`)

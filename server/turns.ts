@@ -13,9 +13,9 @@ import type { AgentEvent, ApprovalDecision } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import type { DAEvent } from './agentClient.ts'
 import { config } from './config.ts'
-import { approvalMode, autoReads, currentAgentName, currentModel } from './settings.ts'
+import { approvalMode, currentAgentName, currentModel } from './settings.ts'
 import { addCard, logDecision, logUsage, updateApprovalCard, type ApprovalStatus } from './store.ts'
-import { approvalCard, learnHookName, learnNames, readChoice, targetKeys, withHookExplanation, type ApprovalCard, type StackInfo } from './tools.ts'
+import { approvalCard, isChange, learnHookName, learnNames, targetKeys, withHookExplanation, type ApprovalCard, type StackInfo } from './tools.ts'
 import { Translator, TOOL_CALL_AS_TEXT } from './translate.ts'
 
 export interface Sink {
@@ -56,6 +56,8 @@ interface Turn {
   log: AgentEvent[]
   // 실행 중인 도구 호출 ID → 이름·인자. 결과가 오면 names를 채운다. 브라우저로는 보내지 않는다.
   calls: Map<string, { name: string; args: Record<string, unknown> }>
+  // 승인을 물은 호출 ID(tool_call_confirmation). 묻지 않고 실행된 바꾸는 호출은 허용 칸이라 바로 실행된 것으로 기록한다.
+  asked: Set<string>
   // 결정을 기다리는 카드. 브라우저 스트림이 열려 있으면 바로 보내고, 아니면 다음에 붙을 때 보낸다.
   waiting: Approval | null
   // waiting을 브라우저에 보냈는지
@@ -239,6 +241,7 @@ export async function startTurn(sessionId: string, text: string): Promise<(sink:
     buffer: [],
     log: [],
     calls: new Map(),
+    asked: new Set(),
     waiting: null,
     shown: false,
     finished: false,
@@ -362,7 +365,27 @@ function track(t: Turn, ev: DAEvent): void {
   if (t.waiting?.status === 'pending' && t.waiting.toolCallId === res.tool_call_id) resolve(t.waiting, 'cancelled')
   const call = t.calls.get(res.tool_call_id)
   t.calls.delete(res.tool_call_id)
+  if (call && !t.asked.has(res.tool_call_id) && isChange(call.name, call.args)) logAllowed(t, res.tool_call_id, call)
+  t.asked.delete(res.tool_call_id)
   if (call && !res.result?.isError) learnNames(names, call.name, call.args, res.response, stacks)
+}
+
+// 감사 기록의 user. 설정 > 정책의 허용 칸이라 Agent가 묻지 않고 실행한 바꾸는 호출(2026-11-14).
+export const POLICY_USER = 'policy'
+
+// 묻지 않고 실행됐으니 카드가 없다. 카드와 같은 제목·대상을 만들어 남긴다(실패한 호출도 실행은 됐으므로 남긴다).
+function logAllowed(t: Turn, toolCallId: string, call: { name: string; args: Record<string, unknown> }): void {
+  const card = approvalCard(call.name, call.args, names, stacks)
+  logDecision({
+    user: POLICY_USER,
+    sessionId: t.sessionId,
+    approvalId: `pol_${randomUUID()}`,
+    toolCallId,
+    tool: call.name,
+    decision: 'approved',
+    summary: card.summary,
+    ...(card.action.target ? { target: card.action.target } : {}),
+  })
 }
 
 function parseArgs(raw: string | undefined): Record<string, unknown> {
@@ -389,6 +412,7 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
   } catch {
     // 인자를 못 읽으면 공통 문구 카드를 띄운다.
   }
+  if (call.id) t.asked.add(call.id)
   // Docker Agent는 결정을 받기 전에는 다음 승인을 보내지 않는다. 그래도 오면 앞 카드는 더 쓸 수 없다.
   if (t.waiting?.status === 'pending') resolve(t.waiting, 'cancelled')
 
@@ -435,11 +459,9 @@ async function ask(t: Turn, ev: Extract<DAEvent, { type: 'tool_call_confirmation
 // 감사 기록의 user. 화면에서 누른 결정은 local, 만료 자동 거부는 system이다.
 export const AUTO_USER = 'auto'
 
-// never(YOLO)면 위험도와 상관없이 삭제까지 모두 대신 승인한다. 아니면 설정에서 "바로 실행"으로 고른 조회만 대신 승인한다.
-function autoApproves(tool: string, args: Record<string, unknown>): boolean {
-  if (approvalMode() === 'never') return true
-  const choice = readChoice(tool, args)
-  return choice !== undefined && autoReads().includes(choice)
+// never(YOLO)면 위험도와 상관없이 삭제까지 모두 대신 승인한다. 조회만 바로 실행하려면 설정 > 정책에서 허용 칸으로 옮긴다(server/policy.ts).
+function autoApproves(_tool: string, _args: Record<string, unknown>): boolean {
+  return approvalMode() === 'never'
 }
 
 // Agent에 승인을 보내고 카드·감사 기록을 승인으로 남긴다. 보내지 못하면 false를 돌려주고 평소처럼 카드를 띄운다.
