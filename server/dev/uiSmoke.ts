@@ -422,6 +422,11 @@ if (envFile) {
         (await deny.getByRole('button', { name: '볼륨 삭제' }).getAttribute('aria-disabled')) === 'true' &&
         !(await page.getByText('자동 허용 (승인 없이 실행)').isVisible()),
     )
+    check(
+      '정책: 칸 화면이 있으면 승인 방식 문구도 칸 기준(묻기 칸, 막기 칸)',
+      (await page.getByText('묻기 칸의 작업마다 승인 카드를 띄워요', { exact: false }).isVisible()) &&
+        (await page.getByText('어느 방식이든 막기 칸과 안전 검사가 막는 작업은', { exact: false }).isVisible()),
+    )
     // 눌러서 옮기기(폰·키보드). 바꾸는 작업을 허용으로 옮기면 확인 창: 취소하면 그대로, 확인하면 옮긴다
     let asked = ''
     page.once('dialog', (d) => {

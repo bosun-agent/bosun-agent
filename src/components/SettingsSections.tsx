@@ -215,7 +215,7 @@ export function PolicySection({ onApprovalModeChange }: { onApprovalModeChange?:
   const board = policy?.editable === true
   return (
     <div className="space-y-2">
-      <ApprovalModeBox settings={settings} setSettings={setSettings} loadFailed={settingsFailed} onChange={onApprovalModeChange} />
+      <ApprovalModeBox settings={settings} setSettings={setSettings} loadFailed={settingsFailed} onChange={onApprovalModeChange} board={board} />
       <AgentModeBox />
       {board && <PolicyBoard initial={policy} settings={settings} />}
       {!data ? (
@@ -238,6 +238,12 @@ const APPROVAL_MODE_TEXT: Record<ApprovalMode, { label: string; help: string }> 
   },
 }
 
+// 정책 칸(PolicyBoard)이 있을 때. 카드가 뜨는 것은 "바꾸는 작업"이 아니라 묻기 칸의 작업이다(2026-11-15).
+const APPROVAL_MODE_BOARD: Record<ApprovalMode, string> = {
+  ask: '묻기 칸의 작업마다 승인 카드를 띄워요. 처음 쓰거나 중요한 서버라면 이걸 권해요.',
+  never: '묻기 칸의 작업도 카드 없이 바로 실행해요. 삭제도 묻지 않아요(BOSUN이 설명할 수 없는 도구만 예외). 테스트 서버에서만 쓰세요.',
+}
+
 type SettingsProps = { settings: Settings | null; setSettings: Dispatch<SetStateAction<Settings | null>> }
 
 function ApprovalModeBox({
@@ -245,7 +251,8 @@ function ApprovalModeBox({
   setSettings,
   loadFailed,
   onChange,
-}: SettingsProps & { loadFailed: boolean; onChange?: (mode: ApprovalMode) => void }) {
+  board,
+}: SettingsProps & { loadFailed: boolean; onChange?: (mode: ApprovalMode) => void; board: boolean }) {
   const [saveFailed, setFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const failed = saveFailed || loadFailed
@@ -283,7 +290,8 @@ function ApprovalModeBox({
       {settings && (
         <div className="space-y-1" role="radiogroup" aria-label="승인 방식">
           {(Object.keys(APPROVAL_MODE_TEXT) as ApprovalMode[]).map((mode) => {
-            const { label, help } = APPROVAL_MODE_TEXT[mode]
+            const { label } = APPROVAL_MODE_TEXT[mode]
+            const help = board ? APPROVAL_MODE_BOARD[mode] : APPROVAL_MODE_TEXT[mode].help
             const checked = settings.approvalMode === mode
             return (
               <label
@@ -301,8 +309,8 @@ function ApprovalModeBox({
         </div>
       )}
       <p className="mt-1.5 text-xs text-neutral-500">
-        어느 방식이든 아래 "항상 거부"와 정책 훅이 막는 작업은 실행되지 않아요. 바꾸면 다음 승인부터 적용돼요. 대신 승인한 작업도 승인 기록에
-        "자동 승인"으로 남아요.
+        {board ? '어느 방식이든 막기 칸과 안전 검사가 막는 작업은 실행되지 않아요.' : '어느 방식이든 아래 "항상 거부"와 정책 훅이 막는 작업은 실행되지 않아요.'}{' '}
+        바꾸면 다음 승인부터 적용돼요. 대신 승인한 작업도 승인 기록에 "자동 승인"으로 남아요.
       </p>
       {failed && <p className="mt-1 text-sm text-red-600">승인 방식을 불러오거나 저장하지 못했어요.</p>}
     </Box>
