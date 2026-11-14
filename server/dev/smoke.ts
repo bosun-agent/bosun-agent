@@ -912,6 +912,49 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   check('조회에는 Portainer 화면이 없다', !read.events.some((e) => e.type === 'tool_status' && e.link), read.events)
 }
 
+// 경우별 Portainer 화면 주소. Portainer 2.45.2 화면 라우트(containers·volumes·networks/:id, containers·volumes·networks/new,
+// stacks/:name?id&type&regular)를 기준으로 했다.
+{
+  const { portainerLink } = await import('../tools.ts')
+  const ID = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2'
+  const names = new Map([['a1b2c3d4e5f6', 'web']])
+  const stacks = new Map([['7', { name: 'shop' }]])
+  const proxy = (method: string, path: string, extra: Record<string, unknown> = {}) => ({ environment_id: 1, method, path, ...extra })
+  const C = '#!/1/docker/containers'
+  const cases: [string, string, Record<string, unknown>, string, { label: string; path: string } | undefined][] = [
+    ['컨테이너 만들기(이름)', 'docker_proxy', proxy('POST', '/containers/create', { query_params: { name: 'api' } }), `{"Id":"${ID}"}`, { label: '컨테이너 api', path: `${C}/api` }],
+    ['컨테이너 만들기(이름 없음)', 'docker_proxy', proxy('POST', '/containers/create'), `{"Id":"${ID}"}`, { label: '컨테이너 web', path: `${C}/a1b2c3d4e5f6` }],
+    ['컨테이너 재시작(이름)', 'docker_proxy', proxy('POST', '/v1.45/containers/web/restart'), '', { label: '컨테이너 web', path: `${C}/web` }],
+    ['컨테이너 중지(전체 ID)', 'docker_proxy', proxy('POST', `/containers/${ID}/stop`), '', { label: '컨테이너 web', path: `${C}/a1b2c3d4e5f6` }],
+    ['컨테이너 이름 바꾸기(이름)', 'docker_proxy', proxy('POST', '/containers/web/rename', { query_params: { name: 'web2' } }), '', { label: '컨테이너 web2', path: `${C}/web2` }],
+    ['컨테이너 이름 바꾸기(ID)', 'docker_proxy', proxy('POST', `/containers/${ID}/rename`, { query_params: { name: 'web2' } }), '', { label: '컨테이너 web2', path: `${C}/a1b2c3d4e5f6` }],
+    ['컨테이너 지우기', 'docker_proxy', proxy('DELETE', '/containers/web'), '', { label: '컨테이너 목록', path: C }],
+    ['컨테이너 정리(prune)', 'docker_proxy', proxy('POST', '/containers/prune'), '{"ContainersDeleted":[]}', { label: '컨테이너 목록', path: C }],
+    ['이름이 new인 컨테이너', 'docker_proxy', proxy('POST', '/containers/new/start'), '', { label: '컨테이너 목록', path: C }],
+    ['이미지 받기', 'docker_proxy', proxy('POST', '/images/create', { query_params: { fromImage: 'nginx' } }), '', { label: '이미지 목록', path: '#!/1/docker/images' }],
+    ['이미지 지우기', 'docker_proxy', proxy('DELETE', '/images/nginx:latest'), '', { label: '이미지 목록', path: '#!/1/docker/images' }],
+    ['볼륨 만들기', 'docker_proxy', proxy('POST', '/volumes/create', { body: { Name: 'data' } }), '', { label: '볼륨 data', path: '#!/1/docker/volumes/data' }],
+    ['볼륨 만들기(이름은 응답)', 'docker_proxy', proxy('POST', '/volumes/create', { body: '{}' }), '{"Name":"f00d"}', { label: '볼륨 f00d', path: '#!/1/docker/volumes/f00d' }],
+    ['볼륨 정리(prune)', 'docker_proxy', proxy('POST', '/volumes/prune'), '', { label: '볼륨 목록', path: '#!/1/docker/volumes' }],
+    ['네트워크 만들기', 'docker_proxy', proxy('POST', '/networks/create', { body: { Name: 'backend' } }), `{"Id":"${ID}","Warning":""}`, { label: '네트워크 backend', path: '#!/1/docker/networks/a1b2c3d4e5f6' }],
+    ['네트워크 연결(이름)', 'docker_proxy', proxy('POST', '/networks/backend/connect', { body: { Container: 'web' } }), '', { label: '네트워크 backend', path: '#!/1/docker/networks/backend' }],
+    ['네트워크 지우기', 'docker_proxy', proxy('DELETE', '/networks/backend'), '', { label: '네트워크 목록', path: '#!/1/docker/networks' }],
+    ['환경 3', 'docker_proxy', { ...proxy('POST', '/containers/web/start'), environment_id: '3' }, '', { label: '컨테이너 web', path: '#!/3/docker/containers/web' }],
+    ['조회는 없음', 'docker_proxy', proxy('GET', '/containers/json'), '[]', undefined],
+    ['환경 없으면 없음', 'docker_proxy', { method: 'POST', path: '/containers/web/start' }, '', undefined],
+    ['스택 만들기', 'StackCreateDockerStandaloneString', { endpointId: 1, Name: 'blog', StackFileContent: 'services: {}' }, '{"Id":12,"Name":"blog"}', { label: '스택 blog', path: '#!/1/docker/stacks/blog?id=12&type=2&regular=true' }],
+    ['스택 수정(아는 이름)', 'StackUpdate', { id: 7, endpointId: 1 }, '', { label: '스택 shop', path: '#!/1/docker/stacks/shop?id=7&type=2&regular=true' }],
+    ['스택 중지(이름은 응답)', 'StackStop', { id: 9, endpointId: 1 }, '{"Id":9,"Name":"blog"}', { label: '스택 blog', path: '#!/1/docker/stacks/blog?id=9&type=2&regular=true' }],
+    ['스택 시작(이름 모름)', 'StackStart', { id: 9, endpointId: 1 }, '', { label: '스택 목록', path: '#!/1/docker/stacks' }],
+    ['스택 지우기', 'StackDelete', { id: 7, endpointId: 1 }, '', { label: '스택 목록', path: '#!/1/docker/stacks' }],
+    ['스택 조회는 없음', 'StackInspect', { id: 7 }, '{}', undefined],
+  ]
+  const wrong = cases
+    .map(([name, tool, args, output, want]) => ({ name, want, got: portainerLink(tool, args, output, names, stacks) }))
+    .filter(({ want, got }) => JSON.stringify(got) !== JSON.stringify(want))
+  check(`경우별 Portainer 화면 주소(${cases.length}가지)`, wrong.length === 0, wrong)
+}
+
 {
   // 승인 감사 기록에는 화면에서 누른 결정이 local로 남는다(만료 자동 거부는 system).
   const db = process.env.WEB_DB_PATH
