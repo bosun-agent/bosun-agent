@@ -938,22 +938,36 @@ export function portainerLink(
   const list = { label: `${resource} 목록`, path: base }
   if (method === 'DELETE') return list
   const query = objectArg(args.query_params)
+  const labelOf = (target: string) => (HEX_ID.test(target) ? (names.get(normalized(kind, target)) ?? target) : target)
   if (kind === 'containers') {
     // 이름으로 왔으면 이름을 쓴다. 스택을 다시 배포하면 이름은 그대로고 ID만 바뀌어서 알아 둔 ID가 낡을 수 있다.
     const requested = str(query.name)?.replace(/^\//, '')
-    let target = rest[0]
+    let target = rest[0] ?? ''
+    let label: string | undefined
     if (target === 'create') target = requested ?? idOf(parsedOutput(output)) ?? ''
-    else if (rest[1] === 'rename' && requested && !HEX_ID.test(target)) target = requested
-    if (!target) return list
-    const label = HEX_ID.test(target) ? (names.get(normalized(kind, target)) ?? target) : target
-    return { label: `컨테이너 ${label}`, path: `${base}/${encodeURIComponent(target)}` }
+    // `/containers/prune`처럼 대상이 없는 작업은 목록으로 간다.
+    else if (rest.length < 2) target = ''
+    else if (rest[1] === 'rename' && requested) {
+      if (HEX_ID.test(target)) label = requested
+      else target = requested
+    }
+    // `containers/new`는 Portainer의 새 컨테이너 만들기 화면이라 그 이름의 컨테이너는 목록으로 보낸다.
+    if (!target || target === 'new') return list
+    return { label: `컨테이너 ${label ?? labelOf(target)}`, path: `${base}/${encodeURIComponent(target)}` }
   }
   if (kind === 'volumes' && rest[0] === 'create') {
     const name = str(argOf(objectArg(args.body), 'Name')) ?? str(argOf(parsedOutput(output), 'Name'))
-    return name ? { label: `볼륨 ${name}`, path: `${base}/${encodeURIComponent(name)}` } : list
+    return name && name !== 'new' ? { label: `볼륨 ${name}`, path: `${base}/${encodeURIComponent(name)}` } : list
   }
-  // 컨테이너 연결·해제(`/networks/{id}/connect`)
-  if (kind === 'networks' && rest.length === 2) return { label: `네트워크 ${rest[0]}`, path: `${base}/${encodeURIComponent(rest[0])}` }
+  if (kind === 'networks') {
+    // 네트워크 화면은 ID로 연다. 만들면 응답의 Id, 연결·해제(`/networks/{id}/connect`)는 경로의 이름·ID.
+    if (rest[0] === 'create') {
+      const id = idOf(parsedOutput(output))
+      const name = str(argOf(objectArg(args.body), 'Name'))
+      return id ? { label: `네트워크 ${name ?? id}`, path: `${base}/${id}` } : list
+    }
+    if (rest.length === 2 && rest[0] !== 'new') return { label: `네트워크 ${labelOf(rest[0])}`, path: `${base}/${encodeURIComponent(rest[0])}` }
+  }
   return list
 }
 
@@ -966,7 +980,8 @@ function stackLink(tool: string, args: Record<string, unknown>, output: string, 
   if (tool === 'StackDelete') return list
   const created = tool === 'StackCreateDockerStandaloneString'
   const id = created ? numericId(argOf(parsedOutput(output), 'id')) : numericId(argOf(args, 'id'))
-  const name = created ? str(argOf(args, 'Name')) : id ? stacks.get(id)?.name : undefined
+  // 백엔드를 다시 켜서 이름을 모르면 응답(Portainer가 돌려준 스택)의 Name을 쓴다.
+  const name = created ? str(argOf(args, 'Name')) : id ? (stacks.get(id)?.name ?? str(argOf(parsedOutput(output), 'Name'))) : undefined
   if (!id || !name) return list
   return { label: `스택 ${name}`, path: `${base}/${encodeURIComponent(name)}?id=${id}&type=2&regular=true` }
 }
