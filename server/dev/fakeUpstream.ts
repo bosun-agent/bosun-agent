@@ -552,13 +552,14 @@ agentApp.get('/fake-openrouter/api/v1/credits', (c) =>
 )
 agentApp.get('/ready', (c) => c.json({ ready: true, active_sessions: sessions.size, store_connected: true }))
 // agent.yaml JSON 모양(pkg/config/latest). 이름 필드는 JSON 태그가 없어서 Name이다.
+// 설명 끝의 (파일 이름)과 도구 수(expert만 3)로 WEB이 어느 설정 파일을 물었는지 시험에서 확인한다.
 agentApp.get('/api/agents/:id', (c) =>
   c.json({
     agents: [
       {
         Name: 'root',
         model: 'flash',
-        description: '가짜 Agent',
+        description: `가짜 Agent(${c.req.param('id')})`,
         safety: 'strict',
         instruction: '너는 Portainer를 통해 Docker 환경을 관리하는 에이전트다.',
         toolsets: [
@@ -583,7 +584,7 @@ agentApp.get('/api/agents/:id', (c) =>
     permissions: { allow: ['docker_proxy:method=GET', 'EndpointList'], deny: ['docker_proxy:path=*/exec*'] },
   }),
 )
-agentApp.get('/api/agents/:id/:agent/tools/count', (c) => c.json({ available_tools: 2 }))
+agentApp.get('/api/agents/:id/:agent/tools/count', (c) => c.json({ available_tools: c.req.param('id') === 'expert' ? 3 : 2 }))
 agentApp.get('/api/sessions/:id', (c) => {
   const s = sessions.get(c.req.param('id'))
   return s ? c.json(s) : c.json({ message: 'session not found' }, 404)

@@ -378,6 +378,34 @@ check('승인 기록에 자동 승인으로 남는다', true)
 await page.getByLabel('설정 닫기').click()
 check('매번 묻기로 돌리면 표시가 사라진다', !(await page.getByText('묻지 않기(YOLO) 켜짐', { exact: false }).isVisible()))
 
+// 첫 메시지를 보내며 서버 대화를 만드는 사이에 목록 갱신이 끝나도 같은 대화가 두 줄이 되지 않는다
+// (11-15 시원: 두 줄이 되면 하나를 지워도 서버에 없는 유령 대화가 남았다)
+{
+  const listed = () => page.waitForResponse((r) => r.url().endsWith('/api/sessions') && r.request().method() === 'GET', { timeout: 20_000 })
+  const refresh = async () => {
+    const done = listed()
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await done
+  }
+  await page.route('**/api/sessions', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
+    const response = await route.fetch() // 서버에는 대화가 생겼고, 화면은 아직 serverId를 모른다
+    await refresh()
+    await page.waitForTimeout(200)
+    await route.fulfill({ response })
+  })
+  await newChat()
+  await send('유령 대화 확인')
+  await page.getByText('가짜 Agent 응답이에요', { exact: false }).last().waitFor()
+  await page.unroute('**/api/sessions')
+  await refresh() // 서버가 첫 메시지로 붙인 제목이 목록에 반영된 뒤 센다
+  await page.waitForTimeout(200)
+  await openSidebar()
+  const ghost = /^유령 대화 확인( 처리 중)?$/
+  check('첫 메시지와 목록 갱신이 겹쳐도 대화는 한 줄', (await rows(ghost)) === 1, await rows(ghost))
+  await page.getByLabel('대화 목록 닫기').click()
+}
+
 // 여러 개 골라 지우기: 모두 선택은 고정한 대화를 빼고 고른다
 await openSidebar()
 await page.getByRole('button', { name: '선택', exact: true }).click()

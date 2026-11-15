@@ -165,8 +165,10 @@ function App() {
     }
     const byServerId = new Map(list.map((s) => [s.sessionId, s]))
     setSessions((prev) => {
-      const known = new Set(prev.map((s) => s.serverId))
-      const updated = prev.map((s) => {
+      // 목록에서 받아 두기만 하고 연 적 없는 대화(loaded: false)가 서버에서 없어졌으면 뺀다(다른 탭에서 지움, 예전 중복 줄).
+      const kept = prev.filter((s) => s.loaded !== false || !s.serverId || byServerId.has(s.serverId))
+      const known = new Set(kept.map((s) => s.serverId))
+      const updated = kept.map((s) => {
         const row = s.serverId ? byServerId.get(s.serverId) : undefined
         if (!row) return s
         return { ...s, title: row.title || s.title, pinned: row.pinned === true, inputTokens: row.inputTokens, outputTokens: row.outputTokens }
@@ -183,7 +185,8 @@ function App() {
           inputTokens: s.inputTokens,
           outputTokens: s.outputTokens,
         }))
-      return [...updated, ...restored]
+      const merged = [...updated, ...restored]
+      return merged.length > 0 ? merged : [newSession()]
     })
     setServerRunning(new Set(list.filter((s) => s.running).map((s) => s.sessionId)))
   }, [])
@@ -236,7 +239,13 @@ function App() {
   async function getServerId(session: ChatSession) {
     if (session.serverId) return session.serverId
     const serverId = await agent.createSession()
-    patchSession(session.id, (s) => ({ ...s, serverId }))
+    // 만드는 사이에 15초 목록 갱신이 끝나면, 서버에 생긴 이 대화가 "안 불러온 대화"로 한 줄 더 들어온다.
+    // 같은 serverId 줄이 둘이면 하나를 지워도 다른 하나가 유령으로 남으므로 여기서 그 줄을 뺀다.
+    setSessions((prev) =>
+      prev
+        .filter((s) => s.id === session.id || s.serverId !== serverId)
+        .map((s) => (s.id === session.id ? { ...s, serverId } : s)),
+    )
     return serverId
   }
 
@@ -548,10 +557,13 @@ function App() {
       }
     }
     // 마지막 대화를 지우면 빈 새 대화를 하나 둔다. 보고 있던 대화를 지우면 맨 위 대화로 간다.
-    const rest = sessions.filter((s) => s.id !== id)
+    // 지우는 사이 목록이 바뀌었을 수 있어서 최신 목록에서 빼고, 같은 서버 대화를 가리키는 줄도 함께 뺀다.
+    const gone = (s: ChatSession) => s.id === id || (session.serverId !== undefined && s.serverId === session.serverId)
+    const removed = new Set(sessionsRef.current.filter(gone).map((s) => s.id))
+    const rest = sessionsRef.current.filter((s) => !gone(s))
     const next = rest.length > 0 ? rest : [newSession()]
     setSessions(next)
-    if (id === activeId) setActiveId(next[0].id)
+    setActiveId((prev) => (removed.has(prev) ? next[0].id : prev))
   }
 
   // 사이드바에서 고른 대화를 한꺼번에 지운다. 처리 중인 대화는 서버가 지우지 않으므로 뺀다.

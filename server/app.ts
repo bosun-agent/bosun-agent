@@ -471,7 +471,7 @@ app.get('/api/system', async (c) => c.json(await systemInfo(runningCount())))
 app.get('/api/system/tools', async (c) => {
   const info = await systemInfo(runningCount())
   const name = info.config?.agents[0]?.name ?? 'root'
-  return c.json({ agent: name, count: await agent.toolCount(name) })
+  return c.json({ agent: name, count: await agent.toolCount(name, info.agent.name) })
 })
 
 // 삭제 전 백업 목록(최근 순). Agent 백업 훅의 SQLite를 읽기만 한다(server/backups.ts).

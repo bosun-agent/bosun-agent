@@ -8,6 +8,7 @@ import * as agent from './agentClient.ts'
 import { agentBinVersion } from './agentProcess.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
+import { currentAgentName } from './settings.ts'
 
 type Obj = Record<string, unknown>
 
@@ -99,6 +100,8 @@ const WEB_VERSION = (() => {
 })()
 
 export async function systemInfo(running: number): Promise<SystemInfo> {
+  // 설정에서 초보자용·숙련자용을 바꾸면 그 파일을 보여준다(시작할 때의 config.agentName이 아니라).
+  const agentName = currentAgentName()
   const info: SystemInfo = {
     web: {
       version: WEB_VERSION,
@@ -106,7 +109,7 @@ export async function systemInfo(running: number): Promise<SystemInfo> {
       running,
       approvalTimeoutSec: Math.round(config.approvalTimeoutMs / 1000),
     },
-    agent: { name: config.agentName, reachable: false },
+    agent: { name: agentName, reachable: false },
   }
   try {
     const health = await agent.health()
@@ -120,7 +123,7 @@ export async function systemInfo(running: number): Promise<SystemInfo> {
     return info
   }
   try {
-    info.config = summarizeConfig(await agent.getAgentConfig())
+    info.config = summarizeConfig(await agent.getAgentConfig(agentName))
   } catch (err) {
     console.warn('[system] agent config failed', err)
   }

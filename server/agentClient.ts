@@ -159,15 +159,16 @@ export async function ready(): Promise<{ ready: boolean; active_sessions?: numbe
 }
 
 // agent.yaml 내용(JSON). 이름은 파일 이름이다(agent.direct.yaml → agent.direct). 화면에는 고른 필드만 보낸다(server/system.ts).
-export async function getAgentConfig(): Promise<unknown> {
-  const res = await request(`/api/agents/${encodeURIComponent(config.agentName)}`)
+// 초보자용·숙련자용 폴더 설치에서는 설정에서 고른 파일(currentAgentName)을 넘긴다. 안 넘기면 시작할 때의 AGENT_NAME.
+export async function getAgentConfig(file: string = config.agentName): Promise<unknown> {
+  const res = await request(`/api/agents/${encodeURIComponent(file)}`)
   return await res.json()
 }
 
-// 모델이 쓸 수 있는 도구 수. MCP 서버를 띄워 보고 센다.
-export async function toolCount(agentName: string): Promise<number> {
+// 모델이 쓸 수 있는 도구 수. MCP 서버를 띄워 보고 센다. file은 getAgentConfig와 같다.
+export async function toolCount(agentName: string, file: string = config.agentName): Promise<number> {
   const res = await request(
-    `/api/agents/${encodeURIComponent(config.agentName)}/${encodeURIComponent(agentName)}/tools/count`,
+    `/api/agents/${encodeURIComponent(file)}/${encodeURIComponent(agentName)}/tools/count`,
   )
   return ((await res.json()) as { available_tools: number }).available_tools
 }

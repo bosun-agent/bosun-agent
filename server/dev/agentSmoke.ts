@@ -1,5 +1,5 @@
 // WEB 백엔드가 Agent를 띄우고 관리하는 흐름(server/agentProcess.ts)을 가짜 Agent로 확인한다.
-// 실행: npm run test:agent. 이 스크립트가 백엔드를 직접 띄우고 끈다(포트 13011~13014, 가짜 Agent 18090~18093).
+// 실행: npm run test:agent. 이 스크립트가 백엔드를 직접 띄우고 끈다(포트 13011~13015, 가짜 Agent 18090~18094).
 // 다른 백엔드·가짜 Agent는 띄워 두지 않아도 된다.
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
@@ -155,6 +155,23 @@ try {
   await fetch(`http://127.0.0.1:${D}/api/agent/restart`, { method: 'POST', headers: H })
   s = await waitFor(D, (x) => x.state === 'running' && x.restarts === 2)
   check('정책: 기준 파일로 덮여도 Agent를 켤 때 사용자 선택을 다시 적는다', readFileSync(join(policyDir, 'beginner.yaml'), 'utf8').includes(start), readFileSync(join(policyDir, 'beginner.yaml'), 'utf8'))
+
+  // 8. 초보자용·숙련자용을 바꾸면 정보 화면도 고른 쪽 설정 파일을 보여준다(시작 때의 AGENT_NAME이 아니라)
+  const E = 13015
+  const webE = startBackend(E, 18094, { AGENT_CONFIG: policyDir, AGENT_NAME: 'beginner' }, join(dir, 'e.db'))
+  backends.push(webE)
+  s = await waitFor(E, (x) => x.state === 'running')
+  type Info = { agent: { name: string }; config?: { agents: { description?: string }[] } }
+  const infoOf = async () => (await (await fetch(`http://127.0.0.1:${E}/api/system`)).json()) as Info
+  const before = await infoOf()
+  const switched = await fetch(`http://127.0.0.1:${E}/api/settings`, { method: 'PUT', headers: H, body: JSON.stringify({ agentMode: 'expert' }) })
+  const after = await infoOf()
+  const tools = (await (await fetch(`http://127.0.0.1:${E}/api/system/tools`)).json()) as { count: number }
+  check(
+    '정보 화면: 숙련자용으로 바꾸면 expert 설정과 도구 수를 보여준다',
+    before.agent.name === 'beginner' && switched.ok && after.agent.name === 'expert' && after.config?.agents[0].description === '가짜 Agent(expert)' && tools.count === 3,
+    [before.agent, switched.status, after.agent, after.config?.agents[0].description, tools],
+  )
 } finally {
   for (const proc of backends) killBackend(proc, true)
   await sleep(500)
