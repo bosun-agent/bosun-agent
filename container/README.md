@@ -44,7 +44,7 @@ cp container/.env.example container/.env
 ## 2. 올리기
 
 ```bash
-docker compose up -d --build          # 첫 빌드: node 이미지 + docker-agent 릴리스 바이너리 + mcp-portainer 설치
+docker compose up -d --build          # 첫 빌드: node 이미지 + docker-agent 릴리스 바이너리 + mcp-portainer 설치 + mcp-soteria 빌드
 docker compose logs -f bosun          # 진입점 로그(agent.yaml 생성·경고)를 본다
 ```
 
@@ -54,6 +54,7 @@ docker compose logs -f bosun          # 진입점 로그(agent.yaml 생성·경�
 
 1. `/opt/bosun/agent.env` 생성(없을 때만, 권한 600) — 값은 `container/.env`에서 온다
 2. `/opt/bosun/agent.yaml` 생성 — 기준 설정의 자리표시자(`/절대경로/`→`/app/ai-agent-hooks/`, `/실행폴더/`→`/opt/bosun/`)를 치환하고, `uvx` 도구 등록을 이미지에 고정 설치한 `mcp-portainer`로 바꾼다. 남은 자리표시자가 있으면 **여기서 멈춘다**(그대로 두면 정책 훅이 모든 도구 호출을 막는다)
+   - 기동마다 `SOTERIA_API`·`SOTERIA_NETWORK`를 `agent.env`에 맞추고, `agent.yaml`의 mcp-soteria 주소를 설치판 주소로 바꾼다(7절)
 3. `AGENT_TOKEN` 생성(비워 두면 매 기동 새로 생성)
 4. WEB 백엔드 실행 → 백엔드가 `docker-agent`를 자식 프로세스로 띄운다
 
@@ -105,7 +106,7 @@ docker compose ps
 docker compose logs bosun | grep -E "entrypoint|agent\]" | tail -20
 
 # 2) 컨테이너 안 준비물(이미지에 다 들어갔는지)
-docker compose exec bosun sh -lc 'docker-agent version; python3 -c "import yaml; print(\"pyyaml ok\")"; command -v mcp-portainer'
+docker compose exec bosun sh -lc 'docker-agent version; python3 -c "import yaml; print(\"pyyaml ok\")"; command -v mcp-portainer; ls -l /app/tools/bin/mcp-soteria'
 
 # 3) agent.yaml 치환 결과(자리표시자 0개)
 docker compose exec bosun sh -lc 'grep -c "/절대경로/\|/실행폴더/\|uvx" /opt/bosun/agent.yaml || echo "0 (정상)"'
@@ -140,11 +141,79 @@ docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -
 | 설정 페이지에서 "Portainer에 연결하지 못했어요" | 주소가 틀렸거나, 그 주소가 컨테이너에서 보이지 않는다 | 주소를 확인한다(기존 Portainer면 호스트 LAN 주소). 컨테이너에서 확인: `docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -sk "$PORTAINER_URL/api/endpoints"'` |
 | 설정 페이지에서 "Docker 환경(endpoint)이 아직 없어요" | 그 Portainer에 Docker 환경이 등록되지 않았다 | Portainer 화면에서 Get Started(local)로 등록한 뒤 다시 저장한다 |
 | 빌드 실패(바이너리 다운로드) | 네트워크/버전 태그 | `docker compose build --no-cache bosun`, `DOCKER_AGENT_VERSION` 값 확인 |
+| 빌드 실패(`soteria` 단계, git clone·go build) | 브랜치 이름이 바뀌었거나(main에 합쳐짐) 네트워크 | `docker-compose.yaml`의 `SOTERIA_REF` 값 확인 |
+| "지금 백업"이 `백업 창구 스택 'bosun-soteria'을 찾지 못했습니다` | 7절 3단계를 안 했거나 Portainer 환경 ID가 다르다 | 7절 3단계. 환경 ID가 3이 아니면 `agent.yaml`의 `SOTERIA_ENDPOINT_ID`도 고친다 |
+| "지금 백업"이 창구에 연결하지 못함 | 창구가 bosun 네트워크에 없다(PC 직접 실행용으로 만든 스택) | 7절 3단계를 bosun 컨테이너 안에서 다시 실행한다(`SOTERIA_NETWORK`가 들어가 다시 배포된다). 확인: `docker compose exec bosun curl -sS http://bosun-soteria:8080/healthz` |
 
-## 7. 백업·게이트 추가
+## 7. 백업 켜기 (처음 한 번)
 
-- **볼륨 백업**: 앱이 생긴 뒤에만 만들 수 있다(볼륨 이름이 필요하다). Agent에게 앱과 함께 만들게 하거나, `backup/bosun-backup-compose.yaml`을 복사해 볼륨 이름을 채운다. `docker-compose.yaml`의 주석 예시 참고.
-- **soteria 백업 게이트**: `docker-compose.yaml`의 주석 예시로 API 컨테이너를 올리고, `ai-agent-hooks/agent.yaml.example`의 soteria 도구 예시(주석)를 켠다. 저장 위치·보관 기간은 저장 위치 안내 문서(`README-backup.md`, 별도 PR) 4~5절.
+백업은 두 가지이고, 둘 다 **Portainer 스택**으로 둔다(이 compose 파일에 넣지 않는다). 훅이 새 앱 볼륨을 넣으려고 Portainer로 다시 배포하기 때문이다. 자세한 규칙은 `README-agent.md` 6-1~6-3절.
+
+| | 지금 백업 (soteria) | 정시 백업 |
+|---|---|---|
+| 스택 이름 | `bosun-soteria` | `bosun-backup` |
+| 언제 | "지금 백업해줘", 데이터가 있는 앱을 수정·삭제하기 전(훅이 강제) | 매일 12시·18시·23시, 7일 보관 |
+| 새 앱 볼륨 | 훅이 자동으로 넣는다 | 훅이 자동으로 넣는다(11/15부터) |
+
+키 두 개를 넣은 뒤(3-2) 아래를 한 번만 한다. 1~2는 호스트에서, 3은 bosun 컨테이너 안에서 한다.
+
+**1. soteria 이미지 만들기** (팀원 저장소. 11/15 기준 `fix/gate-request-hardening` 브랜치, main에 합쳐지면 main)
+
+```bash
+git clone -b fix/gate-request-hardening https://github.com/bosun-agent/soteria.git ~/soteria-src
+cd ~/soteria-src && docker build -t soteria:test .
+```
+
+**2. 백업 파일 볼륨 만들기**
+
+```bash
+docker volume create bosun_soteria_backups
+```
+
+**3. 창구 스택(`bosun-soteria`) 만들기.** 지금 있는 앱 볼륨을 찾아 읽기 전용으로 붙이고, bosun 스택 네트워크(`bosun_default`)에 이름 `bosun-soteria`로 붙인다.
+
+```bash
+docker compose exec bosun sh -lc 'cd /app/ai-agent-hooks && AGENT_ENV_FILE=/opt/bosun/agent.env PORTAINER_TLS_VERIFY=0 SOTERIA_ENDPOINT_ID=3 SOTERIA_TARGETS_FILE=/opt/bosun/soteria_targets.json python3 tools/soteria_setup.py'
+```
+
+- 끝에 `창구 응답: 정상`이 나오면 된다.
+- `SOTERIA_ENDPOINT_ID`는 Portainer 환경 ID다(Portainer 화면에서 환경을 열면 주소에 `#!/3/docker/…`처럼 보인다). 기준 설정(`agent.yaml`)은 `3`으로 되어 있다. 3이 아니면 위 명령의 값과 함께 `agent.yaml`도 고치고 다시 켠다:
+  `docker compose exec bosun sed -i 's/SOTERIA_ENDPOINT_ID: "3"/SOTERIA_ENDPOINT_ID: "<ID>"/' /opt/bosun/agent.yaml && docker compose restart bosun`
+
+**4. 정시 백업 스택(`bosun-backup`) 만들기.** Portainer 화면 → Stacks → Add stack → 이름 `bosun-backup`, Web editor에 아래를 붙여 넣고 Deploy. 처음에는 앱 볼륨 없이 시작해도 된다(새 앱 볼륨은 훅이 넣는다). 이미 있는 앱도 정시 백업에 넣으려면 `backup/bosun-backup-compose.yaml`처럼 `volumes`에 직접 적는다(직접 적은 볼륨은 Agent가 지우지 못한다).
+
+```yaml
+services:
+  backup:
+    image: offen/docker-volume-backup:v2.50.1
+    container_name: bosun-backup
+    restart: unless-stopped
+    environment:
+      BACKUP_CRON_EXPRESSION: "0 12,18,23 * * *"
+      TZ: "Asia/Seoul"
+      BACKUP_RETENTION_DAYS: "7"
+      BACKUP_FILENAME: "backup-%Y-%m-%dT%H-%M-%S.tar.gz"
+    mem_limit: 256m
+    cpus: 0.5
+    volumes:
+      - bosun_backups:/archive
+volumes:
+  bosun_backups:
+    name: bosun_backups
+```
+
+설치판에서 바뀌는 값(이미지 기본값, `container/.env`에 적으면 그 값을 쓴다):
+
+| 값 | 설치판 | 뜻 |
+|---|---|---|
+| `SOTERIA_API` | `http://bosun-soteria:8080` | 훅·mcp-soteria가 창구에 붙는 주소. 컨테이너 안의 `127.0.0.1`은 bosun 자신이라 이름으로 부른다 |
+| `SOTERIA_NETWORK` | `bosun_default` | 창구를 붙일 네트워크. compose 이름(`name: bosun`)을 바꾸면 `<이름>_default` |
+
+진입점이 기동마다 이 두 값을 `agent.env`에 맞추고, `agent.yaml`의 mcp-soteria 주소(기본값 `http://127.0.0.1:18090`)를 `SOTERIA_API`로 바꾼다. 저장 위치·파일 꺼내는 방법은 `README-backup.md`.
+
+### 재부팅 뒤 자동으로 다시 켜지는지
+
+`bosun`(이 compose), `bosun-soteria`·`bosun-backup`(위 스택)은 `restart: unless-stopped`, 팀 기본 Portainer는 `restart: always`라 Docker가 켜지면 같이 켜진다. Docker 자체가 부팅 때 켜지도록 해 둔다: 리눅스 `sudo systemctl enable docker`, Docker Desktop은 설정의 "Start Docker Desktop when you sign in".
 
 ## 8. 라이선스
 

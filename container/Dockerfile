@@ -13,6 +13,16 @@ RUN npm ci
 COPY . .
 RUN npm run build:web
 
+# soteria "지금 백업" MCP(mcp-soteria). 팀원 저장소에서 리눅스용으로 빌드한다(CGO 없이, 이 이미지 아키텍처 그대로).
+# 11/15 기준 fix/gate-request-hardening 브랜치(요청 검사 강화). main에 합쳐지면 SOTERIA_REF=main.
+# 같은 브랜치의 새 커밋을 받으려면 docker compose build --no-cache bosun (git clone 층이 캐시된다).
+FROM golang:1.27-alpine AS soteria
+ARG SOTERIA_REF=fix/gate-request-hardening
+RUN apk add --no-cache git \
+ && git clone --depth 1 -b "$SOTERIA_REF" https://github.com/bosun-agent/soteria.git /src
+WORKDIR /src
+RUN CGO_ENABLED=0 go build -o /out/mcp-soteria ./cmd/mcp
+
 FROM node:22-bookworm-slim
 
 # 팀 고정 버전(README-agent.md / portainer-compose.yaml과 맞춘다)
@@ -54,6 +64,12 @@ ENV PORTAINER_URL=https://localhost:9443 \
     PORTAINER_URL_INTERNAL=https://host.docker.internal:9443 \
     AGENT_MODELS=openrouter/deepseek/deepseek-v4.1-flash
 
+# soteria 백업 창구(관리 스택 bosun-soteria). 컨테이너 안의 127.0.0.1은 이 컨테이너 자신이라
+# 창구를 bosun 스택 네트워크(compose 이름 bosun → bosun_default)에 붙이고 이름으로 부른다(README-agent.md 6-2).
+# 진입점이 이 두 값을 agent.env와 agent.yaml(mcp-soteria의 SOTERIA_API)에 맞춘다.
+ENV SOTERIA_API=http://bosun-soteria:8080 \
+    SOTERIA_NETWORK=bosun_default
+
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
@@ -63,6 +79,8 @@ COPY ai-agent-hooks ./ai-agent-hooks
 COPY agents ./agents
 COPY container/entrypoint.sh /usr/local/bin/bosun-entrypoint
 COPY --from=build /app/dist ./dist
+# agent.yaml의 `command: /절대경로/../tools/bin/mcp-soteria`가 /app/ai-agent-hooks/../tools/bin/mcp-soteria로 치환된다
+COPY --from=soteria /out/mcp-soteria ./tools/bin/mcp-soteria
 
 # 개발용 값(가짜 Agent)은 이미지에 넣지 않는다.
 # Windows에서 받은 저장소는 줄 끝이 CRLF일 수 있다 → 진입점의 \r을 지운다(안 지우면 'bash\r'을 찾다 죽는다).

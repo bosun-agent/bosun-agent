@@ -59,6 +59,18 @@ if [ -n "$missing" ]; then
   log "  화면(http://127.0.0.1:3001) 첫 설정 페이지에서 넣으세요"
 fi
 
+# soteria 창구 주소·네트워크는 설치판이 정하는 값이라 기동마다 컨테이너 환경변수에 맞춘다.
+# 훅은 SOTERIA_API·SOTERIA_NETWORK를 환경변수 → agent.env 순으로 찾는다(ai-agent-hooks/soteria_common.py).
+for key in SOTERIA_API SOTERIA_NETWORK; do
+  value="${!key:-}"
+  [ -n "$value" ] || continue
+  if [ "$(grep -E "^${key}=" "$ENV_FILE" 2>/dev/null | tail -n 1)" != "${key}=${value}" ]; then
+    sed -i -E "/^${key}=/d" "$ENV_FILE"
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+    log "agent.env에 ${key}=${value}"
+  fi
+done
+
 # ── 2. agent.yaml ──────────────────────────────────────────────────────────────
 if [ ! -f "$YAML_OUT" ]; then
   log "agent.yaml 생성(자리표시자 치환): $YAML_OUT ← $YAML_SRC"
@@ -95,6 +107,20 @@ print(f"[entrypoint] wrote {out} ({len(text.splitlines())} lines)")
 PY
 else
   log "agent.yaml 있음(그대로 사용): $YAML_OUT"
+fi
+
+# mcp-soteria는 agent.yaml의 env로 창구 주소를 받는다. 기준 설정의 기본값(PC 직접 실행용 127.0.0.1:18090)만
+# 설치판 주소로 바꾼다. 이미 있는 agent.yaml에도 적용되고, 사용자가 다른 주소로 고쳤으면 건드리지 않는다.
+if [ -n "${SOTERIA_API:-}" ] && grep -q 'SOTERIA_API: "http://127.0.0.1:18090"' "$YAML_OUT"; then
+  python3 - "$YAML_OUT" "$SOTERIA_API" <<'PY'
+import sys
+
+path, api = sys.argv[1:3]
+text = open(path, encoding="utf-8").read()
+text = text.replace('SOTERIA_API: "http://127.0.0.1:18090"', f'SOTERIA_API: "{api}"')
+open(path, "w", encoding="utf-8").write(text)
+PY
+  log "agent.yaml의 mcp-soteria 창구 주소: $SOTERIA_API"
 fi
 
 # ── 3. WEB ↔ Agent 토큰 ────────────────────────────────────────────────────────
