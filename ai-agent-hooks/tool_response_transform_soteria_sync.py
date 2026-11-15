@@ -12,6 +12,7 @@ tool_response_transform 훅 — 새 앱 볼륨을 백업 대상에 자동으로 
   그 앱 컨테이너가 보일 때까지 잠깐 기다렸다가 목록을 맞추고, 결과 끝에 한 줄을 덧붙인다.
   실패해도 앱 만들기 결과는 그대로 두고 "백업 대상 추가 실패"를 덧붙인다(이 훅 종류는 결과를 막지 못한다).
   다음에 그 앱 백업을 요청하면 백업 검사 훅이 한 번 더 맞춰 본다.
+  11/15(A안): 같은 목록으로 정시 백업 스택(bosun-backup)도 맞춘다(scheduled_backup.sync). 관리자가 적은 볼륨은 그대로 둔다.
 
 등록: tool_response_transform, matcher StackCreateDockerStandaloneString·StackUpdate·StackDelete 각각, timeout 150
 """
@@ -21,6 +22,20 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import soteria_common as sc  # noqa: E402
+
+
+def scheduled_note(tool):
+    """11/15 A안: 같은 백업 대상 목록으로 정시 백업(bosun-backup)도 맞춘다. 스택이 없으면 조용히 넘어간다."""
+    try:
+        import scheduled_backup
+        r = scheduled_backup.sync(sc.targets())
+    except Exception as e:  # noqa: BLE001
+        return f"\n\n[정시 백업] 정시 백업 대상 맞추기에 실패했습니다({e}). 다음에 앱을 만들거나 고칠 때 다시 시도합니다."
+    if not r or (tool == "StackDelete" and not r[1]) or (tool != "StackDelete" and not r[0]):
+        return ""
+    if tool == "StackDelete":
+        return f"\n\n[정시 백업] 지운 앱의 볼륨 {', '.join(r[1])}을(를) 정시 백업에서 뺐습니다."
+    return f"\n\n[정시 백업] 볼륨 {', '.join(r[0])}을(를) 정시 백업(매일 12·18·23시)에도 넣었습니다."
 
 
 def main():
@@ -59,6 +74,7 @@ def main():
             note = ""
     except Exception as e:  # noqa: BLE001 — 결과는 그대로 두고 알리기만 한다
         note = f"\n\n[백업 대상] 백업 대상 자동 추가에 실패했습니다({e}). 이 앱 백업을 요청하면 다시 시도합니다."
+    note += scheduled_note(tool)
     if not note:
         print("{}")
         return

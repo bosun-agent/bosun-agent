@@ -131,7 +131,8 @@ k, o = hook(SYNC, {"tool_name": "StackCreateDockerStandaloneString", "tool_input
                    "tool_response": json.dumps({"Id": 30, "Name": "newapp"})})
 note = o.get("hook_specific_output", {}).get("updated_tool_response", "")
 check("Y1 새 앱을 만들면 백업 대상에 자동 추가 + 안내 한 줄", "newapp" in note and "자동으로 넣었습니다" in note, True)
-put = fake_portainer.PUTS[-1] if len(fake_portainer.PUTS) > n_put else {}
+# 11/15: 같은 때 정시 백업 스택(id 5)도 다시 배포되므로 창구(id 12) 요청을 골라 본다
+put = next((p for p in reversed(fake_portainer.PUTS[n_put:]) if p.get("id") == 12), {})
 comp = (put.get("body") or {}).get("StackFileContent", "")
 check("Y2 창구 스택(id 12)을 다시 배포", put.get("id"), 12)
 check("Y3 새 볼륨은 /backup/<볼륨>에 읽기 전용", "v_newapp_data:/backup/newapp_data:ro" in comp and "name: newapp_data" in comp, True)

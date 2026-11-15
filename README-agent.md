@@ -128,7 +128,7 @@ TELEMETRY_ENABLED=false
 |---|---|---|
 | 언제 | 매일 낮 12시·저녁 6시·밤 11시(한국 시간), 7일 보관 | 사용자가 "지금 백업해줘"라고 할 때, 그리고 데이터가 있는 앱을 **수정하기 전에는 반드시** |
 | 무엇으로 | `bosun-backup` 스택(offen/docker-volume-backup) | `bosun-soteria` 스택(팀원 soteria, 승인 트리거 백업 API) + MCP `backup_volume`·`backup_status` |
-| 대상 | 관리자가 연결한 볼륨 | 데이터(볼륨)가 있는 **모든 앱**. 새 앱은 만들거나 고치면 훅이 자동으로 추가 |
+| 대상 | 관리자가 처음에 적은 볼륨 + 데이터(볼륨)가 있는 **새 앱**(11/15부터 훅이 자동으로 넣고, 앱을 지우면 뺀다) | 데이터(볼륨)가 있는 **모든 앱**. 새 앱은 만들거나 고치면 훅이 자동으로 추가 |
 | 저장 | `bosun_backups` 볼륨, `backup-날짜.tar.gz`(앱 전부 한 파일) | `bosun_soteria_backups` 볼륨, `job-bosun-볼륨-시각-….tar.gz`(볼륨 하나) |
 
 **지금 백업 규칙(훅이 강제)**
@@ -138,9 +138,9 @@ TELEMETRY_ENABLED=false
 - 컨테이너 안 명령 실행(exec)은 예외 없이 막는다(11/12 팀 결정. 예전의 "백업 명령 exec 예외"는 없앴다).
 
 **처음 한 번 설정(관리자)**
-1. soteria 이미지 만들기(팀원 저장소)
+1. soteria 이미지 만들기(팀원 저장소). 11/15 기준 `fix/gate-request-hardening` 브랜치로 만든다(요청 검사 강화. main에 합쳐지면 main으로)
 ```bash
-git clone https://github.com/bosun-agent/soteria.git ~/soteria-src && cd ~/soteria-src && docker build -t soteria:test .
+git clone -b fix/gate-request-hardening https://github.com/bosun-agent/soteria.git ~/soteria-src && cd ~/soteria-src && docker build -t soteria:test .
 ```
 2. MCP 프로그램 만들기(Go 설치 없이 Docker 안에서, 이 브랜치 폴더 `tools/bin/`에 만든다. 맥 Apple Silicon 기준, 인텔 맥은 `GOARCH=amd64`, Windows는 `GOOS=windows`·`mcp-soteria.exe`)
 ```bash
@@ -165,6 +165,30 @@ cd ai-agent-hooks && AGENT_ENV_FILE=<실행 폴더>/agent.env PORTAINER_TLS_VERI
 - 저장 위치·파일 꺼내는 방법은 `README-backup.md`, 검증 결과와 결정 근거는 `docs/백업게이트_soteria_검증_결정_11-12.md`(이 문서의 18081은 soteria 문서 기본값이고, BOSUN은 18090을 쓴다).
 - 복원은 아직 자동화되어 있지 않다(수동 절차서 사용).
 
+### 6-2. 컨테이너 설치판에서 백업 창구 연결 (11/15)
+
+컨테이너 설치판(`docker-compose.yaml`, `container/`)은 bosun 컨테이너 안에서 Agent와 훅이 돈다. 그 안에서 `127.0.0.1`은 컨테이너 자신이라 PC의 창구(`127.0.0.1:18090`)에 닿지 않는다. 그래서 창구를 **같은 도커 네트워크**에 붙이고 **이름으로** 부른다.
+
+| 설정 | 맥·PC 직접 실행(지금) | 컨테이너 설치판 |
+|---|---|---|
+| `SOTERIA_API`(훅·MCP가 붙는 주소) | 비워 둔다 → `http://127.0.0.1:18090` | `http://bosun-soteria:8080` |
+| `SOTERIA_NETWORK`(창구를 붙일 네트워크) | 비워 둔다 | bosun 스택 네트워크 이름(예: `bosun_default`) |
+| `mcp-soteria` | `tools/bin/mcp-soteria`(6절 2) | 이미지 안(리눅스용으로 빌드) |
+
+- 훅은 `SOTERIA_API`를 환경변수 → `AGENT_ENV_FILE`(agent.env) 순으로 찾는다. 없거나 http(s) 주소가 아니면 `http://127.0.0.1:<SOTERIA_PORT>`를 쓴다(지금 동작 그대로).
+- `SOTERIA_NETWORK`를 주면 `soteria_setup.py`와 새 앱 자동 추가가 만드는 창구 스택이 그 네트워크에 별칭 `bosun-soteria`로 붙는다. 호스트 발행(`127.0.0.1:18090`)은 그대로 남는다.
+- 창구는 지금처럼 Portainer가 관리하는 스택 `bosun-soteria`로 둔다(compose 서비스로 넣으면 훅이 다시 배포하지 못해 새 앱 볼륨 자동 추가가 깨진다).
+- 정시 백업(`bosun-backup`)은 설치판에서도 처음 한 번 관리자가 스택을 켠다(볼륨 없이 시작해도 된다). 그 뒤 새 앱 볼륨은 훅이 넣는다(`container/README.md` 7절).
+
+### 6-3. 정시 백업에 새 앱 자동 넣기 (11/15, A안)
+
+- 앱을 만들거나 고친 뒤 결과 훅(`tool_response_transform_soteria_sync.py`)이 soteria 백업 대상과 **같은 목록**으로 정시 백업 스택 `bosun-backup`도 맞춘다(`scheduled_backup.py`). 결과 끝에 `[정시 백업] … 넣었습니다`가 붙는다.
+- 훅이 넣은 볼륨은 스택 파일에서 키가 `auto_`로 시작한다. 관리자가 적은 볼륨과 그 밖의 설정(시간·시간대·보관 기간·자원 제한)은 건드리지 않는다.
+- 앱을 지우면 그 앱 볼륨(`auto_`)을 정시 백업에서도 뺀다. 볼륨까지 지울 때는 삭제 직전에 떼서 Docker가 지울 수 있게 한다. 관리자가 적은 볼륨은 지금처럼 Agent가 지우지 못한다.
+- 정시 백업 스택이 없으면 아무것도 하지 않는다. 스택 이름을 바꿨으면 `SCHEDULED_BACKUP_STACK`으로 준다.
+- 정시 백업은 배포 서버가 켜져 있는 것을 전제로 한다(맥에서 시험할 때 잠자기 중인 시간은 깨어난 뒤 한 번 몰아서 돈다).
+- 한 번 볼륨을 고치면 Portainer가 스택 파일을 다시 쓰므로 원래 파일의 주석은 없어진다. 원본은 `backup/bosun-backup-compose.yaml`에 남아 있다.
+
 ## 7. (원할 때만) 훅 단위 테스트
 
  실행하지 않아도 된다. 웹에서 대화로 확인하면 된다.
@@ -172,10 +196,10 @@ cd ai-agent-hooks && AGENT_ENV_FILE=<실행 폴더>/agent.env PORTAINER_TLS_VERI
 
 ```bash
 cd ai-agent-hooks
-for t in tests/policy_1031_test.py tests/policy_1101_test.py tests/policy_1103_test.py tests/policy_1106_test.py tests/policy_1107_test.py tests/policy_1108_test.py tests/policy_1109_test.py tests/policy_1109v_test.py tests/policy_1112_test.py tests/policy_1112s_test.py tests/policy_1113_test.py; do python3 $t | tail -1; done
+for t in tests/policy_1031_test.py tests/policy_1101_test.py tests/policy_1103_test.py tests/policy_1106_test.py tests/policy_1107_test.py tests/policy_1108_test.py tests/policy_1109_test.py tests/policy_1109v_test.py tests/policy_1112_test.py tests/policy_1112s_test.py tests/policy_1113_test.py tests/policy_1115_test.py tests/policy_1115s_test.py tests/policy_1115b_test.py; do python3 $t | tail -1; done
 python3 tests/policy_guard_test.py tool_input_transform_direct_policy_guard.py | tail -1
 ```
-줄마다 `67/67 통과`처럼 모두 통과면 정상(총 413개). 설정 검사:
+줄마다 `67/67 통과`처럼 모두 통과면 정상(총 526개, 11/15 기준). 설정 검사:
 ```bash
 python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.example
 ```
@@ -193,6 +217,10 @@ python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.examp
 | policy_1109v_test | 데이터 저장 앱(redis·mysql 등)은 이름 있는 볼륨 필수, 이름 없는 볼륨을 쓰는 스택은 수정 거부 |
 | policy_1112_test | 컨테이너 삭제의 force·v를 Docker와 같은 기준으로 판단(y·2 등도 참 → 거부) |
 | policy_1112s_test | soteria "지금 백업": exec 전부 거부, 백업 검사·기록·새 앱 자동 추가, 수정 전 백업 확인, BOSUN 포트(17080·3001·18090) 보호, 승인 카드 backup-now |
+| policy_1113_test | 정책표 수정본: 스택·볼륨·네트워크·컨테이너(v=true) 삭제 조건, CPU·메모리 값 검사 |
+| policy_1115_test | 사용자 정책(웹 정책 보드) 훅: deny 막기·ask 승인 카드·allow로 못 풂, 파일 없음·깨짐이면 지금 동작, 지시문 확인 |
+| policy_1115s_test | 백업 창구 주소(`SOTERIA_API`)·네트워크(`SOTERIA_NETWORK`) 설정, 설치판 대비 |
+| policy_1115b_test | 정시 백업에 새 앱 볼륨 자동 넣기·빼기(관리자 볼륨·설정 유지), 삭제 전 검사 |
 
 실제 AI로 하는 시나리오 테스트(T01~T42)는 `docs/동작기준_테스트목록.md`.
 

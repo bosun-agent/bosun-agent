@@ -1,5 +1,7 @@
 # soteria 백업 게이트 — 실측 검증과 팀 결정 (11-12)
 
+> **11/15 안내:** 이 문서는 11/12 검증 기록이라 내용은 그대로 둔다. 문서 안의 `18081`은 soteria 쪽 기본 예시이고, **BOSUN은 `127.0.0.1:18090`**(창구 스택 `bosun-soteria`)을 쓴다. 이미지는 soteria 저장소의 `fix/gate-request-hardening` 브랜치로 만든다. 설정·설치판 연결은 `README-agent.md` 6절·6-2절이 기준이다.
+
 대상: `https://github.com/seoulorigin/soteria` (offen/docker-volume-backup MPL-2.0 포크, `serve` 명령·MCP 서버 추가)
 검증 방법: Go 1.27로 `cmd/backup`·`cmd/mcp` 빌드 후 `serve`를 실제 기동해 HTTP(API)와 MCP(stdio) 양쪽을 호출. 아래 모든 판정은 실행 결과와 소스 위치를 근거로 붙였다.
 검증 환경: 도커 데몬이 없는 리눅스 호스트(컨테이너가 도커를 조작하는 부분은 미검증), 백업 대상·아카이브는 로컬 임시 디렉터리.

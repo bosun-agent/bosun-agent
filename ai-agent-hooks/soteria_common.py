@@ -13,7 +13,10 @@
   SOTERIA_RECORD        성공한 백업 기록 파일(JSON 줄). 스택 수정 전 "최근 백업" 확인에 쓴다
   SOTERIA_STACK         창구 스택 이름(기본 bosun-soteria)
   SOTERIA_IMAGE         창구 이미지(기본 soteria:test — 팀원 저장소에서 docker build로 만든 것)
-  SOTERIA_PORT          창구 주소 포트(기본 18090, 127.0.0.1에만 연다)
+  SOTERIA_PORT          창구를 호스트에 여는 포트(기본 18090, 127.0.0.1에만 연다)
+  SOTERIA_API           (11/15) 훅이 창구에 붙는 주소. 기본 http://127.0.0.1:<SOTERIA_PORT>(맥·PC 직접 실행).
+                        컨테이너 설치판은 http://bosun-soteria:8080처럼 같은 네트워크 이름으로 준다. 환경변수 → AGENT_ENV_FILE 순으로 찾는다
+  SOTERIA_NETWORK       (11/15) 창구를 붙일 도커 네트워크(컨테이너 설치판). 주면 그 네트워크에 별칭 bosun-soteria로 붙인다(환경변수 → agent.env)
   SOTERIA_ARCHIVE_VOLUME 백업 파일 볼륨(기본 bosun_soteria_backups)
   SOTERIA_MAX_AGE_MIN   스택 수정 전 백업이 몇 분 안이어야 하는지(기본 30)
   SOTERIA_HEALTH_WAIT   창구를 다시 배포한 뒤 켜질 때까지 기다리는 최대 초(기본 30)
@@ -46,6 +49,25 @@ PROTECTED = re.compile(r"portainer", re.I)
 
 def setting(name, default=""):
     return os.environ.get(name) or default
+
+
+def env_or_file(name):
+    """환경변수, 없으면 agent.env(AGENT_ENV_FILE)의 값(11/15). 훅은 --env-from-file 값을 직접 받지 못한다."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        try:
+            value = portainer_api._read_env_file(os.environ.get("AGENT_ENV_FILE", "")).get(name, "").strip()
+        except OSError:
+            value = ""
+    return value
+
+
+def api_base():
+    """창구 주소(11/15). 환경변수 SOTERIA_API → agent.env의 SOTERIA_API → http://127.0.0.1:<SOTERIA_PORT>."""
+    url = env_or_file("SOTERIA_API")
+    if not re.fullmatch(r"https?://[A-Za-z0-9_.\-\[\]:]+/?", url or ""):
+        url = f"http://127.0.0.1:{setting('SOTERIA_PORT', '18090')}"
+    return url.rstrip("/")
 
 
 def endpoint():
@@ -204,9 +226,16 @@ def build_compose(t):
         key = "v_" + re.sub(r"[^A-Za-z0-9_]", "_", vol)[:120]
         keys[key] = vol
         lines.append(f"      - {key}:/backup/{vol}:ro")
+    net = env_or_file("SOTERIA_NETWORK")  # 11/15 컨테이너 설치판: bosun 컨테이너와 같은 네트워크에 이름 bosun-soteria로
+    if net:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", net):
+            raise ValueError(f"SOTERIA_NETWORK 이름이 이상합니다: {net}")
+        lines += ["    networks:", "      default: {}", f"      {net}:", "        aliases: [bosun-soteria]"]
     lines += ["volumes:", f"  {archive}:", "    external: true"]
     for key, vol in keys.items():
         lines += [f"  {key}:", "    external: true", f"    name: {vol}"]
+    if net:
+        lines += ["networks:", f"  {net}:", "    external: true"]
     return "\n".join(lines) + "\n"
 
 
@@ -219,7 +248,7 @@ def find_stack():
 
 def wait_healthy(seconds=None):
     seconds = float(setting("SOTERIA_HEALTH_WAIT", "30")) if seconds is None else seconds
-    url = f"http://127.0.0.1:{setting('SOTERIA_PORT', '18090')}/healthz"
+    url = f"{api_base()}/healthz"
     end = time.time() + seconds
     while time.time() < end:
         try:
@@ -326,8 +355,14 @@ def is_backup_container(name, proj):
 
 
 def scheduled_backup_holders(vol):
-    """정시 백업(bosun-backup)이 잡고 있으면 그 컨테이너 이름들. 이 볼륨은 Agent가 떼지 못한다(관리자 관리, 11/13 ㉠)."""
-    return [n for n, p, _ in holders(vol) if p == "bosun-backup" or n.startswith("bosun-backup")]
+    """정시 백업(bosun-backup)이 잡고 있으면 그 컨테이너 이름들. 관리자가 적은 볼륨은 Agent가 떼지 못한다(11/13 ㉠).
+    11/15: 훅이 자동으로 넣은 볼륨(scheduled_backup의 auto_)은 detach()가 떼므로 막지 않는다."""
+    held = [n for n, p, _ in holders(vol) if p == "bosun-backup" or n.startswith("bosun-backup")]
+    if held:
+        import scheduled_backup
+        if vol in scheduled_backup.auto_volumes():
+            return []
+    return held
 
 
 def missing_backups(vols):
@@ -336,8 +371,14 @@ def missing_backups(vols):
 
 
 def detach(vols):
-    """백업 창구(bosun-soteria)에서 이 볼륨들을 떼고 다시 배포한다(삭제 직전, 자동 추가의 반대).
+    """백업 창구(bosun-soteria)와 정시 백업(훅이 넣은 볼륨만, 11/15)에서 이 볼륨들을 떼고 다시 배포한다(삭제 직전, 자동 추가의 반대).
     떼야 Docker가 볼륨을 지울 수 있다. 바뀐 게 없으면 False. 실패하면 PortainerError/OSError."""
+    import scheduled_backup
+    sched = scheduled_backup.detach(vols)
+    return _detach_soteria(vols) or sched
+
+
+def _detach_soteria(vols):
     t = targets()
     drop = set(vols)
     new = {app: [v for v in vs if v not in drop] for app, vs in t.items()}
