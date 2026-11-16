@@ -120,6 +120,8 @@
 | 보호 리소스 | Agent·Portainer 실행 자체에 필요한 컨테이너/볼륨/네트워크 및 관리 리소스는 변경·삭제 기본 차단 |
 | 예외·미분류 | 잘못된 입력, 예기치 않은 경로, 중첩 인자 우회, 정책 판단 불가 시 DENY |
 
+**승인 방식 예외**: 사용자가 직접 활성화한 '묻지 않기' 모드에서는 정책상 승인 가능한 개별 호출의 사용자 확인 단계를 자동으로 처리할 수 있다. 이 경우에도 호출별 정책 판정, 필수 인자·대상 검사 및 DENY 정책은 그대로 적용하며, 이를 일괄·지속 승인 권한 부여와 구분한다.
+
 ### 5.1 인자 정책 판정 원칙
 
 아래 원칙은 `docker_proxy`와 직접 MCP Tool 모두에 적용하되, **호출 인자 형식은 Tool별로 구분**한다. `docker_proxy`는 `environment_id`·`method`·원문 `path`·`query_params` 등을 사용하고, 2절의 스택 직접 Tool은 **Tool 이름(`operationId`) 및 스펙에 정의된 `endpointId`·`id`·요청 body**로 판정한다. Soteria MCP의 `backup_volume`·`backup_status`는 Tool 이름과 각 Tool에 정의된 요청 인자로 판정한다. 아래 5.2절의 `environment_id`·`query_params`·버전 접두 경로 조건은 `docker_proxy`용이며, 스택 생성·갱신·시작·정지 Tool에는 5.7절, `StackDelete`에는 5.10절, `backup_volume`에는 5.8절, `backup_status`에는 5.9절의 인자 조건을 적용한다. `ALLOW` 또는 `ASK`라도 필수 조건을 충족하지 못하면 **DENY**한다.
