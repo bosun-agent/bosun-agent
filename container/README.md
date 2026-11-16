@@ -142,6 +142,7 @@ docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -
 | 설정 페이지에서 "Docker 환경(endpoint)이 아직 없어요" | 그 Portainer에 Docker 환경이 등록되지 않았다 | Portainer 화면에서 Get Started(local)로 등록한 뒤 다시 저장한다 |
 | 빌드 실패(바이너리 다운로드) | 네트워크/버전 태그 | `docker compose build --no-cache bosun`, `DOCKER_AGENT_VERSION` 값 확인 |
 | 빌드 실패(`soteria` 단계, git clone·go build) | 브랜치 이름이 바뀌었거나(main에 합쳐짐) 네트워크 | `docker-compose.yaml`의 `SOTERIA_REF` 값 확인 |
+| `soteria_setup.py`가 `Portainer에 연결하지 못했습니다: Connection refused` | 컨테이너 환경의 브라우저용 `PORTAINER_URL`(localhost)을 읽었다 | 7절 3단계 명령처럼 `set -a; . /opt/bosun/agent.env; set +a;`를 앞에 붙인다 |
 | "지금 백업"이 `백업 창구 스택 'bosun-soteria'을 찾지 못했습니다` | 7절 3단계를 안 했거나 Portainer 환경 ID가 다르다 | 7절 3단계. 환경 ID가 3이 아니면 `agent.yaml`의 `SOTERIA_ENDPOINT_ID`도 고친다 |
 | "지금 백업"이 창구에 연결하지 못함 | 창구가 bosun 네트워크에 없다(PC 직접 실행용으로 만든 스택) | 7절 3단계를 bosun 컨테이너 안에서 다시 실행한다(`SOTERIA_NETWORK`가 들어가 다시 배포된다). 확인: `docker compose exec bosun curl -sS http://bosun-soteria:8080/healthz` |
 
@@ -172,13 +173,21 @@ docker volume create bosun_soteria_backups
 
 **3. 창구 스택(`bosun-soteria`) 만들기.** 지금 있는 앱 볼륨을 찾아 읽기 전용으로 붙이고, bosun 스택 네트워크(`bosun_default`)에 이름 `bosun-soteria`로 붙인다.
 
+먼저 Portainer 환경 ID를 확인한다. Portainer 화면에서 환경을 열면 주소에 `#!/1/docker/…`처럼 보이는 숫자다(이 PC의 Portainer는 1). 기준 설정(`agent.yaml`)은 `3`으로 되어 있으므로, 3이 아니면 먼저 `agent.yaml`을 고치고 다시 켠다.
+
 ```bash
-docker compose exec bosun sh -lc 'cd /app/ai-agent-hooks && AGENT_ENV_FILE=/opt/bosun/agent.env PORTAINER_TLS_VERIFY=0 SOTERIA_ENDPOINT_ID=3 SOTERIA_TARGETS_FILE=/opt/bosun/soteria_targets.json python3 tools/soteria_setup.py'
+docker compose exec bosun sed -i 's/SOTERIA_ENDPOINT_ID: "3"/SOTERIA_ENDPOINT_ID: "<환경 ID>"/' /opt/bosun/agent.yaml
+docker compose restart bosun
+```
+
+그다음 창구 스택을 만든다. `agent.env`를 먼저 읽어 들여야 한다: 컨테이너 환경의 `PORTAINER_URL`은 브라우저용 주소(`https://localhost:9443`)라 그대로 두면 컨테이너 안의 localhost로 붙어 연결이 거부된다.
+
+```bash
+docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; cd /app/ai-agent-hooks && AGENT_ENV_FILE=/opt/bosun/agent.env PORTAINER_TLS_VERIFY=0 SOTERIA_ENDPOINT_ID=<환경 ID> SOTERIA_TARGETS_FILE=/opt/bosun/soteria_targets.json python3 tools/soteria_setup.py'
 ```
 
 - 끝에 `창구 응답: 정상`이 나오면 된다.
-- `SOTERIA_ENDPOINT_ID`는 Portainer 환경 ID다(Portainer 화면에서 환경을 열면 주소에 `#!/3/docker/…`처럼 보인다). 기준 설정(`agent.yaml`)은 `3`으로 되어 있다. 3이 아니면 위 명령의 값과 함께 `agent.yaml`도 고치고 다시 켠다:
-  `docker compose exec bosun sed -i 's/SOTERIA_ENDPOINT_ID: "3"/SOTERIA_ENDPOINT_ID: "<ID>"/' /opt/bosun/agent.yaml && docker compose restart bosun`
+- Windows Git Bash에서는 `/opt/...` 경로가 Windows 경로로 바뀌어 `sed`가 파일을 못 찾는다. 앞에 `MSYS_NO_PATHCONV=1`을 붙이거나 PowerShell에서 친다.
 
 **4. 정시 백업 스택(`bosun-backup`) 만들기.** Portainer 화면 → Stacks → Add stack → 이름 `bosun-backup`, Web editor에 아래를 붙여 넣고 Deploy. 처음에는 앱 볼륨 없이 시작해도 된다(새 앱 볼륨은 훅이 넣는다). 이미 있는 앱도 정시 백업에 넣으려면 `backup/bosun-backup-compose.yaml`처럼 `volumes`에 직접 적는다(직접 적은 볼륨은 Agent가 지우지 못한다).
 
