@@ -1,5 +1,5 @@
 // WEB 백엔드가 Agent를 띄우고 관리하는 흐름(server/agentProcess.ts)을 가짜 Agent로 확인한다.
-// 실행: npm run test:agent. 이 스크립트가 백엔드를 직접 띄우고 끈다(포트 13011~13015, 가짜 Agent 18090~18094).
+// 실행: npm run test:agent. 이 스크립트가 백엔드를 직접 띄우고 끈다(포트 13011~13015, 가짜 Agent 18190~18094).
 // 다른 백엔드·가짜 Agent는 띄워 두지 않아도 된다.
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
@@ -69,7 +69,7 @@ const backends: ChildProcess[] = []
 try {
   // 1. 띄우기
   // 진짜 docker-agent처럼 /health 버전을 비운다. 정보 화면은 실행 파일의 `version` 답을 써야 한다.
-  let web = startBackend(A, 18090, { FAKE_HEALTH_VERSION: '' })
+  let web = startBackend(A, 18190, { FAKE_HEALTH_VERSION: '' })
   backends.push(web)
   let s = await waitFor(A, (x) => x.state === 'running')
   check('AGENT_BIN이 있으면 백엔드가 Agent를 띄운다', s?.managed === true && s.state === 'running' && s.reachable === true, s)
@@ -105,23 +105,23 @@ try {
   await sleep(500)
   // 출력 파이프가 끊긴 Agent는 다음 출력 때 스스로 끝나기도 한다. 같이 끝났으면 남은 Agent를 직접 만든다.
   let leftover: ChildProcess | null = null
-  if (!(await agentAnswers(18090))) {
-    leftover = spawn(process.execPath, ['server/dev/fakeAgentBin.ts', 'serve', 'api', 'x.yaml', '-l', '127.0.0.1:18090'], { stdio: 'ignore' })
+  if (!(await agentAnswers(18190))) {
+    leftover = spawn(process.execPath, ['server/dev/fakeAgentBin.ts', 'serve', 'api', 'x.yaml', '-l', '127.0.0.1:18190'], { stdio: 'ignore' })
     backends.push(leftover)
-    for (let i = 0; i < 50 && !(await agentAnswers(18090)); i++) await sleep(100)
+    for (let i = 0; i < 50 && !(await agentAnswers(18190)); i++) await sleep(100)
     writeFileSync(join(dir, 'agent.pid'), String(leftover.pid))
   }
-  web = startBackend(A, 18090)
+  web = startBackend(A, 18190)
   backends.push(web)
   s = await waitFor(A, (x) => x.state === 'running' || x.state === 'external')
   check('남은 Agent는 PID 파일로 알아보고 새로 띄운다(external 아님)', s?.state === 'running' && s.restarts === 0 && (!leftover || leftover.exitCode !== null || leftover.signalCode !== null), [s, leftover?.exitCode])
 
   // 5. WEB이 띄우지 않은 Agent가 이미 있으면 그것을 쓰고, 다시 시작은 사람에게 맡긴다
   const B = 13012
-  const other = spawn(process.execPath, ['server/dev/fakeAgentBin.ts', 'serve', 'api', 'x.yaml', '-l', '127.0.0.1:18091'], { stdio: 'ignore' })
+  const other = spawn(process.execPath, ['server/dev/fakeAgentBin.ts', 'serve', 'api', 'x.yaml', '-l', '127.0.0.1:18191'], { stdio: 'ignore' })
   backends.push(other)
-  for (let i = 0; i < 50 && !(await agentAnswers(18091)); i++) await sleep(100)
-  const webB = startBackend(B, 18091, {}, join(dir, 'b.db'))
+  for (let i = 0; i < 50 && !(await agentAnswers(18191)); i++) await sleep(100)
+  const webB = startBackend(B, 18191, {}, join(dir, 'b.db'))
   backends.push(webB)
   s = await waitFor(B, (x) => x.state !== 'starting')
   const manual = (await (await fetch(`http://127.0.0.1:${B}/api/agent/restart`, { method: 'POST', headers: H })).json()) as { restart: string }
