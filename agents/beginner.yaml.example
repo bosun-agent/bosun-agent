@@ -236,13 +236,9 @@ agents:
                 SOTERIA_TARGETS_FILE: /실행폴더/soteria_targets.json
                 SOTERIA_ENDPOINT_ID: "3"
                 SOTERIA_RECORD: /실행폴더/soteria_runs.jsonl
-            # 11/15 사용자 정책(웹 정책 보드) — deny는 막고 ask는 승인 카드를 띄운다. allow로는 아무것도 풀지 못한다(더 엄격하게만).
-            #    파일이 없거나 깨지면 지금 동작 그대로. 형식은 훅 파일 머리말
-            - type: command
-              command: python3 -X utf8 /절대경로/tool_guard_user_policy.py
-              timeout: 5
-              env:
-                BOSUN_USER_POLICY: /실행폴더/user_policy.json
+            # 11/17 사용자 정책 훅(tool_guard_user_policy.py) 등록 해제 — 정책 보드는 '자유롭게 조정'(시원 님 결정).
+            #    웹 정책 보드가 이 설정 파일의 permissions(allow·ask·deny)를 직접 고쳐 쓰므로 그것 하나만 기준으로 둔다.
+            #    허용으로 옮긴 작업은 승인 카드 없이 실행되지만, 정책 훅의 조건 검사와 DENY(금지 경로·보호 대상)는 그대로다.
 
       tool_input_transform:
         - matcher: "docker_proxy"
