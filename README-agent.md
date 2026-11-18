@@ -155,7 +155,7 @@ cd ai-agent-hooks && AGENT_ENV_FILE=<실행 폴더>/agent.env PORTAINER_TLS_VERI
 - 정시 자동 백업은 `backup/bosun-backup-compose.yaml`로 Portainer에서 스택 `bosun-backup`을 만든다(볼륨은 실제 앱 볼륨, 모두 `:ro`).
 - 복원은 관리자 작업(Agent에는 복원 도구를 주지 않는다). 11/18부터 관리자 복원 도구 `ai-agent-hooks/tools/restore_volume.py`:
   정지 → 안전 백업 → 백업 스택 잠시 정지 → 같은 이름(+Compose 라벨)으로 볼륨 재생성 → 아카이브 풀기 → 파일별 SHA-256로 백업 시점과 같은지 검증 → 재시작.
-  `--list`(백업 이력), `--dry-run`(미리 보기). 수동 명령 절차는 `docs/복원절차서_관리자용_11-07.md`
+  `--list`(백업 이력), `--dry-run`(미리 보기). 정시 백업 파일에서 볼륨 이름과 다른 폴더를 `--path`로 고르면 `--confirm-path <같은 폴더>`를 붙여야 실행된다(11/19). 수동 명령 절차는 `docs/복원절차서_관리자용_11-07.md`
 
 ### 6-1. soteria 백업 게이트
 

@@ -177,6 +177,18 @@ w = World(); setup(w)
 code, _, err = call("--volume", "app_data", "--archive", "backup-2026-11-18T12-00-00.tar.gz", "--path", "missing", "--yes")
 check("S2 없는 --path 거부", (code, "폴더가 없습니다" in err), (2, True))
 
+# 4-1) 11/19 --path가 볼륨 이름과 다르면 --confirm-path 없이는 실행 안 함(다른 앱 데이터로 덮는 실수 방지)
+w = World(); setup(w)
+code, out, _ = call("--volume", "app_data", "--archive", "backup-2026-11-18T12-00-00.tar.gz", "--path", "other", "--dry-run")
+check("P1 다른 폴더 미리 보기에 경고", (code, "다른 폴더" in out), (0, True))
+code, _, err = call("--volume", "app_data", "--archive", "backup-2026-11-18T12-00-00.tar.gz", "--path", "other", "--yes")
+check("P2 --confirm-path 없으면 멈춤", (code, "--confirm-path" in err), (2, True))
+check("P3 멈췄을 때 데이터·스택 그대로", (w.volumes["app_data"]["files"], [x for x in w.log if x.startswith("stack")]), ({"a.txt": "NOW"}, []))
+code, _, _ = call("--volume", "app_data", "--archive", "backup-2026-11-18T12-00-00.tar.gz", "--path", "other", "--confirm-path", "x", "--yes")
+check("P4 --confirm-path 이름이 다르면 멈춤", code, 2)
+code, _, _ = call("--volume", "app_data", "--archive", "backup-2026-11-18T12-00-00.tar.gz", "--path", "other", "--confirm-path", "other", "--yes")
+check("P5 같은 이름으로 확인하면 실행", (code, w.volumes["app_data"]["files"]), (0, {"x": "1"}))
+
 # 5) 검증 실패 → 안전 백업으로 되돌림
 w = World(); setup(w); w.break_extract = True
 code, _, err = call("--volume", "app_data", "--archive", SOT, "--yes")

@@ -25,6 +25,7 @@
   python3 tools/restore_volume.py --volume <볼륨> --archive <파일> --dry-run  # 무엇을 할지 미리 보기
   python3 tools/restore_volume.py --volume <볼륨> --archive <파일>          # 실제 복원(yes 입력 확인)
   정시 백업 파일은 여러 앱이 한 파일에 있다. 안에 backup/<볼륨>/ 폴더가 없으면 --path <폴더 이름>으로 고른다.
+  --path가 볼륨 이름과 다르면 다른 앱 데이터로 덮을 위험이 있어 --confirm-path <같은 이름>도 넣어야 실행한다(11/19).
 """
 import argparse
 import datetime
@@ -195,6 +196,9 @@ def plan(args):
 
 
 def show(p):
+    if p["path"] != p["vol"]:
+        print(f"!! 주의: 볼륨 이름({p['vol']})과 다른 폴더(backup/{p['path']}/)를 풉니다. 다른 앱의 데이터로 덮일 수 있습니다.")
+        print("   관리자가 정시 백업에 다른 이름으로 적은 볼륨일 때만 쓰세요. 실행하려면 --confirm-path에 같은 폴더 이름을 넣어야 합니다.")
     print(f"복원할 볼륨   : {p['vol']} (앱 스택: {p['app_stack']['Name'] if p['app_stack'] else '없음'})")
     print(f"백업 파일     : {p['archive']} ({'지금 백업' if p['repo'] == 'soteria' else '정시 백업'}, SHA-256 {p['sha'][:16]}…)")
     print(f"파일 안 폴더  : backup/{p['path']}/")
@@ -316,6 +320,7 @@ def main(argv=None):
     ap.add_argument("--volume", required=True)
     ap.add_argument("--archive")
     ap.add_argument("--path", help="백업 파일 안 backup/<폴더> 이름(기본: 볼륨 이름)")
+    ap.add_argument("--confirm-path", help="--path가 볼륨 이름과 다를 때, 같은 폴더 이름을 한 번 더 적어 확인")
     ap.add_argument("--list", action="store_true", help="이 볼륨의 백업 이력만 본다")
     ap.add_argument("--dry-run", action="store_true", help="바꾸지 않고 순서만 보여 준다")
     ap.add_argument("--yes", action="store_true", help="확인 질문 없이 진행")
@@ -331,6 +336,8 @@ def main(argv=None):
         if args.dry_run:
             print("(미리 보기만 했습니다. 바뀐 것은 없습니다.)")
             return 0
+        if p["path"] != p["vol"] and args.confirm_path != p["path"]:
+            raise Stop(f"볼륨 이름과 다른 폴더(backup/{p['path']}/)라 멈췄습니다. 맞으면 --confirm-path {p['path']} 를 붙여 다시 실행하세요.")
         if not args.yes and input("이 볼륨을 백업 시점으로 되돌립니다. 계속하려면 yes: ").strip() != "yes":
             print("취소했습니다.")
             return 1
