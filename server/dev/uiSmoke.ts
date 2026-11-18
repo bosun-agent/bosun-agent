@@ -500,7 +500,7 @@ if (envFile) {
     await page.getByLabel('설정 닫기').click()
     await openSidebar()
     await page.getByRole('button', { name: '무엇을 할 수 있나요?' }).click()
-    await page.getByText('컨테이너: 컨테이너 시작', { exact: false }).waitFor()
+    await page.getByText('컨테이너: 시작', { exact: false }).waitFor()
     check(
       '정책: 도움말이 정책 칸대로(허용한 시작은 바로 실행, 막은 목록 예시는 막힘)',
       (await page.getByText('막힘 · 실행 중인 컨테이너 목록 보여줘').isVisible()) && (await page.getByText('승인 · web 컨테이너 재시작해줘').isVisible()),

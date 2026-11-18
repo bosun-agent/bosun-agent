@@ -154,7 +154,7 @@ function SafetyChecks({ hooks }: { hooks: Hook[] }) {
         {phases.map((p) => (
           <div key={p.title}>
             <p className="text-xs font-medium text-neutral-500">{p.title}</p>
-            <ul className="mt-0.5 list-inside list-disc space-y-0.5 text-sm text-neutral-800">
+            <ul className="mt-0.5 list-outside list-disc space-y-0.5 pl-5 text-sm text-neutral-800">
               {p.texts.map((text) => (
                 <li key={text}>{text}</li>
               ))}

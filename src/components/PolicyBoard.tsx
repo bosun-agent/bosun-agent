@@ -12,6 +12,8 @@ const COLUMNS: { bucket: PolicyBucket; title: string; help: string; tone: string
 ]
 
 const TITLE: Record<PolicyBucket, string> = { allow: '허용', ask: '묻기', deny: '막기' }
+// 바뀐 항목에 원래 칸을 원래 칸 색으로 붙인다(11-19 사용자: "변경이 좀 더 직관적이게").
+const FROM_TONE: Record<PolicyBucket, string> = { allow: 'text-sky-700', ask: 'text-amber-700', deny: 'text-red-700' }
 
 const RESTART_TEXT: Record<AgentRestart, string> = {
   started: '저장했어요. AI Agent를 다시 시작하고 있어요. 새로 시작한 뒤부터 적용돼요.',
@@ -125,16 +127,16 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
             onDrop={(e) => onDrop(e, col.bucket)}
             className={`min-h-24 rounded-lg border p-2 transition-shadow ${col.tone} ${over === col.bucket ? 'ring-2 ring-navy-300' : ''}`}
           >
-            <header className="mb-1.5 flex items-baseline justify-between gap-2">
-              <span className={`text-sm font-semibold ${col.head}`}>
+            <header className="mb-1.5">
+              <p className={`text-sm font-semibold whitespace-nowrap ${col.head}`}>
                 {col.title} <span className="font-normal text-neutral-500">{col.count}</span>
-              </span>
-              <span className="text-[11px] text-neutral-500">{col.help}</span>
+              </p>
+              <p className="text-[11px] text-neutral-500">{col.help}</p>
             </header>
             {col.count === 0 && <p className="py-3 text-center text-xs text-neutral-400">여기로 옮겨 놓을 수 있어요</p>}
             {col.groups.map(({ group, items }) => (
-              <div key={group} className="mb-1.5 last:mb-0">
-                <p className="mb-0.5 text-[11px] text-neutral-500">{group}</p>
+              <div key={group} className="mt-2.5 first-of-type:mt-0">
+                <p className="mb-1 text-xs font-medium text-neutral-600">{group}</p>
                 <ul className="flex flex-wrap gap-1">
                   {items.map((it) => {
                     const moved = draft[it.id] !== undefined
@@ -159,11 +161,11 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
                                 ? `기본값은 ${TITLE[it.defaultBucket]}이에요.`
                                 : undefined
                           }
-                          className={`max-w-full rounded-full border px-2 py-0.5 text-left text-xs break-all transition-colors ${
+                          className={`max-w-full rounded-lg border px-2 py-0.5 text-left text-xs break-keep transition-colors ${
                             it.lock
                               ? 'cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-500'
-                              : `cursor-grab bg-white text-neutral-800 hover:border-navy-300 active:cursor-grabbing ${
-                                  moved ? 'border-navy-600 ring-1 ring-navy-300' : differs ? 'border-navy-300' : 'border-neutral-200'
+                              : `cursor-grab text-neutral-800 hover:border-navy-300 active:cursor-grabbing ${
+                                  moved ? 'border-navy-600 bg-navy-50 ring-1 ring-navy-300' : differs ? 'border-navy-300 bg-white' : 'border-neutral-200 bg-white'
                                 }`
                           } ${it.raw ? 'font-mono text-[11px]' : ''}`}
                         >
@@ -173,7 +175,11 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
                             </span>
                           )}
                           {it.label}
-                          {differs && <span className="ml-1 text-[10px] text-navy-600">바뀜</span>}
+                          {differs && (
+                            <span className={`ml-1.5 text-[10px] font-medium whitespace-nowrap ${FROM_TONE[it.defaultBucket]}`}>
+                              {TITLE[it.defaultBucket]}→
+                            </span>
+                          )}
                         </button>
                         {open === it.id && (
                           <span className="mt-0.5 flex flex-wrap gap-1" role="group" aria-label={`${it.label} 옮기기`}>
@@ -202,7 +208,39 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
         허용 칸은 승인 카드 없이 실행되고, 바꾸는 작업이면 승인 기록에 "허용 칸이라 바로 실행"으로 남아요. <LockIcon /> 표시는 정책 훅이 막는 작업이라 옮길 수 없어요.
         저장하면 Agent 설정 파일({state.files.join(', ')})에 적고 AI Agent를 다시 시작해요.
       </p>
-      <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+      {/* 11-19 사용자: 저장 버튼이 세 칸 아래라 잘 안 보였다. 바뀐 게 있으면 설정 창 아래에 붙여 둔다. */}
+      <div
+        className={`mt-2 flex flex-wrap items-center justify-end gap-2 ${
+          dirty > 0 ? 'sticky bottom-0 -mx-3 -mb-3 rounded-b-xl border-t border-neutral-200 bg-white/95 px-3 py-2 backdrop-blur' : ''
+        }`}
+      >
+        {dirty > 0 && (
+          <ul className="mr-auto w-full space-y-0.5 text-xs text-neutral-700 sm:w-auto" aria-label="바뀐 것">
+            {state.items
+              .filter((it) => draft[it.id] !== undefined)
+              .map((it) => (
+                <li key={it.id} className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-medium">{it.label}</span>
+                  <span className="whitespace-nowrap">
+                    <span className={FROM_TONE[it.bucket]}>{TITLE[it.bucket]}</span> → <span className={FROM_TONE[draft[it.id]]}>{TITLE[draft[it.id]]}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraft((d) => {
+                        const next = { ...d }
+                        delete next[it.id]
+                        return next
+                      })
+                    }
+                    className="rounded px-1 text-neutral-500 underline hover:text-neutral-800"
+                  >
+                    되돌리기
+                  </button>
+                </li>
+              ))}
+          </ul>
+        )}
         {message && <p className={`mr-auto text-sm ${message.error ? 'text-red-600' : 'text-neutral-700'}`}>{message.text}</p>}
         {customized && (
           <button type="button" onClick={resetToDefault} disabled={saving} className="rounded-lg px-2.5 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100">

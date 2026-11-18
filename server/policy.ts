@@ -68,7 +68,7 @@ const CATALOG: CatalogItem[] = [
   // 11-18: "지금 백업"은 exec가 아니라 soteria backup_volume(11-12 팀 결정 "exec 예외 허용 X")
   { id: 'backup_volume', label: '지금 볼륨 백업', group: '백업', patterns: ['backup_volume'] },
 
-  { id: 'container_create', label: '컨테이너 직접 생성(새 앱은 스택으로)', group: '컨테이너', match: /containers\/create/, lock: 'hook' },
+  { id: 'container_create', label: '컨테이너 직접 생성', group: '컨테이너', match: /containers\/create/, lock: 'hook' },
   { id: 'pause', label: '일시정지·재개', group: '컨테이너', match: /pause/, lock: 'hook' },
   // 11-12부터 예외 없이 막는다("docker_proxy:path=*/exec*"). 옛 설정의 백업 2단계(/exec/*/start)는 아래 내부 규칙이 가져간다.
   { id: 'exec', label: '컨테이너 안 명령 실행', group: '컨테이너', match: /\/exec(?!\/)/, lock: 'hook' },
