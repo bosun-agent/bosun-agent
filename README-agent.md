@@ -218,7 +218,7 @@ python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.examp
 | policy_1112_test | 컨테이너 삭제의 force·v를 Docker와 같은 기준으로 판단(y·2 등도 참 → 거부) |
 | policy_1112s_test | soteria "지금 백업": exec 전부 거부, 백업 검사·기록·새 앱 자동 추가, 수정 전 백업 확인, BOSUN 포트(17080·3001·18090) 보호, 승인 카드 backup-now |
 | policy_1113_test | 정책표 수정본: 스택·볼륨·네트워크·컨테이너(v=true) 삭제 조건, CPU·메모리 값 검사 |
-| policy_1115_test | 사용자 정책(웹 정책 보드) 훅: deny 막기·ask 승인 카드·allow로 못 풂, 파일 없음·깨짐이면 지금 동작, 지시문 확인 |
+| policy_1115_test | 사용자 정책 훅 단독 동작(deny·ask, 파일 없음·깨짐). 11/17부터 설정에는 등록하지 않음 — 정책 보드는 permissions를 직접 고치는 '자유롭게 조정' 방식 |
 | policy_1115s_test | 백업 창구 주소(`SOTERIA_API`)·네트워크(`SOTERIA_NETWORK`) 설정, 설치판 대비 |
 | policy_1115b_test | 정시 백업에 새 앱 볼륨 자동 넣기·빼기(관리자 볼륨·설정 유지), 삭제 전 검사 |
 
