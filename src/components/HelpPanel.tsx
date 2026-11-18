@@ -16,11 +16,9 @@ const ALWAYS_BLOCKED = [
   '시작 명령 바꾸기(entrypoint, 정해진 것 밖의 command·healthcheck)',
   '이름 없는 볼륨을 쓰는 DB 앱 수정(데이터를 옮겨야 해서 관리자에게 요청해요)',
   'Docker Hub 공식 이미지가 아닌 이미지 쓰기',
-  '실행 중인 컨테이너 강제 삭제, 스택 삭제',
+  '실행 중인 컨테이너 강제 삭제',
+  '최근 백업 없이 볼륨 지우기(스택과 함께 지울 때도 같아요)',
 ]
-
-// 백업은 보류(11-14): 이 PC에 백업 컨테이너가 없어서 도움말에 넣지 않는다.
-const HIDDEN_ITEMS = new Set(['backup_now'])
 
 const COLUMN_GROUP: Record<PolicyBucket, { title: string; tone: string; desc: string }> = {
   allow: { title: '바로 실행돼요', tone: 'text-neutral-700', desc: '설정 > 정책의 허용 칸이에요. 승인 카드 없이 실행돼요.' },
@@ -35,7 +33,7 @@ const COLUMN_GROUP: Record<PolicyBucket, { title: string; tone: string; desc: st
 // 칸마다 "묶음: 항목, 항목" 한 줄씩
 function groupsFromPolicy(policy: PolicyState): Group[] {
   return (['allow', 'ask', 'deny'] as const).map((bucket) => {
-    const items = policy.items.filter((it) => it.bucket === bucket && !HIDDEN_ITEMS.has(it.id))
+    const items = policy.items.filter((it) => it.bucket === bucket)
     const lines = [...new Set(items.map((it) => it.group))].map((g) => {
       const labels = items.filter((it) => it.group === g).map((it) => it.label)
       return g === '그 밖의 규칙' ? `그 밖의 규칙 ${labels.length}개` : `${g}: ${labels.join(', ')}`
@@ -49,7 +47,7 @@ const GROUPS: Group[] = [
     title: '바로 실행돼요',
     tone: 'text-neutral-700',
     desc: '바뀌는 것이 없는 목록 조회예요.',
-    items: ['환경·스택 목록', '컨테이너·이미지·볼륨·네트워크 목록', '네트워크 상세', 'CPU·메모리 사용량'],
+    items: ['환경·스택 목록', '컨테이너·이미지·볼륨·네트워크 목록', '네트워크 상세', 'CPU·메모리 사용량', '백업 결과'],
   },
   {
     title: '승인을 받고 실행돼요',
@@ -61,6 +59,8 @@ const GROUPS: Group[] = [
       '정지된 컨테이너 삭제(삭제 전에 설정을 저장해요. 실행 중이면 먼저 정지해요)',
       '새 앱(스택) 만들기, 스택 수정·켜기·끄기(DB처럼 데이터를 남기는 앱은 이름 있는 볼륨을 붙여 만들어요)',
       '이미지 받기(Docker Hub 공식 이미지만)',
+      '스택 삭제, 볼륨 삭제(최근 백업이 있어야 해요), 네트워크 삭제(연결된 컨테이너가 없을 때만)',
+      '지금 볼륨 백업',
     ],
   },
   {
@@ -72,11 +72,12 @@ const GROUPS: Group[] = [
       '컨테이너 안에서 명령 실행',
       '컨테이너 안 파일 읽기·내보내기, 이미지 내보내기',
       '일괄 정리(prune), 강제 종료, 일시정지',
-      '이미지·네트워크·볼륨·스택 삭제, 네트워크 만들기·연결',
+      '이미지 삭제, 네트워크 만들기·연결',
       '권한 상승(privileged), 호스트 폴더·호스트 네트워크 연결',
       '비밀번호·토큰을 설정에 적기(비밀번호가 꼭 필요한 앱은 관리자에게 요청해요)',
       '시작 명령 바꾸기(entrypoint, 정해진 것 밖의 command·healthcheck)',
       '이름 없는 볼륨을 쓰는 DB 앱 수정(데이터를 옮겨야 해서 관리자에게 요청해요)',
+      '최근 백업 없이 볼륨 지우기',
     ],
   },
 ]

@@ -330,10 +330,34 @@ export function describeTool(
 ): ToolAction | undefined {
   if (tool === 'EndpointList') return { label: '환경 목록 조회', summary: '환경 목록 조회' }
   if (tool.startsWith('Stack')) return stackAction(tool, args, stacks)
+  if (tool === 'backup_status') return { label: '백업 결과 조회', summary: '백업 결과 조회', risk: { level: 'low', label: '조회' } }
+  if (tool === 'backup_volume') return backupAction(args)
   if (tool !== 'docker_proxy') return undefined
   // mcp-portainer는 method를 빼면 GET으로 보낸다.
   const method = (str(args.method) ?? 'GET').toUpperCase()
   return dockerRequest(method, str(args.path) ?? '', objectArg(args.query_params), objectArg(args.body))
+}
+
+// soteria 백업(11-12). 정책 훅(soteria_guard)이 인자를 {source:"/backup/<볼륨>", volume:"<볼륨>", ...}로 고친 뒤 승인을 묻는다.
+// 훅을 거치기 전 모양(source만, 또는 앱 이름만)도 받는다. 볼륨 이름이 안 보이면 무엇을 백업하는지 알 수 없어서다(11-16 시험).
+function backupAction(args: Record<string, unknown>): ToolAction {
+  const fromSource = str(args.source)?.match(/^\/backup\/([^/]+)\/?$/)?.[1]
+  const volume = str(args.volume) ?? fromSource
+  const jobId = str(args.job_id)
+  const params: Record<string, string> = {}
+  if (volume) params.볼륨 = volume
+  if (jobId) params['작업 ID'] = jobId
+  return {
+    label: '지금 볼륨 백업',
+    summary: titled('볼륨', volume, '지금 백업'),
+    ...(volume ? { target: volume } : {}),
+    ...(Object.keys(params).length ? { params } : {}),
+    reasons: [
+      effect('이 볼륨의 지금 데이터를 압축해 백업 보관함(bosun_soteria_backups)에 저장해요. 앱 데이터는 바뀌지 않아요. 7일 동안 보관해요.'),
+      { code: 'LIVE_DATA', message: '앱이 켜져 있으면 DB 같은 데이터는 백업이 일부 어긋날 수 있어요. 중요한 DB는 앱을 먼저 멈추고 백업하세요.' },
+    ],
+    risk: { level: 'low', label: '데이터 그대로' },
+  }
 }
 
 export function toolSummary(label: string | undefined, status: 'running' | 'succeeded' | 'failed'): string {
@@ -411,7 +435,8 @@ export function withHookExplanation(card: ApprovalCard, hook: HookExplanation | 
     next.reasons = [effect(text), ...card.reasons.filter((r) => r.code !== 'EFFECT' && (r.code !== 'UNKNOWN' || !level))]
   }
   if (level && card.risk?.level !== level) next.risk = { level, label: BLAST_LABEL[level] }
-  if (hook?.category === 'backup-now') next.summary = '지금 볼륨 백업'
+  // backup_volume 카드는 describeTool이 이미 "볼륨 X 지금 백업"으로 만든다. 그 밖의 모양(옛 exec 백업)은 대상이 컨테이너라 이름을 넣지 않는다.
+  if (hook?.category === 'backup-now' && card.action.tool !== 'backup_volume') next.summary = '지금 볼륨 백업'
   return next
 }
 
@@ -737,7 +762,7 @@ const STACK_READS: Record<string, string> = {
 // 바꾸는 호출인지. 조회가 아니면(모르는 도구 포함) 바꾸는 것으로 본다.
 // 허용 칸이라 승인 없이 실행된 바꾸는 호출을 승인 기록에 남길 때 쓴다(turns.ts).
 export function isChange(tool: string, args: Record<string, unknown>): boolean {
-  if (tool === 'EndpointList' || STACK_READS[tool]) return false
+  if (tool === 'EndpointList' || tool === 'backup_status' || STACK_READS[tool]) return false
   if (tool === 'docker_proxy') return !['GET', 'HEAD'].includes((str(args.method) ?? 'GET').toUpperCase())
   return true
 }

@@ -49,6 +49,7 @@ const CATALOG: CatalogItem[] = [
   { id: 'network_inspect', label: '네트워크 상세', group: '조회', patterns: [proxy('GET', '/networks/*')] },
   { id: 'stack_list', label: '스택 목록', group: '조회', patterns: ['StackList'] },
   { id: 'stack_file', label: '스택 설정 파일(Compose) 보기', group: '조회', patterns: ['StackFileInspect'] },
+  { id: 'backup_status', label: '백업 결과 조회', group: '조회', patterns: ['backup_status'] },
 
   { id: 'container_start', label: '컨테이너 시작', group: '컨테이너', patterns: [proxy('POST', '/containers/*/start')] },
   { id: 'container_stop', label: '컨테이너 중지', group: '컨테이너', patterns: [proxy('POST', '/containers/*/stop')] },
@@ -59,22 +60,27 @@ const CATALOG: CatalogItem[] = [
   { id: 'stack_update', label: '스택 수정', group: '스택', patterns: ['StackUpdate'] },
   { id: 'stack_start', label: '스택 시작', group: '스택', patterns: ['StackStart'] },
   { id: 'stack_stop', label: '스택 중지', group: '스택', patterns: ['StackStop'] },
-  { id: 'backup_now', label: '지금 백업 실행', group: '백업', patterns: [proxy('POST', '/containers/bosun-backup/exec')] },
+  // 11-18: 스택 삭제는 정책표 수정본(11-13)에서 ASK. 볼륨까지 지우면 정책 훅이 최근 백업을 확인한다.
+  { id: 'stack_delete', label: '스택 삭제', group: '스택', patterns: ['StackDelete'] },
+  // 11-18: 볼륨·네트워크 삭제도 11-13부터 ASK(볼륨은 최근 백업 필수, 네트워크는 연결된 컨테이너가 없을 때만 — 정책 훅 검사)
+  { id: 'volume_delete', label: '볼륨 삭제', group: '볼륨·네트워크', patterns: [proxy('DELETE', '/volumes/*')] },
+  { id: 'network_delete', label: '네트워크 삭제', group: '볼륨·네트워크', patterns: [proxy('DELETE', '/networks/*')] },
+  // 11-18: "지금 백업"은 exec가 아니라 soteria backup_volume(11-12 팀 결정 "exec 예외 허용 X")
+  { id: 'backup_volume', label: '지금 볼륨 백업', group: '백업', patterns: ['backup_volume'] },
 
   { id: 'container_create', label: '컨테이너 직접 생성(새 앱은 스택으로)', group: '컨테이너', match: /containers\/create/, lock: 'hook' },
   { id: 'pause', label: '일시정지·재개', group: '컨테이너', match: /pause/, lock: 'hook' },
-  { id: 'exec_other', label: '컨테이너 안 명령 실행(백업 말고)', group: '컨테이너', match: /containers\/.*\/exec/, lock: 'hook' },
+  // 11-12부터 예외 없이 막는다("docker_proxy:path=*/exec*"). 옛 설정의 백업 2단계(/exec/*/start)는 아래 내부 규칙이 가져간다.
+  { id: 'exec', label: '컨테이너 안 명령 실행', group: '컨테이너', match: /\/exec(?!\/)/, lock: 'hook' },
   { id: 'archive', label: '컨테이너 안 파일 읽기·쓰기', group: '컨테이너', match: /archive/, lock: 'hook' },
   { id: 'export', label: '컨테이너 파일시스템 내보내기', group: '컨테이너', match: /\/export/, lock: 'hook' },
   { id: 'image_delete', label: '이미지 삭제', group: '이미지', match: /method=DELETE:path=\*\/images/, lock: 'hook' },
   { id: 'image_search', label: '이미지 검색', group: '이미지', match: /images\/search/, lock: 'hook' },
   { id: 'image_export', label: '이미지 내보내기(tar)', group: '이미지', match: /images\/get|images\/\*\/get/, lock: 'hook' },
-  { id: 'volume_delete', label: '볼륨 삭제', group: '볼륨·네트워크', match: /method=DELETE:path=\*\/volumes/, lock: 'hook' },
-  { id: 'network_delete', label: '네트워크 삭제', group: '볼륨·네트워크', match: /method=DELETE:path=\*\/networks/, lock: 'hook' },
   { id: 'network_change', label: '네트워크 생성·연결·해제', group: '볼륨·네트워크', match: /networks\/(create|\*\/connect|\*\/disconnect)/, lock: 'hook' },
   { id: 'prune', label: '일괄 정리(prune)', group: '볼륨·네트워크', match: /prune/, lock: 'hook' },
 
-  { id: 'backup_exec_start', label: '백업 실행 2단계', group: '내부', match: /path=\/exec\/\*\/start$/, lock: 'fixed' },
+  { id: 'backup_exec_start', label: '옛 백업 실행 2단계(11-12 전 설정)', group: '내부', match: /path=\/exec\/\*\/start$/, lock: 'fixed' },
   { id: 'encoded_path', label: '인코딩된 경로로 규칙 피하기', group: '내부', match: /path=\*%\*$/, lock: 'fixed' },
 ]
 
@@ -122,7 +128,7 @@ function bucketOf(lists: Lists, patterns: string[]): PolicyBucket | undefined {
   return BUCKETS.find((b) => lists[b].some((p) => patterns.includes(p)))
 }
 
-// 옮길 수 있는 항목의 패턴(예: 백업 exec)은 잠긴 항목 식(exec 전체)에 걸려도 그쪽에 넣지 않는다.
+// 옮길 수 있는 항목의 패턴(예: 볼륨 삭제)은 잠긴 항목 식에 걸려도 그쪽에 넣지 않는다.
 const MOVABLE = new Set(CATALOG.flatMap((c) => c.patterns ?? []))
 
 function lockedPatterns(lists: Lists, item: CatalogItem): string[] {

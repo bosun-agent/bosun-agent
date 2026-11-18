@@ -75,7 +75,10 @@ const RULES: [RegExp, string][] = [
   [/path=\/images\/json$/, '이미지 목록'],
   [/method=GET:path=\/volumes$/, '볼륨 목록'],
   [/method=GET:path=\/networks(\/\*)?$/, '네트워크 목록·상세'],
-  [/path=\/exec\/\*\/start$/, '지금 백업 실행(승인한 백업 명령만)'],
+  [/^backup_status$/, '백업 결과 조회'],
+  [/^backup_volume$/, '지금 볼륨 백업'],
+  [/^StackDelete$/, '스택 삭제'],
+  [/path=\/exec\/\*\/start$/, '옛 백업 실행 2단계(11-12부터 쓰지 않음)'],
   [/containers\/create/, '컨테이너 직접 생성(새 앱은 스택으로 만들어요)'],
   [/method=DELETE:path=\*\/images/, '이미지 삭제'],
   [/method=DELETE:path=\*\/networks/, '네트워크 삭제'],
@@ -96,7 +99,7 @@ function ruleLabel(pattern: string): string | undefined {
 }
 
 const HOOKS: Record<string, string> = {
-  tool_input_transform: '도구를 실행하기 전에 요청을 검사해요(허용 목록 정책, 삭제 전 백업).',
+  tool_input_transform: '도구를 실행하기 전에 요청을 검사해요(허용 목록 정책, 삭제 전 백업, 백업 확인).',
   tool_guard: '도구를 실행하기 전에 막거나, 승인 카드에 쉬운 설명을 붙여요.',
   pre_tool_use: '승인을 묻기 직전에 검사해요.',
   permission_request: '승인을 묻기 전에 자동으로 허용·거부할 수 있어요.',
@@ -120,9 +123,12 @@ const HOOK_PHASES: { title: string; events: string[] }[] = [
 const SCRIPT_TEXT: Record<string, string> = {
   tool_input_transform_direct_policy_guard: '허용 목록에 없는 Docker 요청을 막아요. 정책 칸에서 자물쇠가 붙은 작업이 여기서 막혀요.',
   tool_input_transform_direct_backup_guard: '컨테이너를 지우기 전에 설정을 저장해요.',
-  tool_input_transform_stack_guard: '스택(compose) 내용을 검사해요. 공식 이미지, 비밀번호, 볼륨, 시작 명령 등을 봐요.',
+  tool_input_transform_stack_guard: '스택(compose) 내용을 검사해요. 공식 이미지, 비밀번호, 볼륨, 시작 명령 등을 보고, 데이터가 있는 앱은 최근 백업이 있어야 고칠 수 있어요.',
+  tool_input_transform_soteria_guard: '"지금 볼륨 백업" 요청을 검사해요. 백업 대상 볼륨만 받고, 백업 위치와 작업 이름을 정해진 모양으로 고쳐요.',
   tool_guard_approval_explainer: '승인 카드에 쉬운 설명을 붙여요. 막지는 않아요.',
-  tool_response_transform_backup_runner: '승인한 "지금 백업"을 실행하고 결과를 돌려줘요.',
+  tool_guard_user_policy: '사용자가 정한 정책을 한 번 더 지켜요. 더 엄격하게만 적용돼요.',
+  tool_response_transform_soteria_record: '성공한 백업(지문 sha256 확인)을 기록해요. 앱 수정·볼륨 삭제 전에 이 기록으로 최근 백업을 확인해요.',
+  tool_response_transform_soteria_sync: '새로 만든 앱의 볼륨을 백업 대상에 자동으로 넣어요.',
   tool_response_transform_secret_mask: '도구 결과에서 비밀번호 같은 값을 가려요.',
   tool_response_transform_injection_guard: '도구 결과에 섞인 수상한 지시(인젝션)를 표시해요.',
   user_prompt_submit_injection_guard: '보낸 메시지에서 AI를 속이려는 지시(인젝션)를 검사해요.',

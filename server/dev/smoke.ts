@@ -1015,6 +1015,26 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   )
 }
 
+// soteria "지금 백업" 카드에 어느 볼륨인지 보인다(11-16 시험: 제목만 "지금 볼륨 백업", 인자 값은 숨김이었다).
+{
+  const { approvalCard, withHookExplanation, isChange } = await import('../tools.ts')
+  const hooked = approvalCard('backup_volume', { source: '/backup/cache_data', archive: '/archive', job_id: 'bosun-cache_data-x', volume: 'cache_data', wait: true })
+  const raw = approvalCard('backup_volume', { source: '/backup/cache_data' })
+  const withHook = withHookExplanation(hooked, { category: 'backup-now', reason: '백업합니다.', blast_radius: 'low' })
+  check(
+    '백업 카드: 제목·대상·인자에 볼륨 이름, "설명할 수 없는 도구" 경고 없음',
+    hooked.summary === '볼륨 cache_data 지금 백업' &&
+      hooked.action.target === 'cache_data' &&
+      hooked.action.params?.볼륨 === 'cache_data' &&
+      !hooked.reasons.some((r) => r.code === 'UNKNOWN') &&
+      raw.summary === '볼륨 cache_data 지금 백업' &&
+      withHook.summary === '볼륨 cache_data 지금 백업' &&
+      !isChange('backup_status', {}) &&
+      isChange('backup_volume', {}),
+    { hooked, raw, withHook },
+  )
+}
+
 // 진짜 Agent 설정과 같은 모양: 주석, 한 줄 끝 주석, 목록 뒤 주석, 80자 넘는 명령 줄.
 const POLICY_YAML = `agents:
   root:
@@ -1038,8 +1058,7 @@ permissions:
     - "docker_proxy:method=POST:path=/exec/*/start" # 백업 2단계
   deny:
     - "docker_proxy:method=POST:path=*/containers/create*" # 직접 생성 금지
-    - 'docker_proxy:path=*/containers/[^b]*/exec*'
-    - "docker_proxy:method=DELETE:path=*/volumes/*" # 볼륨 삭제
+    - "docker_proxy:path=*/exec*" # 11-12부터 예외 없이 막음
     - "docker_proxy:path=*%*"
     - "docker_proxy:path=*/custom-rule*" # 시원 님이 새로 넣은 규칙(카탈로그에 없음)
   # deny는 글자 그대로 비교하는 보조 장치다.
@@ -1107,13 +1126,16 @@ models:
           item('container_list')?.bucket === 'allow' &&
           item('container_start')?.bucket === 'ask' &&
           item('container_create')?.lock === 'hook' &&
-          item('exec_other')?.lock === 'hook' &&
+          item('exec')?.lock === 'hook' &&
+          item('exec')?.bucket === 'deny' &&
+          ['stack_delete', 'volume_delete', 'network_delete', 'backup_volume'].every((id) => item(id)?.bucket === 'ask' && !item(id)?.lock) &&
+          !s.items.some((i) => i.id === 'backup_now') &&
           item('raw:docker_proxy:path=*/custom-rule*')?.bucket === 'deny' &&
           !s.items.some((i) => i.id === 'backup_exec_start' || i.id === 'encoded_path'),
         s.items,
       )
       const all = (moves: Record<string, string>) => ({ ...Object.fromEntries(s.items.map((i) => [i.id, i.defaultBucket])), ...moves })
-      check('정책: 잠긴 항목은 옮길 수 없다(400)', (await putPolicy(all({ volume_delete: 'allow' }))).status === 400)
+      check('정책: 잠긴 항목은 옮길 수 없다(400)', (await putPolicy(all({ exec: 'allow' }))).status === 400)
       check('정책: 모르는 항목·칸은 400', (await putPolicy({ nope: 'allow' })).status === 400 && (await putPolicy({ container_start: 'maybe' })).status === 400)
       const saved = (await (await putPolicy(all({ container_start: 'allow', container_list: 'deny' }))).json()) as Policy
       const file = parse(readFileSync(yamlFile, 'utf8')) as { permissions: Record<string, string[]> }

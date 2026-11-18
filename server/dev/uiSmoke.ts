@@ -322,8 +322,10 @@ await openSidebar()
 await page.getByRole('button', { name: '무엇을 할 수 있나요?' }).click()
 check('도움말에 안 되는 것 목록', await page.getByText('채팅으로는 할 수 없어요').isVisible())
 check(
-  '도움말에 볼륨 백업은 없다(백업 보류, 11-14)',
-  (await page.getByText('지금 볼륨 백업').count()) === 0 && (await page.getByText('지금 백업해줘', { exact: false }).count()) === 0,
+  '도움말: 지금 볼륨 백업·스택 삭제는 승인 목록에, 스택 삭제는 막힌 목록에 없다(11-18 정책표 수정본)',
+  (await page.getByText('지금 볼륨 백업', { exact: true }).isVisible()) &&
+    (await page.getByText('스택 삭제, 볼륨 삭제', { exact: false }).isVisible()) &&
+    (await page.getByText('이미지·네트워크·볼륨·스택 삭제', { exact: false }).count()) === 0,
 )
 await shot('08-help')
 await page.getByLabel('도움말 닫기').click()
@@ -435,7 +437,7 @@ if (envFile) {
     '    - "EndpointList"',
     '  deny:',
     '    - "docker_proxy:method=POST:path=*/containers/create*"',
-    '    - "docker_proxy:method=DELETE:path=*/volumes/*"',
+    '    - "docker_proxy:path=*/exec*"',
     '',
   ].join('\n')
   writeFileSync(yamlFile, base)
@@ -447,7 +449,8 @@ if (envFile) {
     check(
       '정책: 설정 파일이 있으면 세 칸 화면(잠긴 항목 포함), 예전 규칙 목록은 없다',
       (await page.getByRole('region', { name: '허용 칸' }).getByRole('button', { name: '컨테이너 목록' }).isVisible()) &&
-        (await deny.getByRole('button', { name: '볼륨 삭제' }).getAttribute('aria-disabled')) === 'true' &&
+        (await deny.getByRole('button', { name: '컨테이너 안 명령 실행' }).getAttribute('aria-disabled')) === 'true' &&
+        (await page.getByRole('region', { name: '묻기 칸' }).getByRole('button', { name: '볼륨 삭제' }).getAttribute('aria-disabled')) !== 'true' &&
         !(await page.getByText('자동 허용 (승인 없이 실행)').isVisible()),
     )
     check(
