@@ -165,7 +165,7 @@ docker compose up -d --build                 # 화면 http://127.0.0.1:3001
 - 이 PC에 띄운 Portainer를 쓰면 준비할 파일이 없다. Portainer가 다른 PC에 있을 때만 `cp container/.env.example container/.env` 후 주소를 고친다.
 
 - 첫 접속 화면이 **설정 페이지**다. BOSUN은 열쇠를 만들어 주지 않으므로, 사용자가 직접 발급받아 넣는다(OpenRouter 키 · Portainer API 키. Portainer 주소 칸은 기본 주소로 연결이 안 될 때만 나온다). 넣은 값은 저장 전에 실제로 확인한다(OpenRouter 401 / Portainer `/api/endpoints`).
-- 컨테이너가 첫 기동 때 `agent.env`와 `agent.yaml`을 만든다(기준 설정의 `/절대경로/`·`/실행폴더/` 자리표시자를 컨테이너 경로로 치환). 사용자가 손댄 파일은 덮어쓰지 않는다.
+- 컨테이너가 첫 기동 때 `agent.env`와 Agent 설정 두 개(`agents/beginner.yaml`·`expert.yaml`, 설정 > 정보에서 초보자용·숙련자용 선택)를 만든다(기준 설정의 `/절대경로/`·`/실행폴더/` 자리표시자를 컨테이너 경로로 치환). 사용자가 손댄 파일은 덮어쓰지 않는다. Portainer 환경 ID가 3이 아니면 `container/.env`의 `SOTERIA_ENDPOINT_ID`에 적는다.
 - 웹·Agent 컨테이너에는 **도커 소켓이 없다**. 소켓을 가진 컨테이너는 Portainer 하나뿐이다.
 - Portainer는 **따로 있는 것을 그대로 쓴다**. Agent가 붙는 주소는 `container/.env`의 `PORTAINER_URL_INTERNAL`에 적거나 설정 페이지에서 넣는다(자체 서명 인증서는 도구가 검증을 끄고 처리).
 - 값을 화면 대신 `container/.env`의 `PORTAINER_URL_INTERNAL`·`PORTAINER_API_KEY`에 넣어도 된다(그때는 화면에 "이미 설정됨"으로 뜬다). Portainer는 이 스택에 넣지 않는다(사용자가 따로 설치).
