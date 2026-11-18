@@ -38,7 +38,10 @@ services:
       # WEB 백엔드가 docker-agent를 자식 프로세스로 띄우고 관리한다(server/agentProcess.ts)
       AGENT_BIN: /usr/local/bin/docker-agent
       AGENT_ENV_FILE: /opt/bosun/agent.env
-      AGENT_NAME: agent
+      # 초보자용·숙련자용 두 설정을 /opt/bosun/agents에 만들고 설정 화면에서 고른다(11-19). 기본은 초보자용.
+      # 11-12~11-18 설치판은 agent.yaml 하나(AGENT_NAME: agent)였다 — 그 설치를 이 파일로 다시 올리면 agents/ 폴더가 새로 생긴다.
+      AGENT_NAME: beginner
+      AGENT_CONFIG: /opt/bosun/agents
       AGENT_URL: http://127.0.0.1:8080
       # Portainer 주소 두 개의 기본값은 이미지(container/Dockerfile)에 있고, container/.env에 적으면 그 값을 쓴다.
       #   PORTAINER_URL           화면의 "Portainer 열기" 링크(브라우저가 여는 주소)

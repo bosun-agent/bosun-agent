@@ -45,7 +45,7 @@ cp container/.env.example container/.env
 
 ```bash
 docker compose up -d --build          # 첫 빌드: node 이미지 + docker-agent 릴리스 바이너리 + mcp-portainer 설치 + mcp-soteria 빌드
-docker compose logs -f bosun          # 진입점 로그(agent.yaml 생성·경고)를 본다
+docker compose logs -f bosun          # 진입점 로그(Agent 설정 생성·경고)를 본다
 ```
 
 > 저장소를 갱신했다면 반드시 `--build`를 붙인다: `container/entrypoint.sh`는 **이미지 안에** 들어간다. `docker compose up -d`만 하면 예전 이미지가 계속 돌아, 고친 스크립트·화면 코드가 컨테이너에 반영되지 않는다.
@@ -53,8 +53,10 @@ docker compose logs -f bosun          # 진입점 로그(agent.yaml 생성·경�
 첫 기동에서 컨테이너가 하는 일(`container/entrypoint.sh`):
 
 1. `/opt/bosun/agent.env` 생성(없을 때만, 권한 600) — 값은 `container/.env`에서 온다
-2. `/opt/bosun/agent.yaml` 생성 — 기준 설정의 자리표시자(`/절대경로/`→`/app/ai-agent-hooks/`, `/실행폴더/`→`/opt/bosun/`)를 치환하고, `uvx` 도구 등록을 이미지에 고정 설치한 `mcp-portainer`로 바꾼다. 남은 자리표시자가 있으면 **여기서 멈춘다**(그대로 두면 정책 훅이 모든 도구 호출을 막는다)
-   - 기동마다 `SOTERIA_API`·`SOTERIA_NETWORK`를 `agent.env`에 맞추고, `agent.yaml`의 mcp-soteria 주소를 설치판 주소로 바꾼다(7절)
+2. `/opt/bosun/agents/beginner.yaml`·`expert.yaml`(초보자용·숙련자용, 설정 > 정보에서 고른다) 생성 — 기준 설정의 자리표시자(`/절대경로/`→`/app/ai-agent-hooks/`, `/실행폴더/`→`/opt/bosun/`)를 치환하고, `uvx` 도구 등록을 이미지에 고정 설치한 `mcp-portainer`로 바꾼다. 남은 자리표시자가 있으면 **여기서 멈춘다**(그대로 두면 정책 훅이 모든 도구 호출을 막는다)
+   - 기동마다 `SOTERIA_API`·`SOTERIA_NETWORK`를 `agent.env`에 맞추고, Agent 설정의 mcp-soteria 주소를 설치판 주소로 바꾼다(7절)
+   - `container/.env`에 `SOTERIA_ENDPOINT_ID`가 있으면 기동마다 Agent 설정의 Portainer 환경 ID를 그 값으로 맞춘다(7절)
+   - 11-18 이전 설치판(`/opt/bosun/agent.yaml` 하나)을 이 compose로 다시 올리면 `agents/` 폴더가 새로 생기고 옛 파일은 쓰지 않는다
 3. `AGENT_TOKEN` 생성(비워 두면 매 기동 새로 생성)
 4. WEB 백엔드 실행 → 백엔드가 `docker-agent`를 자식 프로세스로 띄운다
 
@@ -108,8 +110,8 @@ docker compose logs bosun | grep -E "entrypoint|agent\]" | tail -20
 # 2) 컨테이너 안 준비물(이미지에 다 들어갔는지)
 docker compose exec bosun sh -lc 'docker-agent version; python3 -c "import yaml; print(\"pyyaml ok\")"; command -v mcp-portainer; ls -l /app/tools/bin/mcp-soteria'
 
-# 3) agent.yaml 치환 결과(자리표시자 0개)
-docker compose exec bosun sh -lc 'grep -c "/절대경로/\|/실행폴더/\|uvx" /opt/bosun/agent.yaml || echo "0 (정상)"'
+# 3) Agent 설정 치환 결과(자리표시자 0개)
+docker compose exec bosun sh -lc 'grep -c "/절대경로/\|/실행폴더/\|uvx" /opt/bosun/agents/*.yaml || echo "0 (정상)"'
 
 # 4) 에이전트 API(루프백). {"status":"ok"}면 정상. (토큰은 진입점 안에서만 있어 exec 셸에는 없다)
 docker compose exec bosun sh -lc 'curl -sS http://127.0.0.1:8080/health; echo'
@@ -143,7 +145,7 @@ docker compose exec bosun sh -lc 'set -a; . /opt/bosun/agent.env; set +a; curl -
 | 빌드 실패(바이너리 다운로드) | 네트워크/버전 태그 | `docker compose build --no-cache bosun`, `DOCKER_AGENT_VERSION` 값 확인 |
 | 빌드 실패(`soteria` 단계, git clone·go build) | 브랜치 이름이 바뀌었거나(main에 합쳐짐) 네트워크 | `docker-compose.yaml`의 `SOTERIA_REF` 값 확인 |
 | `soteria_setup.py`가 `Portainer에 연결하지 못했습니다: Connection refused` | 컨테이너 환경의 브라우저용 `PORTAINER_URL`(localhost)을 읽었다 | 7절 3단계 명령처럼 `set -a; . /opt/bosun/agent.env; set +a;`를 앞에 붙인다 |
-| "지금 백업"이 `백업 창구 스택 'bosun-soteria'을 찾지 못했습니다` | 7절 3단계를 안 했거나 Portainer 환경 ID가 다르다 | 7절 3단계. 환경 ID가 3이 아니면 `agent.yaml`의 `SOTERIA_ENDPOINT_ID`도 고친다 |
+| "지금 백업"이 `백업 창구 스택 'bosun-soteria'을 찾지 못했습니다` | 7절 3단계를 안 했거나 Portainer 환경 ID가 다르다 | 7절 3단계. 환경 ID가 3이 아니면 `container/.env`에 `SOTERIA_ENDPOINT_ID=<환경 ID>`를 넣고 `docker compose up -d` |
 | "지금 백업"이 창구에 연결하지 못함 | 창구가 bosun 네트워크에 없다(PC 직접 실행용으로 만든 스택) | 7절 3단계를 bosun 컨테이너 안에서 다시 실행한다(`SOTERIA_NETWORK`가 들어가 다시 배포된다). 확인: `docker compose exec bosun curl -sS http://bosun-soteria:8080/healthz` |
 
 ## 7. 백업 켜기 (처음 한 번)
@@ -173,11 +175,11 @@ docker volume create bosun_soteria_backups
 
 **3. 창구 스택(`bosun-soteria`) 만들기.** 지금 있는 앱 볼륨을 찾아 읽기 전용으로 붙이고, bosun 스택 네트워크(`bosun_default`)에 이름 `bosun-soteria`로 붙인다.
 
-먼저 Portainer 환경 ID를 확인한다. Portainer 화면에서 환경을 열면 주소에 `#!/1/docker/…`처럼 보이는 숫자다(이 PC의 Portainer는 1). 기준 설정(`agent.yaml`)은 `3`으로 되어 있으므로, 3이 아니면 먼저 `agent.yaml`을 고치고 다시 켠다.
+먼저 Portainer 환경 ID를 확인한다. Portainer 화면에서 환경을 열면 주소에 `#!/1/docker/…`처럼 보이는 숫자다(이 PC의 Portainer는 1). 기준 설정은 `3`으로 되어 있으므로, 3이 아니면 `container/.env`에 적고 다시 올린다. 진입점이 기동마다 초보자용·숙련자용 설정 둘 다에 넣는다.
 
 ```bash
-docker compose exec bosun sed -i 's/SOTERIA_ENDPOINT_ID: "3"/SOTERIA_ENDPOINT_ID: "<환경 ID>"/' /opt/bosun/agent.yaml
-docker compose restart bosun
+echo 'SOTERIA_ENDPOINT_ID=<환경 ID>' >> container/.env
+docker compose up -d
 ```
 
 그다음 창구 스택을 만든다. `agent.env`를 먼저 읽어 들여야 한다: 컨테이너 환경의 `PORTAINER_URL`은 브라우저용 주소(`https://localhost:9443`)라 그대로 두면 컨테이너 안의 localhost로 붙어 연결이 거부된다.
@@ -218,7 +220,7 @@ volumes:
 | `SOTERIA_API` | `http://bosun-soteria:8080` | 훅·mcp-soteria가 창구에 붙는 주소. 컨테이너 안의 `127.0.0.1`은 bosun 자신이라 이름으로 부른다 |
 | `SOTERIA_NETWORK` | `bosun_default` | 창구를 붙일 네트워크. compose 이름(`name: bosun`)을 바꾸면 `<이름>_default` |
 
-진입점이 기동마다 이 두 값을 `agent.env`에 맞추고, `agent.yaml`의 mcp-soteria 주소(기본값 `http://127.0.0.1:18090`)를 `SOTERIA_API`로 바꾼다. 저장 위치·파일 꺼내는 방법은 `README-backup.md`.
+진입점이 기동마다 이 두 값을 `agent.env`에 맞추고, Agent 설정의 mcp-soteria 주소(기본값 `http://127.0.0.1:18090`)를 `SOTERIA_API`로 바꾼다. 저장 위치·파일 꺼내는 방법은 `README-backup.md`.
 
 ### 재부팅 뒤 자동으로 다시 켜지는지
 

@@ -2,7 +2,9 @@
 # BOSUN 컨테이너 진입점.
 #
 #   1) agent.env를 준비한다(없을 때만 환경변수에서 시드, 권한 600)
-#   2) agent.yaml을 만든다(기준 설정의 자리표시자를 컨테이너 경로로 치환, 없을 때만)
+#   2) Agent 설정을 만든다(기준 설정의 자리표시자를 컨테이너 경로로 치환, 없을 때만)
+#      - AGENT_CONFIG가 폴더(기본 /opt/bosun/agents)면 초보자용·숙련자용 두 파일을 만든다 → 설정 화면에서 고를 수 있다(11-19)
+#      - AGENT_NAME=agent이고 AGENT_CONFIG가 없으면 예전처럼 agent.yaml 하나(11-12 설치판)
 #   3) 빠진 값이 있으면 경고한다(Agent가 죽으면 화면에는 "연결 실패"로만 보이므로 여기서 알린다)
 #   4) WEB 백엔드를 실행한다(백엔드가 docker-agent를 자식 프로세스로 띄운다: AGENT_BIN)
 set -euo pipefail
@@ -12,13 +14,15 @@ HOOKS_DIR="${HOOKS_DIR:-/app/ai-agent-hooks}"
 AGENTS_DIR="${AGENTS_DIR:-/app/agents}"
 AGENT_NAME="${AGENT_NAME:-agent}"
 ENV_FILE="${AGENT_ENV_FILE:-$BOSUN_HOME/agent.env}"
-YAML_OUT="$BOSUN_HOME/${AGENT_NAME}.yaml"
 
-# 기준 설정: agent 는 직접 연결 기준 설정(ai-agent-hooks), beginner/expert 는 agents/ 사본
-if [ "$AGENT_NAME" = "agent" ]; then
-  YAML_SRC="$HOOKS_DIR/agent.yaml.example"
+# 만들 설정 파일 목록: "기준 파일|만들 파일"
+if [ -n "${AGENT_CONFIG:-}" ]; then
+  mkdir -p "$AGENT_CONFIG"
+  YAML_PAIRS=("$AGENTS_DIR/beginner.yaml.example|$AGENT_CONFIG/beginner.yaml" "$AGENTS_DIR/expert.yaml.example|$AGENT_CONFIG/expert.yaml")
+elif [ "$AGENT_NAME" = "agent" ]; then
+  YAML_PAIRS=("$HOOKS_DIR/agent.yaml.example|$BOSUN_HOME/agent.yaml")
 else
-  YAML_SRC="$AGENTS_DIR/${AGENT_NAME}.yaml.example"
+  YAML_PAIRS=("$AGENTS_DIR/${AGENT_NAME}.yaml.example|$BOSUN_HOME/${AGENT_NAME}.yaml")
 fi
 
 log() { printf '[entrypoint] %s\n' "$*"; }
@@ -71,9 +75,12 @@ for key in SOTERIA_API SOTERIA_NETWORK; do
   fi
 done
 
-# ── 2. agent.yaml ──────────────────────────────────────────────────────────────
+# ── 2. Agent 설정 ──────────────────────────────────────────────────────────────
+for pair in "${YAML_PAIRS[@]}"; do
+YAML_SRC="${pair%%|*}"
+YAML_OUT="${pair#*|}"
 if [ ! -f "$YAML_OUT" ]; then
-  log "agent.yaml 생성(자리표시자 치환): $YAML_OUT ← $YAML_SRC"
+  log "Agent 설정 생성(자리표시자 치환): $YAML_OUT ← $YAML_SRC"
   if [ ! -f "$YAML_SRC" ]; then
     log "오류: 기준 설정이 없습니다: $YAML_SRC (AGENT_NAME=$AGENT_NAME)"
     exit 1
@@ -106,11 +113,11 @@ open(out, "w", encoding="utf-8").write(text)
 print(f"[entrypoint] wrote {out} ({len(text.splitlines())} lines)")
 PY
 else
-  log "agent.yaml 있음(그대로 사용): $YAML_OUT"
+  log "Agent 설정 있음(그대로 사용): $YAML_OUT"
 fi
 
-# mcp-soteria는 agent.yaml의 env로 창구 주소를 받는다. 기준 설정의 기본값(PC 직접 실행용 127.0.0.1:18090)만
-# 설치판 주소로 바꾼다. 이미 있는 agent.yaml에도 적용되고, 사용자가 다른 주소로 고쳤으면 건드리지 않는다.
+# mcp-soteria는 Agent 설정의 env로 창구 주소를 받는다. 기준 설정의 기본값(PC 직접 실행용 127.0.0.1:18090)만
+# 설치판 주소로 바꾼다. 이미 있는 설정에도 적용되고, 사용자가 다른 주소로 고쳤으면 건드리지 않는다.
 if [ -n "${SOTERIA_API:-}" ] && grep -q 'SOTERIA_API: "http://127.0.0.1:18090"' "$YAML_OUT"; then
   python3 - "$YAML_OUT" "$SOTERIA_API" <<'PY'
 import sys
@@ -120,8 +127,22 @@ text = open(path, encoding="utf-8").read()
 text = text.replace('SOTERIA_API: "http://127.0.0.1:18090"', f'SOTERIA_API: "{api}"')
 open(path, "w", encoding="utf-8").write(text)
 PY
-  log "agent.yaml의 mcp-soteria 창구 주소: $SOTERIA_API"
+  log "$(basename "$YAML_OUT")의 mcp-soteria 창구 주소: $SOTERIA_API"
 fi
+
+# 백업 훅이 찾는 Portainer 환경 ID. 기준 설정은 "3"으로 고정되어 있어 환경이 다른 PC는 "지금 백업"이 실패한다(11-16·11-19 실측).
+# container/.env에 SOTERIA_ENDPOINT_ID를 적으면 기동마다 그 값으로 맞춘다(손으로 sed 하던 README 단계를 대신한다).
+if [ -n "${SOTERIA_ENDPOINT_ID:-}" ]; then
+  if ! [[ "$SOTERIA_ENDPOINT_ID" =~ ^[0-9]+$ ]]; then
+    log "오류: SOTERIA_ENDPOINT_ID는 숫자여야 합니다: $SOTERIA_ENDPOINT_ID"
+    exit 1
+  fi
+  if grep -qE 'SOTERIA_ENDPOINT_ID: "[0-9]+"' "$YAML_OUT" && grep -E 'SOTERIA_ENDPOINT_ID: "[0-9]+"' "$YAML_OUT" | grep -vq "\"$SOTERIA_ENDPOINT_ID\""; then
+    sed -i -E "s/SOTERIA_ENDPOINT_ID: \"[0-9]+\"/SOTERIA_ENDPOINT_ID: \"$SOTERIA_ENDPOINT_ID\"/" "$YAML_OUT"
+    log "$(basename "$YAML_OUT")의 Portainer 환경 ID: $SOTERIA_ENDPOINT_ID"
+  fi
+fi
+done
 
 # ── 3. WEB ↔ Agent 토큰 ────────────────────────────────────────────────────────
 # 루프백에서만 오가는 값이라 외부에 노출되지 않는다. 비어 있으면 이번 기동용으로 만든다.
