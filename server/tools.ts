@@ -872,7 +872,14 @@ function stackAction(tool: string, args: Record<string, unknown>, stacks: Readon
       summary: titled('스택', name, '중지'),
       target,
       // 11-19 실측: Portainer 스택 중지는 compose down이라 컨테이너가 지워진다. 볼륨(데이터)과 설정은 남는다.
-      reasons: [effect('스택의 컨테이너를 내려요(지워져요). 데이터(볼륨)와 설정은 남아서, 다시 시작하면 새로 만들어져요.')],
+      // 승인 카드 설명 훅이 EFFECT 문장을 "컨테이너를 모두 끕니다"로 바꿔 쓰므로, 지워진다는 안내는 따로 둔다(훅 설명이 있어도 남는다).
+      reasons: [
+        effect('스택의 컨테이너를 모두 멈춰요.'),
+        {
+          code: 'CONTAINERS_REMOVED',
+          message: '멈추면 컨테이너가 지워져요. 데이터(볼륨)와 설정은 남아서, 다시 시작하면 새로 만들어져요.',
+        },
+      ],
       risk: { level: 'medium', label: '서비스 멈춤' },
     }
   }

@@ -1065,6 +1065,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   )
 }
 
+// 스택 중지 카드는 훅 설명("컨테이너를 모두 끕니다")이 있어도 컨테이너가 지워진다는 안내를 남긴다(11-19 실측: compose down).
+{
+  const { approvalCard, withHookExplanation } = await import('../tools.ts')
+  const card = withHookExplanation(approvalCard('StackStop', { id: 1, endpointId: 1 }, new Map(), new Map([['1', { name: 'web' }]])), {
+    reason: "'web' 스택(id 1)에 속한 컨테이너를 모두 끕니다.",
+    blast_radius: 'medium',
+  })
+  check(
+    '스택 중지 카드: 훅 설명 + "멈추면 컨테이너가 지워져요" 안내',
+    card.reasons[0].message.includes('모두 끕니다') && card.reasons.some((r) => r.code === 'CONTAINERS_REMOVED'),
+    card.reasons,
+  )
+}
+
 // 스택 작업과 그 스택의 컨테이너 작업은 같은 대상이다(11-19 실측: "스택 web 중지"와 "컨테이너 web-web-1 재시작"이 경고 없이 둘 다 승인됨).
 {
   const { targetKeys } = await import('../tools.ts')
