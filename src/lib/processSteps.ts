@@ -2,7 +2,7 @@
 
 import type { ProcessStep, StepState } from '../types'
 
-type NewStep = Pick<ProcessStep, 'label' | 'doneLabel' | 'detail'>
+type NewStep = Pick<ProcessStep, 'label' | 'doneLabel' | 'detail' | 'card'>
 
 // 진행 중인 단계를 끝내고 새 단계를 진행 중으로 붙인다.
 export function startStep(steps: ProcessStep[], step: NewStep): ProcessStep[] {

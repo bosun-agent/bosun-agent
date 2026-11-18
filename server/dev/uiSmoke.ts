@@ -112,6 +112,13 @@ await page.getByText('nginx-web을 삭제했어요.').waitFor()
 check('다시 붙은 카드를 승인하면 이어서 답', true)
 await page.getByRole('button', { name: /^처리 과정 보기/ }).last().click()
 check('처리 과정에 무엇을 승인했는지 남는다', await page.getByText('승인함: 컨테이너 nginx-web 삭제').isVisible())
+// 승인함 줄을 누르면 그때 본 카드(설명·대상)를 읽기 전용으로 다시 펼친다(11-19)
+await page.getByRole('button', { name: /^승인함: 컨테이너 nginx-web 삭제/ }).last().click()
+check(
+  '승인함 줄을 누르면 그때 카드 내용이 다시 펼쳐진다(버튼 없이)',
+  (await page.getByRole('button', { name: /^승인함: 컨테이너 nginx-web 삭제/ }).last().getAttribute('aria-expanded')) === 'true' &&
+    (await page.getByText('삭제하면 되돌릴 수 없어요.').last().isVisible()),
+)
 await shot('03-approved-after-reload')
 
 // 모델이 빈 답을 보내면 멈춘 것처럼 두지 않고 다시 시도를 띄운다

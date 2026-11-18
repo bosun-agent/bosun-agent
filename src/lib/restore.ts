@@ -16,9 +16,10 @@ function stepFor(card: RestoredCard): ProcessStep | undefined {
   const id = crypto.randomUUID()
   if (card.kind === 'rejected') return { id, label: withSummary(BLOCKED_LABEL, card.detail), state: 'failed' }
   if (card.status === 'pending') return undefined
-  if (card.auto) return { id, label: withSummary(AUTO_APPROVED_LABEL, card.summary), state: 'done', detail: card.action.tool }
+  const shown = { summary: card.summary, action: card.action, reasons: card.reasons, ...(card.risk ? { risk: card.risk } : {}) }
+  if (card.auto) return { id, label: withSummary(AUTO_APPROVED_LABEL, card.summary), state: 'done', detail: card.action.tool, card: shown }
   const { label, state } = APPROVAL_STEP[card.status]
-  return { id, label: withSummary(label, card.summary), state, detail: card.action.tool }
+  return { id, label: withSummary(label, card.summary), state, detail: card.action.tool, card: shown }
 }
 
 export function toChatMessages(restored: RestoredMessage[], now = Date.now()): ChatMessage[] {

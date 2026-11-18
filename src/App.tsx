@@ -304,7 +304,10 @@ function App() {
                 ...(event.risk ? { risk: event.risk } : {}),
                 expiresAt: event.expiresAt,
               },
-              steps: startStep(m.steps ?? [], { label: withSummary('사용자 승인 기다리는 중', event.summary) }),
+              steps: startStep(m.steps ?? [], {
+                label: withSummary('사용자 승인 기다리는 중', event.summary),
+                card: { summary: event.summary, action: event.action, reasons: event.reasons, ...(event.risk ? { risk: event.risk } : {}) },
+              }),
             }))
             break
           }

@@ -22,7 +22,10 @@ export interface ApprovalRequest {
 // stopped: 거부·만료처럼 실패는 아니지만 진행하지 않은 단계
 export type StepState = 'active' | 'done' | 'failed' | 'stopped'
 
-// 처리 과정 한 줄. 도구 인자는 담지 않는다.
+// 결정한 승인 카드에서 보여 줬던 내용. 처리 과정의 "승인함" 줄을 누르면 다시 펼쳐 본다(11-19 사용자 요청: 무엇을 보고 승인했는지).
+export type StepCard = Pick<ApprovalRequest, 'summary' | 'action' | 'reasons' | 'risk'>
+
+// 처리 과정 한 줄. 도구 인자는 담지 않는다(승인 카드에 이미 보여 준 인자만 card에 남는다).
 export interface ProcessStep {
   id: string
   label: string
@@ -32,6 +35,7 @@ export interface ProcessStep {
   detail?: string
   // 도구 단계의 호출 ID(tool_status.callId)
   callId?: string
+  card?: StepCard
   state: StepState
 }
 
