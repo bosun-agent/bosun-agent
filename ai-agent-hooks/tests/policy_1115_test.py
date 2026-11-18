@@ -76,7 +76,8 @@ check("U18 깨진 입력에도 오류 없이 {}", run("StackDelete", {"id": 1}, 
 for name in ("agent.yaml.example", "../agents/beginner.yaml.example", "../agents/expert.yaml.example"):
     text = open(os.path.join(D, name), encoding="utf-8").read()
     head = text.split("[할 수 있는 일]", 1)[1].split("[도구 사용]", 1)[0]
-    check(f"I1 {os.path.basename(name)}: 사용자 정책 훅 등록", "tool_guard_user_policy.py" in text and "BOSUN_USER_POLICY" in text, True)
+    # 11/17: 정책 보드 "자유롭게 조정" — 사용자 정책 훅은 등록 해제(웹이 permissions를 직접 고친다)
+    check(f"I1 {os.path.basename(name)}: 사용자 정책 훅 등록 해제", "tool_guard_user_policy.py" not in text.replace("# 11/17 사용자 정책 훅(tool_guard_user_policy.py)", "") and "BOSUN_USER_POLICY" not in text, True)
     check(f"I2 {os.path.basename(name)}: [할 수 있는 일]에 '바로 실행된다/승인을 받아 실행된다' 목록 없음",
           "바로 실행된다" not in head and "승인을 받아 실행된다" not in head, True)
     check(f"I3 {os.path.basename(name)}: 막히면 이유를 알리고 우회하지 않는다", "막힌 이유를 알리고" in head and "우회하지 않는다" in head, True)

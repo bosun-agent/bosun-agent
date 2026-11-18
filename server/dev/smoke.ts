@@ -1136,6 +1136,7 @@ models:
       )
       const all = (moves: Record<string, string>) => ({ ...Object.fromEntries(s.items.map((i) => [i.id, i.defaultBucket])), ...moves })
       check('정책: 잠긴 항목은 옮길 수 없다(400)', (await putPolicy(all({ exec: 'allow' }))).status === 400)
+      check('정책: 잠긴 항목은 옮길 수 없다(400)', (await putPolicy(all({ image_delete: 'allow' }))).status === 400)
       check('정책: 모르는 항목·칸은 400', (await putPolicy({ nope: 'allow' })).status === 400 && (await putPolicy({ container_start: 'maybe' })).status === 400)
       const saved = (await (await putPolicy(all({ container_start: 'allow', container_list: 'deny' }))).json()) as Policy
       const file = parse(readFileSync(yamlFile, 'utf8')) as { permissions: Record<string, string[]> }
