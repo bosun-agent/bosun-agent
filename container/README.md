@@ -222,6 +222,26 @@ volumes:
 
 진입점이 기동마다 이 두 값을 `agent.env`에 맞추고, Agent 설정의 mcp-soteria 주소(기본값 `http://127.0.0.1:18090`)를 `SOTERIA_API`로 바꾼다. 저장 위치·파일 꺼내는 방법은 `README-backup.md`.
 
+### 백업에서 복원하기(관리자)
+
+데이터를 백업 시점으로 되돌리는 일은 AI에게 맡기지 않고 관리자가 `ai-agent-hooks/tools/restore_volume.py`로 한다(`README-agent.md` 6절). 이 도구는 **호스트(Docker 명령이 되는 PC 터미널)**에서 실행한다. 설치판에서는 "지금 백업" 기록 파일이 `bosun` 볼륨 안에 있으므로 먼저 꺼낸다(11/19 이 PC에서 `--list`·`--dry-run`·실제 복원까지 확인).
+
+```bash
+# 1) 백업 기록 꺼내기(지금 백업 파일의 SHA-256 확인에 쓴다)
+docker cp bosun:/opt/bosun/soteria_runs.jsonl ./soteria_runs.jsonl
+
+# 2) 저장소의 ai-agent-hooks 폴더에서. agent.env는 Portainer 주소·키가 든 파일(설정 페이지에서 넣은 값과 같게)
+cd ai-agent-hooks
+export AGENT_ENV_FILE=<agent.env 경로> PORTAINER_TLS_VERIFY=0 SOTERIA_ENDPOINT_ID=<환경 ID> SOTERIA_RECORD=../soteria_runs.jsonl
+python3 tools/restore_volume.py --volume <볼륨> --list                      # 백업 이력
+python3 tools/restore_volume.py --volume <볼륨> --archive <파일> --dry-run   # 미리 보기(바뀌는 것 없음)
+python3 tools/restore_volume.py --volume <볼륨> --archive <파일>             # 실제 복원(yes 확인)
+```
+
+- `agent.env`의 `PORTAINER_URL`은 호스트에서 열리는 주소여야 한다(예: `https://localhost:9443`). 설치판 안의 값(`host.docker.internal`)은 호스트에서 안 될 수 있다.
+- Windows Git Bash에서는 앞에 `MSYS_NO_PATHCONV=1`을 붙인다.
+- 복원 직전 상태는 `job-bosun-restore-<볼륨>-<시각>.tar.gz`로 남아, 같은 도구로 다시 되돌릴 수 있다.
+
 ### 재부팅 뒤 자동으로 다시 켜지는지
 
 `bosun`(이 compose), `bosun-soteria`·`bosun-backup`(위 스택)은 `restart: unless-stopped`, 팀 기본 Portainer는 `restart: always`라 Docker가 켜지면 같이 켜진다. Docker 자체가 부팅 때 켜지도록 해 둔다: 리눅스 `sudo systemctl enable docker`, Docker Desktop은 설정의 "Start Docker Desktop when you sign in".

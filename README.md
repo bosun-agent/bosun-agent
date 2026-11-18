@@ -71,7 +71,8 @@ Portainer 실행, Agent 실행 폴더·`agent.env` 준비는 `README-web.md`와 
 |---|---|
 | `docs/동작기준_테스트목록.md` | 정책표와의 차이·예외, 실제 AI 시나리오 테스트 T01~T42 |
 | `docs/AI_Agent_설계_구현_정리_11-04.md` | 설계·구현 정리 |
-| `docs/복원절차서_관리자용_11-07.md` | 볼륨 복원 절차(관리자 작업) |
+| `ai-agent-hooks/tools/restore_volume.py` | 관리자 복원 도구(11/18): 정지 → 안전 백업 → 볼륨 재생성 → 풀기 → SHA-256 검증 → 재시작. 사용법은 `README-agent.md` 6절, 설치판은 `container/README.md` 7절 끝 |
+| `docs/복원절차서_관리자용_11-07.md` | 볼륨 복원 절차(관리자 작업, 손으로 하는 명령) |
 | `docs/백업게이트_soteria_검증_결정_11-12.md` | 백업 게이트(승인 트리거 API·MCP) 실측 검증 결과와 팀 결정 |
 | `container/README.md` | 컨테이너 설치 절차·확인 체크리스트·진단표 |
 | `README-web.md`, `README-agent.md` | 파트별 실행·설정·문제 해결 |
