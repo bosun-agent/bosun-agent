@@ -59,7 +59,7 @@ const CATALOG: CatalogItem[] = [
   { id: 'stack_update', label: '스택 수정', group: '스택', patterns: ['StackUpdate'] },
   { id: 'stack_start', label: '스택 시작', group: '스택', patterns: ['StackStart'] },
   { id: 'stack_stop', label: '스택 중지', group: '스택', patterns: ['StackStop'] },
-  { id: 'backup_now', label: '지금 백업 실행', group: '백업', patterns: [proxy('POST', '/containers/bosun-backup/exec')] },
+  { id: 'backup_now', label: '지금 백업 실행', group: '백업', patterns: ['backup_volume'] },
 
   { id: 'container_create', label: '컨테이너 직접 생성(새 앱은 스택으로)', group: '컨테이너', match: /containers\/create/, lock: 'hook' },
   { id: 'pause', label: '일시정지·재개', group: '컨테이너', match: /pause/, lock: 'hook' },
@@ -69,8 +69,8 @@ const CATALOG: CatalogItem[] = [
   { id: 'image_delete', label: '이미지 삭제', group: '이미지', match: /method=DELETE:path=\*\/images/, lock: 'hook' },
   { id: 'image_search', label: '이미지 검색', group: '이미지', match: /images\/search/, lock: 'hook' },
   { id: 'image_export', label: '이미지 내보내기(tar)', group: '이미지', match: /images\/get|images\/\*\/get/, lock: 'hook' },
-  { id: 'volume_delete', label: '볼륨 삭제', group: '볼륨·네트워크', match: /method=DELETE:path=\*\/volumes/, lock: 'hook' },
-  { id: 'network_delete', label: '네트워크 삭제', group: '볼륨·네트워크', match: /method=DELETE:path=\*\/networks/, lock: 'hook' },
+  { id: 'volume_delete', label: '볼륨 삭제', group: '볼륨·네트워크', patterns: [proxy('DELETE', '/volumes/*')] },
+  { id: 'network_delete', label: '네트워크 삭제', group: '볼륨·네트워크', patterns: [proxy('DELETE', '/networks/*')] },
   { id: 'network_change', label: '네트워크 생성·연결·해제', group: '볼륨·네트워크', match: /networks\/(create|\*\/connect|\*\/disconnect)/, lock: 'hook' },
   { id: 'prune', label: '일괄 정리(prune)', group: '볼륨·네트워크', match: /prune/, lock: 'hook' },
 
