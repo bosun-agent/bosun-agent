@@ -153,7 +153,9 @@ cd ai-agent-hooks && AGENT_ENV_FILE=<실행 폴더>/agent.env PORTAINER_TLS_VERI
 ```
 - 설정의 `SOTERIA_ENDPOINT_ID`(기본 3)를 Portainer 환경 ID에 맞춘다.
 - 정시 자동 백업은 `backup/bosun-backup-compose.yaml`로 Portainer에서 스택 `bosun-backup`을 만든다(볼륨은 실제 앱 볼륨, 모두 `:ro`).
-- 복원은 관리자 작업: `docs/복원절차서_관리자용_11-07.md`
+- 복원은 관리자 작업(Agent에는 복원 도구를 주지 않는다). 11/18부터 관리자 복원 도구 `ai-agent-hooks/tools/restore_volume.py`:
+  정지 → 안전 백업 → 백업 스택 잠시 정지 → 같은 이름(+Compose 라벨)으로 볼륨 재생성 → 아카이브 풀기 → 파일별 SHA-256로 백업 시점과 같은지 검증 → 재시작.
+  `--list`(백업 이력), `--dry-run`(미리 보기). 수동 명령 절차는 `docs/복원절차서_관리자용_11-07.md`
 
 ### 6-1. soteria 백업 게이트
 
@@ -163,7 +165,7 @@ cd ai-agent-hooks && AGENT_ENV_FILE=<실행 폴더>/agent.env PORTAINER_TLS_VERI
 - 권한: `backup_status`는 조회라 허용, `backup_volume`은 승인 필요(허용 목록에 넣지 않는다). 인자(`source`·`archive`·`retention_days`·`job_id`)는 훅이 검사·정리한다.
 - 순서: 데이터가 있는 앱을 수정·삭제하기 전에 최근 30분 안의 soteria 백업이 없으면 훅이 막는다. DB 앱은 정지 → 백업 → 시작 순서로 한다.
 - 저장 위치·파일 꺼내는 방법은 `README-backup.md`, 검증 결과와 결정 근거는 `docs/백업게이트_soteria_검증_결정_11-12.md`(이 문서의 18081은 soteria 문서 기본값이고, BOSUN은 18090을 쓴다).
-- 복원은 아직 자동화되어 있지 않다(수동 절차서 사용).
+- 복원은 Agent가 하지 않는다. 관리자가 `tools/restore_volume.py`로 백업 이력에서 복구한다(11/18).
 
 ### 6-2. 컨테이너 설치판에서 백업 창구 연결 (11/15)
 
@@ -221,6 +223,7 @@ python3 tools/check_merged_config.py <실행 폴더>/agent.yaml agent.yaml.examp
 | policy_1115_test | 사용자 정책 훅 단독 동작(deny·ask, 파일 없음·깨짐). 11/17부터 설정에는 등록하지 않음 — 정책 보드는 permissions를 직접 고치는 '자유롭게 조정' 방식 |
 | policy_1115s_test | 백업 창구 주소(`SOTERIA_API`)·네트워크(`SOTERIA_NETWORK`) 설정, 설치판 대비 |
 | policy_1115b_test | 정시 백업에 새 앱 볼륨 자동 넣기·빼기(관리자 볼륨·설정 유지), 삭제 전 검사 |
+| restore_1118_test | 관리자 복원 도구: 정지→안전 백업→재생성(같은 이름·라벨)→풀기→SHA-256 검증→재시작 순서, 기록 SHA 불일치·보호 볼륨·앱 밖 사용 거부, 실패 시 안전 백업으로 되돌림, Agent 설정에 복원 도구 없음 |
 
 실제 AI로 하는 시나리오 테스트(T01~T42)는 `docs/동작기준_테스트목록.md`.
 
