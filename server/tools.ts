@@ -495,7 +495,22 @@ export function targetKeys(
     const name = names.get(id)
     if (name) values.add(normalized(kind, name))
   }
-  return [...values].map((v) => `${env}/${kind}/${v}`)
+  const keys = [...values].map((v) => `${env}/${kind}/${v}`)
+  return kind === 'containers' ? [...keys, ...stackKeysOfContainer(values, stacks)] : keys
+}
+
+// 스택 컨테이너는 스택 작업과 같은 대상이다(11-19 실측: 대화 A의 "스택 web 중지"와 대화 B의 "컨테이너 web-web-1 재시작"이
+// 서로 경고 없이 승인되어 B가 404). Compose 컨테이너 이름은 `<스택>-<서비스>-<번호>`라서, 알아 둔 스택 이름으로 시작하면
+// 그 스택의 키(stackKeys의 `stacks/name:`)도 넣는다. 서비스 이름에 `-`가 있어도 되도록 앞부분만 맞춘다(겹치면 둘 다 — 경고가 더 뜨는 쪽).
+function stackKeysOfContainer(containerNames: Iterable<string>, stacks: ReadonlyMap<string, StackInfo>): string[] {
+  const stackNames = [...stacks.values()].map((s) => s.name?.toLowerCase()).filter((n): n is string => !!n)
+  const out = new Set<string>()
+  for (const raw of containerNames) {
+    const name = raw.replace(/^\//, '').toLowerCase()
+    if (!/-\d+$/.test(name)) continue
+    for (const s of stackNames) if (name.startsWith(`${s}-`)) out.add(`stacks/name:${s}`)
+  }
+  return [...out]
 }
 
 function idOf(obj: Record<string, unknown>): string | undefined {

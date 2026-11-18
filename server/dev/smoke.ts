@@ -1037,6 +1037,25 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   )
 }
 
+// 스택 작업과 그 스택의 컨테이너 작업은 같은 대상이다(11-19 실측: "스택 web 중지"와 "컨테이너 web-web-1 재시작"이 경고 없이 둘 다 승인됨).
+{
+  const { targetKeys } = await import('../tools.ts')
+  const stacks = new Map([
+    ['1', { name: 'web' }],
+    ['8', { name: 'nginx-web' }],
+  ])
+  const stop = targetKeys('StackStop', { id: 1, endpointId: 1 }, new Map(), stacks)
+  const restart = targetKeys('docker_proxy', { environment_id: 1, method: 'POST', path: '/containers/web-web-1/restart' }, new Map(), stacks)
+  const other = targetKeys('docker_proxy', { environment_id: 1, method: 'POST', path: '/containers/nginx-web-web-1/restart' }, new Map(), stacks)
+  const plain = targetKeys('docker_proxy', { environment_id: 1, method: 'POST', path: '/containers/web/restart' }, new Map(), stacks)
+  const overlap = (a: string[], b: string[]) => a.some((k) => b.includes(k))
+  check(
+    '같은 대상: 스택 web 작업 ↔ 컨테이너 web-web-1 작업은 겹치고, nginx-web-web-1·이름이 규칙과 다른 web은 web 스택과 안 겹침',
+    overlap(stop, restart) && !overlap(stop, plain) && other.includes('stacks/name:nginx-web') && !other.includes('stacks/name:web'),
+    { stop, restart, other, plain },
+  )
+}
+
 // 진짜 Agent 설정과 같은 모양: 주석, 한 줄 끝 주석, 목록 뒤 주석, 80자 넘는 명령 줄.
 const POLICY_YAML = `agents:
   root:
