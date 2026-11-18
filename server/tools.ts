@@ -432,7 +432,11 @@ export function withHookExplanation(card: ApprovalCard, hook: HookExplanation | 
   if (reason) {
     const text = maskText(reason.length > MAX_HOOK_REASON ? `${reason.slice(0, MAX_HOOK_REASON)}…` : reason)
     // 훅이 설명한 도구면 "설명할 수 없는 도구" 경고는 뺀다.
-    next.reasons = [effect(text), ...card.reasons.filter((r) => r.code !== 'EFFECT' && (r.code !== 'UNKNOWN' || !level))]
+    // 백업 훅은 "백업하는 동안 그 앱은 꺼져 있어야 합니다"까지 말하므로 WEB의 같은 뜻 문장(LIVE_DATA)은 뺀다(11-19 실측: 두 번 나옴).
+    next.reasons = [
+      effect(text),
+      ...card.reasons.filter((r) => r.code !== 'EFFECT' && r.code !== 'LIVE_DATA' && (r.code !== 'UNKNOWN' || !level)),
+    ]
   }
   if (level && card.risk?.level !== level) next.risk = { level, label: BLAST_LABEL[level] }
   // backup_volume 카드는 describeTool이 이미 "볼륨 X 지금 백업"으로 만든다. 그 밖의 모양(옛 exec 백업)은 대상이 컨테이너라 이름을 넣지 않는다.
@@ -852,7 +856,8 @@ function stackAction(tool: string, args: Record<string, unknown>, stacks: Readon
       label: '스택 중지',
       summary: titled('스택', name, '중지'),
       target,
-      reasons: [effect('스택의 컨테이너가 모두 멈춰요. 지워지지는 않고 나중에 다시 시작할 수 있어요.')],
+      // 11-19 실측: Portainer 스택 중지는 compose down이라 컨테이너가 지워진다. 볼륨(데이터)과 설정은 남는다.
+      reasons: [effect('스택의 컨테이너를 내려요(지워져요). 데이터(볼륨)와 설정은 남아서, 다시 시작하면 새로 만들어져요.')],
       risk: { level: 'medium', label: '서비스 멈춤' },
     }
   }

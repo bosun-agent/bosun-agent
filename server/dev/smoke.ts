@@ -1029,6 +1029,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
       !hooked.reasons.some((r) => r.code === 'UNKNOWN') &&
       raw.summary === '볼륨 cache_data 지금 백업' &&
       withHook.summary === '볼륨 cache_data 지금 백업' &&
+      hooked.reasons.some((r) => r.code === 'LIVE_DATA') &&
+      !withHook.reasons.some((r) => r.code === 'LIVE_DATA') &&
       !isChange('backup_status', {}) &&
       isChange('backup_volume', {}),
     { hooked, raw, withHook },

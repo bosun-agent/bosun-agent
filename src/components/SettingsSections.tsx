@@ -477,6 +477,8 @@ const TOOL_LABEL: Record<string, string> = {
   StackStart: '스택 시작',
   StackStop: '스택 중지',
   StackDelete: '스택 삭제',
+  backup_volume: '지금 볼륨 백업',
+  backup_status: '백업 결과 조회',
 }
 
 function usageText(u: SessionUsage): string {
