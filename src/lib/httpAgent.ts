@@ -8,6 +8,7 @@ import type {
   AgentRestart,
   AuditRecord,
   BackupRecord,
+  VolumeBackupRecord,
   ModelCatalog,
   PolicyState,
   RestoredMessage,
@@ -144,6 +145,7 @@ export const httpAgent: AgentClient = {
   },
 
   getBackups: () => json<{ available: boolean; records: BackupRecord[] }>('/api/backups?limit=200'),
+  getVolumeBackups: () => json<{ available: boolean; records: VolumeBackupRecord[] }>('/api/volume-backups?limit=200'),
 
   async saveApiKey(apiKey) {
     return json<Settings>('/api/settings/api-key', { method: 'PUT', body: JSON.stringify({ apiKey }) })

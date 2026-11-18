@@ -599,6 +599,34 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   check('승인 기록: 최근 순으로 카드 요약과 함께', audit.records.length === 5 && audit.records.some((r) => r.summary), audit.records)
 }
 
+// ---- soteria "지금 백업" 기록(JSON 줄, 읽기만) ----
+{
+  const file = `${dirname(process.env.AGENT_ENV_FILE!)}/soteria_runs.jsonl`
+  rmSync(file, { force: true })
+  const none = (await fetch(`${BASE}/api/volume-backups`).then((r) => r.json())) as { available: boolean; records: unknown[] }
+  check('지금 백업 기록 파일이 없으면 빈 목록', none.available && none.records.length === 0, none)
+  writeFileSync(
+    file,
+    [
+      JSON.stringify({ app: 'cache_data', job_id: 'bosun-cache_data-1', sha256: 'a'.repeat(64), size: 259, name: 'job-bosun-cache_data-1.tar.gz', recorded_at: 1795030150 }),
+      '깨진 줄',
+      JSON.stringify({ app: 'db_data', job_id: 'bosun-db_data-2', sha256: 'b'.repeat(64), size: 2048, name: 'job-bosun-db_data-2.tar.gz', recorded_at: 1795031769 }),
+      JSON.stringify({ app: 'x', job_id: 'no-sha', recorded_at: 1795031800 }),
+      '',
+    ].join('\n'),
+  )
+  try {
+    const got = (await fetch(`${BASE}/api/volume-backups`).then((r) => r.json())) as { records: { volume: string; sha256: string; size?: number; file: string; at: string }[] }
+    check(
+      '지금 백업 기록: 최근 순, 깨진 줄·지문 없는 줄은 뺀다',
+      got.records.length === 2 && got.records[0].volume === 'db_data' && got.records[1].file === 'job-bosun-cache_data-1.tar.gz' && got.records[1].size === 259,
+      got,
+    )
+  } finally {
+    rmSync(file, { force: true })
+  }
+}
+
 // ---- 백업 목록(Agent 백업 훅의 SQLite를 읽기만) ----
 {
   // 지난 실행이 넣은 행이 남아 있으면 빈 목록 검사가 틀리므로 먼저 지운다.

@@ -230,6 +230,17 @@ export interface BackupRecord {
   outcome: 'deleted' | 'kept' | 'pending' | 'unknown'
 }
 
+// soteria "지금 백업" 한 건(GET /api/volume-backups). 볼륨 데이터 백업이고, 성공해서 지문(sha256)이 있는 것만 온다.
+export interface VolumeBackupRecord {
+  volume: string
+  jobId: string
+  // 백업 보관 볼륨(bosun_soteria_backups) 안의 파일 이름
+  file: string
+  sha256: string
+  size?: number
+  at: string
+}
+
 // 대화 사용량(GET /api/sessions/{id}/usage). cost는 달러다.
 export interface SessionUsage {
   inputTokens: number
@@ -282,6 +293,7 @@ export interface AgentClient {
   getAudit?(limit?: number): Promise<AuditRecord[]>
   // available: false면 WEB 백엔드에 백업 파일 위치가 없다(BACKUP_DB, AGENT_ENV_FILE).
   getBackups?(): Promise<{ available: boolean; records: BackupRecord[] }>
+  getVolumeBackups?(): Promise<{ available: boolean; records: VolumeBackupRecord[] }>
   getAgentStatus?(): Promise<AgentProcessStatus>
   restartAgent?(): Promise<{ restart: AgentRestart; status: AgentProcessStatus }>
   getPolicy?(): Promise<PolicyState>

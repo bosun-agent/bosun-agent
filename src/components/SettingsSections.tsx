@@ -1,5 +1,5 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import type { AgentConfigSummary, AgentMode, ApprovalMode, AuditRecord, BackupRecord, PolicyState, SessionUsage, Settings, SystemInfo, UsageTotals } from '../lib/agentProtocol'
+import type { AgentConfigSummary, AgentMode, ApprovalMode, AuditRecord, BackupRecord, PolicyState, VolumeBackupRecord, SessionUsage, Settings, SystemInfo, UsageTotals } from '../lib/agentProtocol'
 import { agent } from '../lib/agent'
 import { PolicyBoard } from './PolicyBoard'
 import { agentStateText, restartAgent, useAgentStatus } from '../lib/agentStatus'
@@ -713,7 +713,69 @@ const OUTCOME: Record<BackupRecord['outcome'], { label: string; tone: string }> 
   unknown: { label: '삭제 여부 확인 못 함', tone: 'bg-neutral-100 text-neutral-500' },
 }
 
+function sizeText(n?: number): string {
+  if (n === undefined) return ''
+  if (n < 1024) return `${n}B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)}MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(1)}GB`
+}
+
+// 11-19: 백업 화면이 삭제 전 설정 기록만 보여 줘서 "지금 백업"을 해도 "아직 백업이 없어요"였다. 데이터 백업을 위에 둔다.
 export function BackupSection({ onDraft }: { onDraft?: (text: string) => void }) {
+  return (
+    <div className="space-y-3">
+      <Box title="지금 백업 (볼륨 데이터)">
+        <VolumeBackupList />
+      </Box>
+      <Box title="정시 백업">
+        <Note>
+          정시 백업 스택(bosun-backup)을 켜 두었다면 매일 12시·18시·23시에 앱 볼륨을 자동으로 백업하고 7일 보관해요. 새로 만든 앱의
+          볼륨은 자동으로 들어가요. 파일은 백업 볼륨(bosun_backups)에 있어요.
+        </Note>
+      </Box>
+      <Box title="삭제 전 설정 저장 (보조)">
+        <ConfigBackupList onDraft={onDraft} />
+      </Box>
+      <Note>데이터를 백업 시점으로 되돌리는 복원은 관리자가 복원 도구로 해요(AI에게는 맡기지 않아요). 필요하면 관리자에게 요청하세요.</Note>
+    </div>
+  )
+}
+
+function VolumeBackupList() {
+  const { data, failed } = useLoad(agent.getVolumeBackups)
+  if (!data) return <Unavailable failed={failed} />
+  if (!data.available) return <Note>WEB 백엔드에 백업 기록 위치가 없어요. SOTERIA_RECORD(또는 AGENT_ENV_FILE)를 정해주세요.</Note>
+  return (
+    <div className="space-y-1.5">
+      <Note>채팅에서 "지금 백업해줘"로 승인하고 만든 볼륨 백업이에요. 지문(sha256)을 확인한 성공 백업만 보여요. 7일 보관해요.</Note>
+      {data.records.length === 0 && <Note>아직 지금 백업이 없어요.</Note>}
+      <ul className="space-y-1.5">
+        {data.records.map((r: VolumeBackupRecord) => (
+          <li key={`${r.jobId}-${r.at}`} className="rounded-lg bg-neutral-50 px-3 py-2 text-sm">
+            <details>
+              <summary className="cursor-pointer">
+                <span className="font-medium">볼륨 {r.volume}</span>
+                <span className="ml-2 text-xs text-neutral-500">{new Date(r.at).toLocaleString()}</span>
+                {r.size !== undefined && <span className="ml-2 text-xs text-neutral-500">{sizeText(r.size)}</span>}
+              </summary>
+              <dl className="mt-1.5 grid grid-cols-[6rem_1fr] gap-y-0.5 text-xs">
+                <dt className="text-neutral-500">파일</dt>
+                <dd className="font-mono break-all">{r.file || '—'}</dd>
+                <dt className="text-neutral-500">지문(sha256)</dt>
+                <dd className="font-mono break-all">{r.sha256}</dd>
+                <dt className="text-neutral-500">작업 ID</dt>
+                <dd className="font-mono break-all">{r.jobId || '—'}</dd>
+              </dl>
+            </details>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ConfigBackupList({ onDraft }: { onDraft?: (text: string) => void }) {
   const { data, failed } = useLoad(agent.getBackups)
   if (!data) return <Unavailable failed={failed} />
   if (!data.available) {
@@ -722,16 +784,16 @@ export function BackupSection({ onDraft }: { onDraft?: (text: string) => void })
   return (
     <div className="space-y-1.5">
       <Note>
-        컨테이너를 지우기 직전에 Agent 백업 훅이 설정을 저장해요. 설정만 저장하고 볼륨이나 컨테이너 안의 파일은 저장하지
-        않아요. 백업은 승인을 묻기 전에 만들어져서, 거부한 삭제도 목록에 남아요. 보관 기간은 훅 설정(BACKUP_TTL_DAYS, 기본 30일)을 따라요.
+        AI가 컨테이너를 지우기 직전에 설정(이미지·포트 등)을 저장해요. 데이터는 들어 있지 않아요. 승인을 묻기 전에 저장해서 거부한
+        삭제도 남아요. 30일 보관해요.
       </Note>
-      {data.records.length === 0 && <Note>아직 백업이 없어요.</Note>}
+      {data.records.length === 0 && <Note>아직 없어요.</Note>}
       <ul className="space-y-1.5">
         {data.records.map((r) => {
           // 0.5.0 전 백엔드는 outcome을 주지 않는다. 화면만 먼저 바뀐 경우에도 깨지지 않게 모름으로 둔다.
           const outcome = OUTCOME[r.outcome] ?? OUTCOME.unknown
           return (
-          <li key={r.id} className="rounded-lg bg-white px-3 py-2 text-sm">
+          <li key={r.id} className="rounded-lg bg-neutral-50 px-3 py-2 text-sm">
             <details>
               <summary className="cursor-pointer">
                 <span className="font-medium">

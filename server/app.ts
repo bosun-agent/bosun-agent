@@ -20,7 +20,7 @@ import type {
 } from '../src/lib/agentProtocol.ts'
 import * as agent from './agentClient.ts'
 import { agentStarting, agentStatus, restartAgent } from './agentProcess.ts'
-import { listBackups } from './backups.ts'
+import { listBackups, listVolumeBackups } from './backups.ts'
 import { config } from './config.ts'
 import { LOCAL_USER, localOnly } from './guard.ts'
 import { maskText } from './mask.ts'
@@ -482,6 +482,17 @@ app.get('/api/backups', (c) => {
   } catch (err) {
     console.error('[backups] read failed', err)
     throw new HttpError(500, 'BACKUP_READ_FAILED', '백업 파일을 읽지 못했어요.')
+  }
+})
+
+// soteria "지금 백업" 기록(최근 순). Agent 백업 기록 훅의 JSON 줄 파일을 읽기만 한다(server/backups.ts).
+app.get('/api/volume-backups', (c) => {
+  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 100) || 100, 1), 500)
+  try {
+    return c.json(listVolumeBackups(limit))
+  } catch (err) {
+    console.error('[volume-backups] read failed', err)
+    throw new HttpError(500, 'BACKUP_READ_FAILED', '백업 기록을 읽지 못했어요.')
   }
 })
 

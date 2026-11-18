@@ -63,6 +63,11 @@ export const config = {
   backupDb:
     process.env.BACKUP_DB ??
     (process.env.AGENT_ENV_FILE ? join(dirname(process.env.AGENT_ENV_FILE), 'backups.sqlite3') : ''),
+  // soteria "지금 백업" 성공 기록(JSON 줄, Agent 훅 tool_response_transform_soteria_record.py가 쓴다. 읽기만 한다).
+  // Agent 설정의 SOTERIA_RECORD와 같은 파일이어야 한다. 기본값은 설정 예시와 같은 "실행 폴더(agent.env 옆)/soteria_runs.jsonl".
+  soteriaRecord:
+    process.env.SOTERIA_RECORD ??
+    (process.env.AGENT_ENV_FILE ? join(dirname(process.env.AGENT_ENV_FILE), 'soteria_runs.jsonl') : ''),
 
   // 정책에 막힌 작업을 직접 하러 갈 Portainer 화면 주소. 브라우저에서 열리는 주소를 넣는다(Agent의 PORTAINER_URL과 다를 수 있다).
   // 비어 있거나 http(s)가 아니면 차단 안내에 링크 없이 문구만 보여준다.

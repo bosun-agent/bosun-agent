@@ -4,9 +4,9 @@
 // - 표: backups(ts, time, session_id, environment_id, method, path, query_json, kind, target, inspect_json)
 // - inspect에는 환경변수 값 같은 비밀이 들어 있다. 원본은 보내지 않고 허용 목록으로 고른 값만 보낸다.
 
-import { existsSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import type { BackupRecord } from '../src/lib/agentProtocol.ts'
+import type { BackupRecord, VolumeBackupRecord } from '../src/lib/agentProtocol.ts'
 import { config } from './config.ts'
 import { maskText } from './mask.ts'
 import { approvalCardsBetween, decisionsBetween } from './store.ts'
@@ -136,4 +136,56 @@ export function listBackups(limit: number): { available: boolean; records: Backu
   } finally {
     db.close()
   }
+}
+
+// ---- soteria "지금 백업"(볼륨 데이터) ----
+// 백업 기록 훅(tool_response_transform_soteria_record.py)이 성공한 백업만 한 줄씩 남긴다:
+// {"app": <볼륨>, "job_id", "sha256", "size", "name": <파일 이름>, "finished_at", "recorded_at": <초>}
+// 11-19 실측: 설정 > 백업이 이 기록을 읽지 않아 "지금 백업"을 해도 "아직 백업이 없어요"였다.
+// 백업 파일 자체는 soteria 보관 볼륨에 있어 WEB은 볼 수 없다(7일 지나면 지워져도 기록 줄은 남는다).
+
+const MAX_RECORD_BYTES = 2_000_000
+
+function readTail(path: string): string {
+  const size = statSync(path).size
+  const start = Math.max(0, size - MAX_RECORD_BYTES)
+  const buf = Buffer.alloc(size - start)
+  const fd = openSync(path, 'r')
+  try {
+    readSync(fd, buf, 0, buf.length, start)
+  } finally {
+    closeSync(fd)
+  }
+  const text = buf.toString('utf8')
+  // 잘라 읽었으면 첫 줄은 중간부터라 버린다.
+  return start > 0 ? text.slice(text.indexOf('\n') + 1) : text
+}
+
+export function listVolumeBackups(limit: number): { available: boolean; records: VolumeBackupRecord[] } {
+  const path = config.soteriaRecord
+  if (!path) return { available: false, records: [] }
+  if (!existsSync(path)) return { available: true, records: [] }
+  const records: VolumeBackupRecord[] = []
+  for (const line of readTail(path).split('\n')) {
+    if (!line.trim()) continue
+    let r: Obj
+    try {
+      r = obj(JSON.parse(line))
+    } catch {
+      continue
+    }
+    const volume = str(r.app)
+    const sha256 = str(r.sha256)
+    const recordedAt = typeof r.recorded_at === 'number' ? r.recorded_at : undefined
+    if (!volume || !sha256 || recordedAt === undefined) continue
+    records.push({
+      volume,
+      jobId: str(r.job_id) ?? '',
+      file: str(r.name) ?? '',
+      sha256,
+      size: typeof r.size === 'number' ? r.size : undefined,
+      at: new Date(recordedAt * 1000).toISOString(),
+    })
+  }
+  return { available: true, records: records.reverse().slice(0, limit) }
 }

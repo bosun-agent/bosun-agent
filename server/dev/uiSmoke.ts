@@ -279,8 +279,13 @@ await page.getByRole('button', { name: '승인 기록' }).click()
 await page.getByText('nginx 삭제', { exact: false }).first().waitFor().catch(() => {})
 check('승인 기록에 방금 승인한 카드', await page.getByText('컨테이너 nginx-web 삭제').first().isVisible())
 await page.getByRole('button', { name: '백업' }).click()
-await page.getByText('지우기 직전에 Agent 백업 훅이', { exact: false }).waitFor()
-check('백업 화면', true)
+await page.getByText('컨테이너를 지우기 직전에 설정', { exact: false }).waitFor()
+check(
+  '백업 화면: 지금 백업(볼륨 데이터)이 맨 위, 정시 백업 안내, 삭제 전 설정 저장은 보조(11-19)',
+  (await page.getByRole('heading', { name: '지금 백업 (볼륨 데이터)' }).isVisible()) &&
+    (await page.getByRole('heading', { name: '정시 백업' }).isVisible()) &&
+    (await page.getByRole('heading', { name: '삭제 전 설정 저장 (보조)' }).isVisible()),
+)
 await page.getByRole('button', { name: '정보' }).click()
 await page.getByText('v1.148.0-fake').waitFor()
 // AI 설정 상자: 할 수 있는 일은 쉬운 말, 원래 도구 이름·실행 명령은 자세히에. 도구 수는 그 상자에서 확인한다.
