@@ -7,13 +7,15 @@ AI Agent(docker-agent) 설정의 원본과 훅을 두는 곳이다. 팀원에게
 | agent.yaml.example | 설정 원본. 경로는 자리표시자(/절대경로/, /실행폴더/). 10월 31일판(agent-run/agent.yaml과 경로 외 동일) |
 | tool_input_transform_direct_policy_guard.py | 정책 훅(허용 목록. 10/31부터 컨테이너 직접 생성·이미지·네트워크 삭제 거부. 11/1부터 이미지 받기 출처 제한, 상세 조회는 안전한 필드만. 11/6부터 정책표대로 일시정지·재개·이미지 검색·네트워크 생성·연결·해제 거부, 시스템 정보·네트워크·이미지 이력도 안전한 필드만. 11/13 정책표 수정본: 볼륨 삭제(최근 백업·쓰는 컨테이너 없음)·네트워크 삭제(연결 없음)·v=true(이름 없는 볼륨 백업) 조건부 허용, 통과하면 백업 창구에서 볼륨을 뗌) |
 | tool_input_transform_direct_backup_guard.py | 삭제 전 백업 훅(10/31부터 컨테이너만 백업) |
-| tool_input_transform_stack_guard.py | 스택(Compose) 검사 훅. PyYAML 필요. 11/1부터 restart 제한, 공개 포트 1024~65535(9443·8000 제외), 자원은 11/13 정책표 수정본부터 상한·기본값 없이 값이 맞는지만 확인(0보다 큼, 예약 ≤ 상한). 11/6부터 같은 이름 생성 거부, 스택 수정(StackUpdate)·파일 보기(StackFileInspect) 검사, 켜기·끄기 대상 확인, 관리 스택(bosun-backup) 보호. 11/13 스택 삭제(StackDelete) 검사: 관리 스택·external 거부, 볼륨까지 지우면 볼륨마다 최근 백업. 훅 env에 AGENT_ENV_FILE 필요 |
+| tool_input_transform_stack_guard.py | 스택(Compose) 검사 훅. PyYAML 필요. 11/1부터 restart 제한, 공개 포트 1024~65535(9443·8000 제외), 자원은 11/13 정책표 수정본부터 상한·기본값 없이 값이 맞는지만 확인(0보다 큼, 예약 ≤ 상한). 11/6부터 같은 이름 생성 거부, 스택 수정(StackUpdate)·파일 보기(StackFileInspect) 검사, 켜기·끄기 대상 확인, 관리 스택(bosun-backup) 보호. 11/13 스택 삭제(StackDelete) 검사: 관리 스택·external 거부, 볼륨까지 지우면 볼륨마다 최근 백업. 11/19: 지우기 전에 Compose를 삭제 전 설정 기록(backups.sqlite3, kind=stack)에 저장, 관리 스택에 설치판(bosun) 추가, 관리용 이름으로 새 앱 만들기 거부. 훅 env에 AGENT_ENV_FILE 필요 |
 | tool_response_transform_secret_mask.py | 도구 결과의 비밀값 가리기 훅. 11/1부터 Docker 로그 머리 제거, 오류가 나면 결과 전체를 숨김. 11/6부터 스택 파일 보기 결과도 가림 |
 | tool_guard_approval_explainer.py | 승인 카드 설명 훅(11/1). 실행될 요청을 쉬운 말과 영향(low·medium·high)으로 설명해 승인 이벤트의 metadata에 붙인다. 판정은 하지 않음 |
 | soteria_common.py | soteria(팀원 승인 트리거 백업) 공용 모듈(11/12). 백업 대상 목록(앱→볼륨, 백업은 볼륨 단위), 켜진 앱 확인, 창구 스택 Compose 만들기·다시 배포, 백업 기록 |
 | tool_input_transform_soteria_guard.py | "지금 백업"(backup_volume) 검사 훅(11/12). 볼륨 단위 source(/backup/<볼륨>)만, 켜진 앱 거부, job_id·archive는 훅이 정함, 그 밖의 인자 거부. 목록에 없는 앱이면 한 번 맞춰 봄 |
 | tool_response_transform_soteria_record.py | 성공한 백업 기록 훅(11/12). 스택 수정 전 "최근 백업" 확인에 쓴다 |
-| tool_response_transform_soteria_sync.py | 새 앱 볼륨 자동 추가 훅(11/12). 앱을 만들거나 고친 뒤 데이터 볼륨을 백업 대상에 넣고 창구 스택을 다시 배포. 11/13: 스택 삭제 뒤 지운 앱을 대상에서 빼고, 남은 볼륨이 있으면 알림 |
+| tool_response_transform_soteria_sync.py | 새 앱 볼륨 자동 추가 훅(11/12). 앱을 만들거나 고친 뒤 데이터 볼륨을 백업 대상에 넣고 창구 스택을 다시 배포. 11/13: 스택 삭제 뒤 지운 앱을 대상에서 빼고, 남은 볼륨이 있으면 알림. 11/19: 실행되지 않은 삭제(사용자 거부·훅 거부)와 docker_proxy 볼륨 삭제 뒤에는 미리 뗀 볼륨을 되돌림(안내 없음). 앱은 컨테이너와 볼륨 라벨로 찾아 정지된 앱도 빠지지 않음, 설치판(bosun)은 뺌 |
+| tool_response_transform_soteria_status.py | 백업 조회(backup_status) 보강 훅(11/19). 창구가 다시 배포돼 작업을 못 찾으면 기록 파일에서 찾고, job_id 없이 부르면 최근 성공 백업 목록, 시각은 한국 시간 |
+| tests/policy_1119_test.py | 11/19 팀원 설치판·웹 시험 피드백 9개 반영 테스트(정지된 앱 볼륨 찾기, 거부된 삭제 되돌리기, 설치판 보호, 인젝션 변형, 백업 조회, 스택 삭제 전 Compose 저장, 지시문) |
 | tools/soteria_setup.py | 창구 스택(bosun-soteria)을 처음 만들거나 다시 맞추는 관리자용 도구(11/12) |
 | session_start_app_summary.py | 이어서 하기(11/7). 대화 시작 때 지금 있는 앱(스택·컨테이너·공개 포트·데이터 볼륨·백업 연결) 요약을 AI에게 넣는다. 조회만, 비밀값 가림·인젝션 줄 제외, 실패하면 아무것도 넣지 않음. 훅 env에 AGENT_ENV_FILE 필요 |
 | tools/make_agents.py | 초보자용·숙련자용 Agent 설정을 기준 설정에서 만든다(11/6). 초보자용은 '계획 먼저 보여 주기' 규칙 |

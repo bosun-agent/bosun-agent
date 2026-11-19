@@ -104,7 +104,8 @@ HOST_KEYS = ["PortBindings", "RestartPolicy", "Memory", "MemoryReservation", "Na
              "Binds", "Mounts", "NetworkMode", "AutoRemove", "ReadonlyRootfs"]
 RESTART_NAMES = {"", "no", "always", "unless-stopped", "on-failure"}
 PROTECTED_VOLUME = re.compile(r"portainer", re.I)    # Portainer 데이터(키·설정) 볼륨은 연결 금지
-PROTECTED_CONTAINER = re.compile(r"portainer|^bosun-(backup|soteria)", re.I)  # Portainer 컨테이너 보호. 11/3부터 실제 대상(조회한 이름) 기준이라 ID로 와도 거른다
+# 11/19: 설치판 자신(컨테이너 bosun)도 보호한다. 끄거나 지우면 웹과 Agent가 함께 멈춘다
+PROTECTED_CONTAINER = re.compile(r"portainer|^bosun-(backup|soteria)|^bosun$", re.I)  # Portainer 컨테이너 보호. 11/3부터 실제 대상(조회한 이름) 기준이라 ID로 와도 거른다
 SEARCH_SELECT = "[*].{name:name,official:is_official,stars:star_count}"  # 설명문(외부 작성 글)은 버린다
 # 상세(inspect)는 안전한 필드만 받는다(11/1, 정책표 "inspect 출력: 안전한 필드만"). 모델이 보낸 select는 무시하고 이것으로 바꾼다.
 # 뺀 것: 호스트 경로(GraphDriver, LogPath, HostsPath, 볼륨 Mountpoint·마운트 Source), HostConfig 대부분(장치·권한 설정),
@@ -407,9 +408,9 @@ def _body_dict(body):
 
 
 # ---------- 11/13 삭제 조건(정책표 수정본 5.3 v=true, 5.11 VolumeDelete, 5.12 NetworkDelete) ----------
-PROTECTED_VOLUME_DELETE = re.compile(r"portainer|^bosun_backups$|^bosun_soteria_backups$", re.I)
+PROTECTED_VOLUME_DELETE = re.compile(r"portainer|^bosun_backups$|^bosun_soteria_backups$|^bosun_(data|web_data)$", re.I)  # 11/19 설치판 볼륨
 DEFAULT_NETWORKS = {"bridge", "host", "none", "ingress", "docker_gwbridge"}
-PROTECTED_NETWORK = re.compile(r"portainer|^bosun-(backup|soteria)", re.I)
+PROTECTED_NETWORK = re.compile(r"portainer|^bosun-(backup|soteria)|^bosun_default$", re.I)  # 11/19 설치판 네트워크
 ANON_VOLUME = re.compile(r"[0-9a-f]{64}")
 
 
@@ -510,7 +511,7 @@ def main():
         return
     # 11/12: 컨테이너 안 명령 실행(exec)은 예외 없이 거부(정책표 4절). 백업은 backup_volume
     if re.search(r"(^|/)exec(/|$)", clean):
-        block("컨테이너 안 명령 실행(exec)은 이 Agent에서 허용되지 않습니다(정책표 4절). 지금 백업은 백업 도구(backup_volume)로 하세요.")
+        block("컨테이너 안 명령 실행(exec)은 이 Agent에서 허용되지 않습니다. 지금 백업은 백업 도구(backup_volume)로 하세요.")
         return
     # 11/6: 보안 정책표 3절 DENY(10/18에 열었던 것). 허용 목록에서도 뺐지만 알기 쉬운 이유로 먼저 막는다
     if method == "POST" and re.fullmatch(rf"/containers/{SEG}/(pause|unpause)", clean):

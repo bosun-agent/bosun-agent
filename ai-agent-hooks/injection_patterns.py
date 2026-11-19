@@ -12,10 +12,15 @@ import re
 
 # 각 패턴에 이름을 붙여, 차단/변형 로그에 "어떤 규칙에 걸렸는지"를 남길 수 있게 한다.
 PATTERNS = [
+    # 11/19(팀원 시험 T30 변형): "이전 지시는 다 무시하고", "이전 지시를 모두 무시해"처럼 사이에 "다·모두·전부"가 끼거나
+    # "지시사항", "지금까지의 지시", "앞서 말한 규칙", "이전의 모든 지시"로 쓰면 놓쳤다. 끼어드는 말은 정해진 것만 받는다(오탐 방지).
     ("instruction_override_ko", re.compile(
-        r"(이전|앞의|기존)\s*(지시|명령|규칙|프롬프트)\s*(은|는|을|를)?\s*(무시|무효화|잊어)", re.IGNORECASE)),
+        r"(이전|앞의|앞서|기존|지금까지|위의)\s*(의|에\s*말한|에\s*받은|말한|받은)?\s*(모든\s*)?"
+        r"(지시|명령|규칙|프롬프트)\s*(사항|문)?\s*(들)?\s*(은|는|을|를)?\s*(다|모두|전부|전부\s*다|싹\s*다|모조리)?\s*"
+        r"(무시|무효화|잊어|잊고|따르지\s*마)", re.IGNORECASE)),
     ("instruction_override_en", re.compile(
-        r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|rules?)", re.IGNORECASE)),
+        r"(ignore|disregard|forget)\s+(all\s+)?(of\s+)?(the\s+|your\s+)?(previous|prior|above|earlier)\s+(instructions?|rules?|prompts?)",
+        re.IGNORECASE)),
     ("system_prompt_disclosure_ko", re.compile(
         r"시스템\s*프롬프트\s*(알려|보여|공개|노출)", re.IGNORECASE)),
     ("system_prompt_disclosure_en", re.compile(

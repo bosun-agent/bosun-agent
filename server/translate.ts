@@ -228,7 +228,11 @@ export class Translator {
             ],
           }
         }
-        const status = isError ? 'failed' : 'succeeded'
+        // 11/19: backup_status는 창구가 작업을 못 찾으면 오류로 오지만, Agent 훅이 기록 파일에서 찾아 내용을 채운다([백업 목록]·[백업 기록]).
+        //   기록 파일에도 없는 job_id(지어낸 번호)는 그대로 실패로 둔다.
+        const recovered =
+          name === 'backup_status' && /\[백업 (목록|기록)\]/.test(res.response) && !/기록 파일에도 없습니다/.test(res.response)
+        const status = isError && !recovered ? 'failed' : 'succeeded'
         const missing = isError ? TOOL_UNAVAILABLE.exec(res.response)?.[1] : undefined
         if (missing && PORTAINER_TOOL.test(missing)) {
           return {

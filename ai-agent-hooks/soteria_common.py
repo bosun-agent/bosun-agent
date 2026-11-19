@@ -21,6 +21,7 @@
   SOTERIA_MAX_AGE_MIN   스택 수정 전 백업이 몇 분 안이어야 하는지(기본 30)
   SOTERIA_HEALTH_WAIT   창구를 다시 배포한 뒤 켜질 때까지 기다리는 최대 초(기본 30)
 """
+import datetime as dt
 import json
 import os
 import re
@@ -45,10 +46,27 @@ BYTES_PER_SEC = 60 * 1024 * 1024   # 11/9 시험: 1GB(압축 안 되는 자료) 
 # 백업 대상에서 빼는 관리용 스택·볼륨(창구 자신, 정시 백업, Portainer)
 MANAGED_STACKS = {"bosun-backup", "bosun-soteria"}
 PROTECTED = re.compile(r"portainer", re.I)
+# 11/19: 설치판 자신(Compose 이름 bosun. bosun_data 볼륨에 agent.env의 API 키가 있다)도 백업 대상에서 뺀다.
+#   MANAGED_STACKS는 "백업 컨테이너" 판별(is_backup_container)에도 쓰여서 여기에 넣으면 bosun 컨테이너가 백업 컨테이너로
+#   취급된다(볼륨 삭제 검사에서 쓰는 컨테이너가 없는 것처럼 보임). 그래서 따로 둔다. 설치판 이름을 바꾸면 BOSUN_SELF_STACKS로 준다.
+SELF_STACKS_DEFAULT = "bosun"
+# docker-agent가 도구를 실행하지 않았을 때 돌려주는 결과 문구(웹 server/translate.ts와 같은 기준, v1.145.0 pkg/runtime/toolexec)
+NOT_RUN = re.compile(r"^(The user rejected the tool call\.|The tool call was rejected by a \w+ hook\.|Tool '[^']+' is denied by )")
 
 
 def setting(name, default=""):
     return os.environ.get(name) or default
+
+
+def excluded_stacks():
+    """백업 대상에서 빼는 앱 이름: 관리 스택 + 설치판 자신(11/19)."""
+    own = {s.strip() for s in setting("BOSUN_SELF_STACKS", SELF_STACKS_DEFAULT).split(",") if s.strip()}
+    return MANAGED_STACKS | own
+
+
+def tool_not_run(text):
+    """도구가 실행되지 않은 결과(사용자 거부, 훅 거부, 권한 설정 거부)인지(11/19)."""
+    return bool(NOT_RUN.match(str(text or "").lstrip()))
 
 
 def env_or_file(name):
@@ -83,7 +101,7 @@ def stack_name():
 def _clean(t):
     out = {}
     for app, vols in (t or {}).items():
-        if not isinstance(app, str) or not APP_RE.fullmatch(app) or app in MANAGED_STACKS or PROTECTED.search(app):
+        if not isinstance(app, str) or not APP_RE.fullmatch(app) or app in excluded_stacks() or PROTECTED.search(app):
             continue
         vs = sorted({v for v in (vols or []) if isinstance(v, str) and VOL_RE.fullmatch(v) and not PROTECTED.search(v)})
         if vs:
@@ -125,8 +143,28 @@ def _containers(filters=None):
     return portainer_api.get(f"/api/endpoints/{endpoint()}/docker/containers/json?{q}", timeout=10)
 
 
+def _labeled_volumes():
+    """{앱: {볼륨}} — Compose가 만든 볼륨의 라벨(com.docker.compose.project)로 묶는다(11/19).
+    Portainer는 스택을 정지하면 컨테이너를 지우므로, 컨테이너만 보면 정지된 앱의 볼륨을 놓친다. 볼륨 라벨은 남는다."""
+    data = portainer_api.get(f"/api/endpoints/{endpoint()}/docker/volumes", timeout=10) or {}
+    found = {}
+    for v in (data.get("Volumes") or []) if isinstance(data, dict) else []:
+        proj = (v.get("Labels") or {}).get("com.docker.compose.project")
+        if proj and v.get("Name"):
+            found.setdefault(proj, set()).add(v["Name"])
+    return found
+
+
+def _stack_names():
+    """이 환경의 Portainer Compose 스택 이름(정지된 것 포함)."""
+    return {st.get("Name") for st in portainer_api.get("/api/stacks", timeout=10) or []
+            if st.get("EndpointId") == endpoint() and st.get("Type") == 2 and st.get("Name")}
+
+
 def discover_targets():
-    """Portainer에서 지금 있는 앱(Compose 프로젝트)과 그 앱이 쓰는 볼륨을 찾는다. 관리용 스택·Portainer 볼륨은 뺀다."""
+    """Portainer에서 지금 있는 앱(Compose 프로젝트)과 그 앱이 쓰는 볼륨을 찾는다. 관리용 스택·설치판·Portainer 볼륨은 뺀다.
+    11/19: 컨테이너가 연결한 볼륨 + 볼륨 라벨. 라벨로 찾은 볼륨은 컨테이너가 있거나 Portainer 스택으로 남아 있는(정지된) 앱 것만 넣는다
+    (스택을 지우고 남긴 볼륨까지 계속 백업 대상으로 두지 않기 위해)."""
     found = {}
     for c in _containers():
         proj = (c.get("Labels") or {}).get("com.docker.compose.project")
@@ -135,6 +173,9 @@ def discover_targets():
         for m in c.get("Mounts") or []:
             if m.get("Type") == "volume" and m.get("Name"):
                 found.setdefault(proj, set()).add(m["Name"])
+    labeled = _labeled_volumes()
+    for proj in (set(found) | _stack_names()) & set(labeled):
+        found.setdefault(proj, set()).update(labeled[proj])
     return _clean({k: sorted(v) for k, v in found.items()})
 
 
@@ -158,12 +199,14 @@ def running_users(vol):
 
 
 def stack_volumes(app):
-    """이 앱(Compose 프로젝트) 컨테이너가 쓰는 볼륨 이름 목록. 조회 실패면 PortainerError."""
+    """이 앱(Compose 프로젝트)의 볼륨 이름 목록: 컨테이너가 연결한 것 + 그 앱 라벨이 붙은 것(11/19, 정지된 앱도 찾는다).
+    조회 실패면 PortainerError."""
     vols = set()
     for c in _containers({"label": [f"com.docker.compose.project={app}"]}):
         for m in c.get("Mounts") or []:
             if m.get("Type") == "volume" and m.get("Name"):
                 vols.add(m["Name"])
+    vols |= _labeled_volumes().get(app, set())
     return sorted(vols)
 
 
@@ -336,6 +379,74 @@ def recent_backup(vol, max_age_min=None, now=None):
                 if not best or r["recorded_at"] > best["recorded_at"]:
                     best = r
     return best
+
+
+# ---------- 11/19 백업 기록 보기(backup_status 보강) ----------
+# 창구는 작업 목록을 메모리에만 두어, 다시 배포되면(앱 생성·수정, 볼륨 삭제 전 떼기, soteria_setup) 예전 작업을 못 찾는다.
+# 성공한 백업은 기록 파일(SOTERIA_RECORD)에 남으므로 거기서 찾는다. 시각은 한국 시간으로 보여 준다(job_id 안 시각은 UTC).
+LIST_JOB = "bosun-list-00000000T000000-000000"   # job_id 없이 부른 backup_status → 최근 목록(창구에는 없는 번호)
+KST = dt.timezone(dt.timedelta(hours=9), "KST")
+_ISO = re.compile(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?")
+
+
+def kst(value):
+    """초(숫자)나 ISO 시각 문자열 → '2026-11-19 19:55:00 (한국 시간)'. 모르면 None. 시간대가 없는 ISO는 UTC로 본다."""
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if value <= 0:   # 11/19: 시각이 비어 0으로 남은 옛 기록 → "1970-01-01"이 아니라 모름
+                return None
+            t = dt.datetime.fromtimestamp(float(value), dt.timezone.utc)
+        else:
+            m = _ISO.search(str(value or ""))
+            if not m:
+                return None
+            tz = m.group(3) or "+00:00"
+            if tz == "Z":
+                tz = "+00:00"
+            elif ":" not in tz:
+                tz = tz[:3] + ":" + tz[3:]
+            t = dt.datetime.fromisoformat(f"{m.group(1)}T{m.group(2)}{tz}")
+        return t.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S") + " (한국 시간)"
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def read_records():
+    """기록 파일의 백업 기록(오래된 것부터). 파일이 없으면 빈 목록."""
+    p = record_path()
+    out = []
+    if not p or not os.path.exists(p):
+        return out
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(r, dict) and r.get("job_id"):
+                out.append(r)
+    return out
+
+
+def find_record(job_id):
+    for r in reversed(read_records()):
+        if r.get("job_id") == job_id:
+            return r
+    return None
+
+
+def record_line(r):
+    when = kst(r.get("finished_at")) or kst(r.get("recorded_at")) or "시각 모름"
+    size = human(r["size"]) if isinstance(r.get("size"), int) else "크기 모름"
+    return (f"- {when} | 볼륨 {r.get('app')} | {size} | 지문 {str(r.get('sha256') or '')[:12]} | job_id {r.get('job_id')}")
+
+
+def records_text(limit=10):
+    rs = read_records()[-limit:]
+    if not rs:
+        return "기록된 백업이 없습니다(성공한 \"지금 백업\"만 기록됩니다. 정시 백업은 여기에 나오지 않습니다)."
+    return ("최근 성공한 백업(새 것부터, 한국 시간):\n" + "\n".join(record_line(r) for r in reversed(rs))
+            + "\n(성공한 \"지금 백업\"만 기록됩니다. 정시 백업은 여기에 나오지 않습니다.)")
 
 
 # ---------- 삭제 전 확인(11/13 정책표 수정본 5.3·5.10·5.11) ----------

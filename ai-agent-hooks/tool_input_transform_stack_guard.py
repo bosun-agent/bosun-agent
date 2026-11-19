@@ -100,7 +100,8 @@ SVC_KEYS = {"image", "command", "entrypoint", "environment", "ports", "expose", 
 CREATE_KEYS = {"endpointId", "Name", "StackFileContent", "Env", "select", "Registries", "FromAppTemplate", "Webhook"}
 UPDATE_KEYS = {"id", "endpointId", "StackFileContent", "Env", "select", "Registries"}
 UPDATE_EXTRA = ("Prune", "PullImage", "RepullImageAndRedeploy", "RollbackTo", "Webhook")  # 정책표 5.7: 값이 false여도 거부
-MANAGED_STACKS = {"bosun-backup", "bosun-soteria"}   # 관리 스택(정시 백업, 11/12 soteria 백업 창구). 수정·정지 금지
+# 관리 스택(정시 백업, 11/12 soteria 백업 창구, 11/19 설치판 자신 bosun). 수정·정지·삭제 금지, 같은 이름으로 새로 만들기 금지
+MANAGED_STACKS = {"bosun-backup", "bosun-soteria", "bosun"}
 COMPOSE_STACK_TYPE = 2              # Portainer 스택 종류: 1 Swarm, 2 Compose, 3 Kubernetes
 LOOKUP_TIMEOUT = 5
 MASK = "[REDACTED]"
@@ -365,7 +366,7 @@ def check_command(image, v, where):
         return
     rule = CMD_ALLOW.get(image_name(str(image)))
     shown = " ".join(toks)[:80]
-    bad = f"{where} command '{shown}'는 허용 목록에 없습니다(정책표 5.7: 미리 허용한 명령·옵션만)."
+    bad = f"{where} command '{shown}'는 허용 목록에 없습니다(미리 허용한 명령·옵션만 쓸 수 있습니다)."
     if not rule:
         raise Reject(bad)
     if toks[0] in rule["progs"]:
@@ -397,7 +398,7 @@ def check_health_test(image, t, where):
     ok = HEALTH_ALLOW.get(image_name(str(image)), [])
     if not (isinstance(t, list) and t[:1] == ["CMD"] and [str(x) for x in t[1:]] in ok):
         raise Reject(f"{where} healthcheck test는 허용 목록에 있는 확인 명령만 [\"CMD\", ...] 형식으로 쓸 수 있습니다"
-                     f"(셸 CMD-SHELL·문자열 거부, 정책표 5.7).")
+                     f"(셸 CMD-SHELL·문자열은 쓸 수 없습니다).")
 
 
 def check_secret_value(key, v, where):
@@ -410,11 +411,11 @@ def check_secret_value(key, v, where):
             raise Reject(f"{where} '{key}'는 \"yes\"만 쓸 수 있습니다.")
         return
     if SECRET_NAME.search(key) and sv != "":
-        raise Reject(f"{where} '{key}'에 비밀번호·토큰 값을 직접 적었습니다. 평문 비밀번호는 Compose·Env에 넣을 수 없습니다(정책표 5.7).")
+        raise Reject(f"{where} '{key}'에 비밀번호·토큰 값을 직접 적었습니다. 평문 비밀번호는 Compose·Env에 넣을 수 없습니다.")
     if key == "POSTGRES_HOST_AUTH_METHOD" and sv.strip().lower() == "trust":
         raise Reject(f"{where} 'POSTGRES_HOST_AUTH_METHOD: trust'는 비밀번호 없이 누구나 DB에 들어오게 합니다. 허용되지 않습니다.")
     if URL_CRED.search(sv):
-        raise Reject(f"{where} '{key}' 값의 주소 안에 비밀번호(user:비밀번호@)가 들어 있습니다. 평문 비밀번호는 Compose·Env에 넣을 수 없습니다(정책표 5.7).")
+        raise Reject(f"{where} '{key}' 값의 주소 안에 비밀번호(user:비밀번호@)가 들어 있습니다. 평문 비밀번호는 Compose·Env에 넣을 수 없습니다.")
 
 
 def check_service(name, svc, vol_names, net_names, svc_names):
@@ -427,7 +428,7 @@ def check_service(name, svc, vol_names, net_names, svc_names):
     if not image_allowed(str(svc["image"])):
         raise Reject(f"{where}: " + reject_text(str(svc["image"])))
     if svc.get("entrypoint") is not None:
-        raise Reject(f"{where}의 entrypoint(시작 프로그램 바꾸기)는 허용되지 않습니다(정책표 5.7). 이미지 기본 시작 프로그램을 쓰세요.")
+        raise Reject(f"{where}의 entrypoint(시작 프로그램 바꾸기)는 허용되지 않습니다. 이미지 기본 시작 프로그램을 쓰세요.")
     if svc.get("command") is not None:
         check_command(svc["image"], svc["command"], where)
     hc = svc.get("healthcheck")
@@ -731,7 +732,34 @@ def check_soteria_gate(st):
         raise Reject(f"스택 '{name}'의 데이터 볼륨 중 최근 백업이 없습니다: {', '.join(missing)}. 수정 전에 먼저 백업해야 합니다.")
 
 
-def check_stack_delete(args):
+def save_stack_config(st, args, session_id=""):
+    """11/19(팀원 시험 9번): 스택을 지우기 전에 그 스택의 Compose를 '삭제 전 설정' 기록(backups.sqlite3, 컨테이너 삭제와 같은 표)에
+    남긴다. kind는 "stack", target은 스택 이름, inspect_json에 Compose·Env(비밀값은 가림). 저장에 실패하면 거부(fail-closed).
+    승인 카드보다 먼저 저장되므로 거부한 삭제도 기록이 남는다(컨테이너 삭제와 같음. 웹은 승인 기록으로 실제 삭제 여부를 가린다)."""
+    import time
+    import tool_input_transform_direct_backup_guard as bg
+    from tool_response_transform_secret_mask import mask
+    content = lookup(f"/api/stacks/{st['Id']}/file", "지우기 전 Compose 읽기").get("StackFileContent", "")
+    env = [{"name": e.get("name"), "value": MASK if SECRET_NAME.search(str(e.get("name", ""))) else e.get("value")}
+           for e in (st.get("Env") or []) if isinstance(e, dict)]
+    doc = {"Id": st.get("Id"), "Name": st.get("Name"), "EndpointId": st.get("EndpointId"),
+           "StackFileContent": mask(content)[0], "Env": env}
+    env_file = os.environ.get("AGENT_ENV_FILE", "")
+    default_db = os.path.join(os.path.dirname(os.path.abspath(env_file)) if env_file else os.path.dirname(os.path.abspath(__file__)),
+                              "backups.sqlite3")
+    db_path = os.environ.get("AI_AGENT_BACKUP_DB", default_db)
+    now = time.time()
+    query = {"removeVolumes": True} if args.get("removeVolumes") is True else {}
+    try:
+        bg.save(db_path, (now, time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)), str(session_id or ""),
+                          str(args.get("endpointId")), "StackDelete", f"/api/stacks/{st.get('Id')}",
+                          json.dumps(query, ensure_ascii=False), "stack", str(st.get("Name", "")),
+                          json.dumps(doc, ensure_ascii=False)), int(os.environ.get("BACKUP_TTL_DAYS", "30")))
+    except Exception as e:  # noqa: BLE001 — sqlite3.Error·OSError 등 저장 실패는 모두 거부
+        raise Reject(f"스택을 지우기 전에 설정(Compose)을 저장하지 못해 삭제를 거부했습니다({str(e)[:150]}).") from None
+
+
+def check_stack_delete(args, session_id=""):
     """11/13 정책표 수정본 5.10. 실제 스택·환경 확인, 관리 스택 거부, external 거부.
     removeVolumes=true면 그 스택이 쓰는 볼륨(이름 있는 것·없는 것) 전부에 최근 Soteria 백업이 있어야 하고,
     정시 백업이 잡고 있지 않아야 한다. 통과하면 백업 창구에서 그 볼륨들을 뗀다(그래야 Docker가 지울 수 있다)."""
@@ -758,6 +786,8 @@ def check_stack_delete(args):
                          "정시 백업에서 떼는 것은 관리자 작업입니다. 데이터를 남기고 앱만 지우려면 removeVolumes 없이 요청하세요.")
         if missing:
             raise Reject(f"스택 '{name}'의 데이터 볼륨 중 최근 백업이 없습니다: {', '.join(missing)}. 볼륨까지 지우기 전에 먼저 백업해야 합니다.")
+    save_stack_config(st, args, session_id)   # 11/19: 검사를 다 통과한 뒤, 볼륨을 떼기 전에 저장(실패하면 아무것도 떼지 않고 거부)
+    if rm:
         try:
             sc.detach(vols)
             sc.set_pending_delete(args["id"], vols)   # 삭제 뒤 남은 볼륨 확인용(soteria_common 참고)
@@ -801,6 +831,8 @@ def check_create(args):
     s(args.get("Name"), "스택 이름(Name)", NAME_RE)
     if PROTECTED.search(args["Name"]):
         raise Reject("스택 이름에 portainer는 쓸 수 없습니다.")
+    if args["Name"].lower() in MANAGED_STACKS:   # 11/19: bosun으로 만들면 설치판과 같은 Compose 앱이 되어 설치판 컨테이너가 바뀔 수 있다
+        raise Reject(f"'{args['Name']}'은(는) BOSUN 관리용 이름이라 새 앱 이름으로 쓸 수 없습니다. 다른 이름을 정하세요.")
     if args.get("Registries"):
         raise Reject("Registries(사설 레지스트리 지정)는 허용되지 않습니다.")
     if args.get("FromAppTemplate"):
@@ -869,7 +901,7 @@ def main():
         return
     if tool == "StackDelete":  # 11/13 정책표 수정본 5.10: ASK, removeVolumes=true는 볼륨 전부의 Soteria 백업 확인
         try:
-            new = check_stack_delete(args)
+            new = check_stack_delete(args, payload.get("session_id", ""))
         except Reject as r:
             block(str(r))
             return

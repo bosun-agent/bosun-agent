@@ -38,6 +38,8 @@ CONTAINER_MOUNTS = {}
 VOLUMES = {}
 NETWORKS = {}
 PROJECTS = {"outside-app"}               # Portainer 밖에서 만든 Compose 프로젝트 이름
+# 11/19 볼륨 목록(라벨) 테스트용: 볼륨 이름 → 라벨. com.docker.compose.project가 있으면 그 앱 볼륨(컨테이너가 없어도)
+VOLUME_LABELS = {}
 
 
 def fake_id(name):
@@ -71,6 +73,8 @@ class _H(BaseHTTPRequestHandler):
                     return self._send(404, {"message": "No such container"})
                 return self._send(200, {"Id": ref, "Name": "/" + NAMES[ref], "Mounts": CONTAINER_MOUNTS.get(NAMES[ref], [])})
             return self._send(200, {"Id": fake_id(ref), "Name": "/" + ref, "Mounts": CONTAINER_MOUNTS.get(ref, [])})
+        if re.fullmatch(r"/api/endpoints/\d+/docker/volumes", path):   # 11/19 볼륨 목록(라벨)
+            return self._send(200, {"Volumes": [{"Name": n, "Labels": lb} for n, lb in VOLUME_LABELS.items()]})
         m = re.fullmatch(r"/api/endpoints/\d+/docker/volumes/([^/]+)", path)   # 11/13
         if m:
             v = VOLUMES.get(unquote(m.group(1)))
@@ -154,3 +158,6 @@ threading.Thread(target=_srv.serve_forever, daemon=True).start()
 os.environ["PORTAINER_URL"] = f"http://127.0.0.1:{_srv.server_port}"
 os.environ["PORTAINER_API_KEY"] = KEY
 os.environ.pop("AGENT_ENV_FILE", None)
+# 11/19: 스택 삭제 전 설정 저장이 저장소 폴더에 backups.sqlite3를 만들지 않도록 시험용 임시 파일을 기본으로 둔다
+import tempfile  # noqa: E402
+os.environ.setdefault("AI_AGENT_BACKUP_DB", os.path.join(tempfile.mkdtemp(), "backups.sqlite3"))

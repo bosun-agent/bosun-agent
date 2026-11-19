@@ -16,6 +16,8 @@ tool_input_transform 훅 — soteria 백업 도구(backup_volume·backup_status)
     볼륨이 여러 개인 앱 이름이면 거부하고 볼륨 목록을 알려 준다.
     백업 대상에 아직 없는 앱이면 한 번 sync_targets()로 목록을 맞춘 뒤 다시 본다(Portainer에서 직접 만든 앱 대비).
   backup_status {job_id} → job_id 형식만 검사
+    11/19: job_id 없이 부르면 최근 목록용 번호(LIST_JOB)를 넣는다. 결과 훅(tool_response_transform_soteria_status.py)이
+    그 결과를 기록 파일의 최근 백업 목록으로 바꾼다(AI가 job_id를 지어내지 않도록).
 
 설정: soteria_common.py 맨 위 env 설명. 등록: tool_input_transform, matcher backup_volume·backup_status 각각, on_error: block
 """
@@ -116,6 +118,8 @@ def guard_status(a):
     if extra:
         return block(f"허용되지 않은 항목: {', '.join(extra)}", "결과 조회에는 job_id만 씁니다.", "job_id만 넣어 다시 조회하세요.")
     job = a.get("job_id")
+    if job is None or job == "":   # 11/19: job_id 없이 → 최근 백업 목록(결과 훅이 기록 파일에서 채운다)
+        return out({"hook_specific_output": {"updated_input": {"job_id": sc.LIST_JOB}}})
     if not isinstance(job, str) or not sc.JOB_RE.fullmatch(job):
         return block(f"job_id '{job}'의 형식이 맞지 않습니다.", "백업 작업 번호는 백업할 때 훅이 정해서 결과에 돌려준 값입니다.",
                      "백업 결과에 나온 job_id(bosun-<앱>-<시각>-<6자리>)를 그대로 쓰세요.")

@@ -27,7 +27,7 @@ PROXY_RULES = [
      "정시 자동 백업이 그 볼륨을 쓰고 있어 Docker가 지우지 못합니다. 정시 백업 설정은 관리자가 관리합니다.",
      "데이터는 남기고 앱만 지울 수 있습니다(스택 삭제에서 볼륨 삭제 없이). 볼륨까지 지우려면 " + ADMIN),
     (lambda m, p, r: "최근 백업이 없습니다" in r,
-     "볼륨을 지우면 데이터가 영구히 사라지므로, 되돌릴 수 있도록 바로 전 백업이 있어야 합니다(정책표 수정본).",
+     "볼륨을 지우면 데이터가 영구히 사라지므로, 되돌릴 수 있도록 바로 전 백업이 있어야 합니다.",
      "① 그 볼륨을 쓰는 앱을 StackStop으로 정지(승인) ② 볼륨마다 backup_volume으로 백업(승인) ③ 다시 삭제를 요청하세요."),
     (lambda m, p, r: "쓰는 컨테이너가 있습니다" in r,
      "쓰는 컨테이너가 있는 볼륨은 Docker가 지우지 않고, 지우면 그 앱이 데이터를 잃습니다.",
@@ -97,7 +97,7 @@ STACK_RULES = [
      "정시 자동 백업이 그 볼륨을 쓰고 있어 Docker가 지우지 못합니다. 정시 백업 설정은 관리자가 관리합니다.",
      "데이터는 남기고 앱만 지울 수 있습니다(removeVolumes 없이 StackDelete). 볼륨까지 지우려면 " + ADMIN),
     (r"볼륨까지 지우기 전에",  # 11/13 StackDelete removeVolumes 백업 확인
-     "볼륨까지 지우면 데이터가 영구히 사라지므로, 되돌릴 수 있도록 바로 전 백업이 있어야 합니다(정책표 수정본 5.10).",
+     "볼륨까지 지우면 데이터가 영구히 사라지므로, 되돌릴 수 있도록 바로 전 백업이 있어야 합니다.",
      "① StackStop으로 앱 정지(승인) ② 볼륨마다 backup_volume으로 백업(승인) ③ 다시 StackDelete(removeVolumes). 데이터를 남기려면 removeVolumes 없이 지우세요."),
     (r"external 스택",
      "Swarm 같은 외부 스택은 이 Agent가 관리하는 대상이 아닙니다.",
@@ -116,13 +116,13 @@ STACK_RULES = [
      "실행하기 전에 정확히 어떤 스택인지, 같은 이름이 있는지 확인해야 하는데 지금 확인할 수 없습니다.",
      "스택 목록을 먼저 보고 정확한 스택을 확인하세요. 계속되면 관리자에게 알리세요."),
     (r"entrypoint\(|command '.*허용 목록|healthcheck test는",  # 11/9 정책표 5.7 231줄
-     "시작 명령을 마음대로 바꾸면 컨테이너 안에서 아무 프로그램이나 실행할 수 있습니다(정책표 5.7: 미리 허용한 것만).",
+     "시작 명령을 마음대로 바꾸면 컨테이너 안에서 아무 프로그램이나 실행할 수 있습니다(미리 허용한 것만).",
      "command·entrypoint를 빼고 이미지 기본 설정으로 만드세요. 지금 허용된 옵션: redis 저장(--appendonly yes, --save 60 1)·"
      "메모리(--maxmemory 256mb, --maxmemory-policy), mysql·mariadb 문자 설정(--character-set-server=utf8mb4, --collation-server)·"
      "--max-connections. 상태 확인(healthcheck)은 redis [\"CMD\",\"redis-cli\",\"ping\"], "
      "mysql [\"CMD\",\"mysqladmin\",\"ping\",\"-h\",\"localhost\"]. 다른 옵션은 " + ADMIN),
     (r"비밀번호·토큰 값|주소 안에 비밀번호|비밀번호 없이 누구나|RANDOM_ROOT_PASSWORD",  # 11/9 정책표 5.7·238줄
-     "Compose와 Env는 Portainer·대화 기록·승인 기록에 그대로 남아서, 비밀번호를 적으면 여러 곳에 퍼집니다(정책표 5.7).",
+     "Compose와 Env는 Portainer·대화 기록·승인 기록에 그대로 남아서, 비밀번호를 적으면 여러 곳에 퍼집니다.",
      "mysql·mariadb는 비밀번호를 적지 말고 MYSQL_RANDOM_ROOT_PASSWORD: \"yes\"(mariadb는 MARIADB_RANDOM_ROOT_PASSWORD)로 만들면 "
      "앱이 스스로 강한 비밀번호를 만듭니다(관리자가 로그에서 확인). postgres처럼 비밀번호가 꼭 필요한 앱은 " + ADMIN),
     (r"관리용 스택",
@@ -132,7 +132,7 @@ STACK_RULES = [
      "가려진 값([REDACTED])은 실제 값이 아니라서, 그대로 넣으면 비밀번호가 망가집니다.",
      "그 값은 새로 정해 직접 적으세요. 지금 스택에 원래 있던 environment 값은 [REDACTED] 그대로 두면 원래 값으로 되살아납니다."),
     (r"스택 수정의|StackFileContent\)가 필요",
-     "스택 수정은 Compose 내용만 바꾸도록 정해져 있습니다(정책표 5.7). 이미지 강제 재배포·되돌리기·정리 옵션은 영향이 커서 쓰지 않습니다.",
+     "스택 수정은 Compose 내용만 바꾸도록 정해져 있습니다. 이미지 강제 재배포·되돌리기·정리 옵션은 영향이 커서 쓰지 않습니다.",
      "StackFileInspect로 지금 Compose를 읽고, 바꾼 Compose 전체만 StackUpdate로 보내세요."),
     (r"privileged|cap_add|devices|security_opt|sysctls|'pid'|'ipc'|network_mode|userns|cgroup",
      "서버 전체를 건드릴 수 있는 권한이나 격리 해제 설정입니다.",
@@ -156,7 +156,7 @@ STACK_RULES = [
      "검토되지 않은 이미지에는 위험한 프로그램이 들어 있을 수 있습니다.",
      "같은 용도의 Docker Hub 공식 이미지를 쓰세요(예: nginx, mysql, redis, postgres)."),
     (r"같은 이름|container_name",
-     "같은 이름이 이미 있으면 기존 앱과 섞이거나 헷갈립니다(정책표 5.7 이름 충돌 거부).",
+     "같은 이름이 이미 있으면 기존 앱과 섞이거나 헷갈립니다.",
      "다른 이름으로 새로 만들거나, 기존 앱을 고치려면 그 스택을 수정(StackUpdate)하세요. 기존 앱을 켜기만 하려면 StackStart를 쓰면 됩니다."),
     (r"portainer",
      "관리 도구(Portainer)를 건드리면 전체 관리가 멈출 수 있습니다.",

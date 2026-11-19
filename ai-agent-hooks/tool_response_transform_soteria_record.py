@@ -61,7 +61,8 @@ def main():
         rec = {"app": r.get("volume"), "job_id": r.get("job_id"), "sha256": art.get("sha256"), "size": art.get("size"),
                "name": art.get("name"), "finished_at": r.get("finished_at"), "recorded_at": time.time()}
         ok = sc.add_record(rec)
-        note = ("\n\n[백업 기록] 이 백업을 기록했습니다. 30분 안에 이 앱의 스택 수정을 할 수 있습니다."
+        when = sc.kst(r.get("finished_at")) or sc.kst(rec["recorded_at"])   # 11/19: job_id·finished_at은 UTC라 한국 시간을 같이 준다
+        note = (f"\n\n[백업 기록] 이 백업을 기록했습니다(끝난 시각 {when}). 30분 안에 이 앱의 스택 수정을 할 수 있습니다."
                 if ok else "\n\n[백업 기록] 기록 파일 설정이 없어 기록하지 못했습니다(스택 수정 전 확인에 쓰이지 않음).")
         text = resp if isinstance(resp, str) else json.dumps(resp, ensure_ascii=False)
         print(json.dumps({"hook_specific_output": {"updated_tool_response": text + note}}, ensure_ascii=False))

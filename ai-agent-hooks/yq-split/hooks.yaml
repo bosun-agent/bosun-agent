@@ -174,6 +174,26 @@ agents:
               command: python3 -X utf8 /절대경로/tool_response_transform_secret_mask.py
               timeout: 10
               on_error: warn
+            # 11/19: 볼륨 삭제·컨테이너 삭제(v=true)가 거부·실패하면 미리 뗀 볼륨을 백업 대상에 되돌린다(DELETE가 아니면 바로 끝남)
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_response_transform_soteria_sync.py
+              timeout: 150
+              on_error: warn
+              env:
+                AGENT_ENV_FILE: /실행폴더/agent.env
+                PORTAINER_TLS_VERIFY: "0"
+                SOTERIA_TARGETS_FILE: /실행폴더/soteria_targets.json
+                SOTERIA_ENDPOINT_ID: "3"
+                SOTERIA_RECORD: /실행폴더/soteria_runs.jsonl
+        # 11/19: 백업 조회 — 창구가 다시 배포돼 작업을 못 찾으면 기록 파일에서 찾고, job_id 없이 부르면 최근 목록, 시각은 한국 시간
+        - matcher: "backup_status"
+          hooks:
+            - type: command
+              command: python3 -X utf8 /절대경로/tool_response_transform_soteria_status.py
+              timeout: 10
+              on_error: warn
+              env:
+                SOTERIA_RECORD: /실행폴더/soteria_runs.jsonl
         # 11/12 soteria: 성공한 백업 기록(스택 수정 전 확인용)
         - matcher: "backup_volume"
           hooks:
