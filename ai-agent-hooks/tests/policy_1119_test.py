@@ -5,7 +5,7 @@
   - P(5번): 설치판 자신(bosun)은 백업 대상에서 빠지고, 컨테이너·볼륨·네트워크·스택 이름이 보호된다
   - M(6번): 사용자에게 보이는 거부 문구에 "정책표 n절"이 없다
   - J(8번): 인젝션 패턴이 "다·모두·지시사항" 등 변형을 잡고, 평범한 문장은 통과
-  - B(7번): backup_status — job_id 없이 부르면 최근 목록, 창구가 못 찾으면 기록 파일, 시각은 한국 시간
+  - B(7번): backup_status — job_id 없이 부르면 거부(11/22 정책표 5.9), 창구가 못 찾으면 기록 파일, 시각은 한국 시간
   - C(9번): 스택 삭제 전 Compose를 삭제 전 설정 기록에 저장(비밀값 가림), 저장 실패면 거부
   - I(2·4·6·7번): 지시문 네 파일에 새 문장, make_agents 결과와 예시 파일이 같다
 """
@@ -178,15 +178,16 @@ JOB = "bosun-sleepy_data-20261119T105500-abcdef"
 with open(RECORD, "w", encoding="utf-8") as f:
     f.write(json.dumps({"app": "sleepy_data", "job_id": JOB, "sha256": "cd" * 32, "size": 2048,
                         "finished_at": "2026-11-19T10:55:00Z", "recorded_at": time.time()}) + "\n")
+# 11/22: 정책표 5.9대로 — job_id 없이·목록용 번호로는 조회하지 않는다(목록은 웹 설정 > 백업)
 k, o = hook(GUARD, {"tool_name": "backup_status", "tool_input": {}})
-check("B1 job_id 없이 부르면 목록용 번호를 넣음", ui(o).get("job_id"), sc.LIST_JOB)
-check("B2 목록용 번호도 job_id 형식에 맞음(창구가 형식으로 거부하지 않음)", bool(sc.JOB_RE.fullmatch(sc.LIST_JOB)), True)
+check("B1 job_id 없이 부르면 거부(정책표 5.9)", k, "block")
+check("B2 목록용 번호도 거부", hook(GUARD, {"tool_name": "backup_status", "tool_input": {"job_id": sc.LIST_JOB}})[0], "block")
 k, o = hook(STATUS, {"tool_name": "backup_status", "tool_input": {"job_id": sc.LIST_JOB}, "tool_response": "job not found"})
-check("B3 목록 결과: 기록 파일의 최근 백업, 한국 시간", "[백업 목록]" in resp(o) and JOB in resp(o) and "2026-11-19 19:55:00 (한국 시간)" in resp(o), True)
+check("B3 결과 훅도 목록을 만들지 않음", "[백업 목록]" in resp(o), False)
 k, o = hook(STATUS, {"tool_name": "backup_status", "tool_input": {"job_id": JOB}, "tool_response": "job not found"})
 check("B4 창구가 못 찾으면 기록 파일에서 찾음", "기록 파일에 성공한 백업" in resp(o) and "19:55:00" in resp(o), True)
 k, o = hook(STATUS, {"tool_name": "backup_status", "tool_input": {"job_id": "bosun-made-20261119T000000-000000"}, "tool_response": "job not found"})
-check("B5 기록에도 없는 job_id면 지어내지 말라고 하고 목록을 줌", "지어내지" in resp(o) and JOB in resp(o), True)
+check("B5 기록에도 없는 job_id면 지어내지 말라고 하고 설정 > 백업 안내(목록은 주지 않음)", "지어내지" in resp(o) and "설정 > 백업" in resp(o) and JOB not in resp(o), True)
 found = json.dumps({"job_id": JOB, "status": "succeeded", "started_at": "2026-11-19T10:54:30.123456789Z", "finished_at": "2026-11-19T10:55:00Z"})
 k, o = hook(STATUS, {"tool_name": "backup_status", "tool_input": {"job_id": JOB}, "tool_response": found})
 check("B6 창구가 찾으면 한국 시간을 덧붙임", "끝 2026-11-19 19:55:00 (한국 시간)" in resp(o) and resp(o).startswith(found), True)
@@ -230,7 +231,7 @@ FILES = ["ai-agent-hooks/yq-split/agent.common.yaml", "ai-agent-hooks/agent.yaml
          "agents/beginner.yaml.example", "agents/expert.yaml.example"]
 MUST = ["컨테이너 도구(docker_proxy POST /containers/<이름>/start·stop·restart)를 쓴다", "스택 정지(StackStop)는 그 앱의 컨테이너를 지운다",
         "StackStop은 건너뛴다", "정시 백업(bosun-backup) 컨테이너가 앱 볼륨을 연결하고 있는 것은 백업을 위한 정상 상태다",
-        "job_id 없이 backup_status를 불러", "만들어 내지 않는다", "한국 시간으로 말한다"]
+        "job_id를 모르면 backup_status를 부르지 않는다", "설정 > 백업 화면", "만들어 내지 않는다", "한국 시간으로 말한다"]
 for f in FILES:
     text = open(os.path.join(ROOT, f), encoding="utf-8").read()
     missing = [m for m in MUST if m not in text]

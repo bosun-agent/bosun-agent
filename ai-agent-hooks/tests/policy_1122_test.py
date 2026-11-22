@@ -3,7 +3,7 @@
 11/22 웹 시험 후속 테스트
   - N: 네트워크 삭제 전 설정 기록. 남기면 좋지만, 남기지 못해도 삭제는 막지 않는다(네트워크엔 데이터가 없다)
   - C: 같은 조건에서 컨테이너 삭제는 지금처럼 막는다(fail-closed 그대로)
-  - S: backup_status job_id — "null" 같은 빈 값·낱말은 최근 목록, 경로·기호가 섞인 값은 거부
+  - S: backup_status job_id — 정책표 5.9대로 없음·빈 값·비정상 값은 모두 거부(형식 맞는 작업 1건만 조회)
   - G: 관리 컨테이너 거부 안내가 역할(Portainer·백업용·설치판)에 맞는 이유를 고른다
 """
 import json
@@ -64,10 +64,7 @@ check("C2 environment_id가 없으면 컨테이너 삭제는 여전히 거부",
 check("C3 알 수 없는 삭제 경로는 여전히 거부", delete("/plugins/x")[0], "block")
 
 LIST = "bosun-list-00000000T000000-000000"
-for v in (None, "", "null", "None", " NULL ", "undefined", "test22w", "latest"):
-    k, o = hook(SOTERIA, {"tool_name": "backup_status", "tool_input": {"job_id": v}})
-    check(f"S job_id {v!r} → 최근 목록", (o.get("hook_specific_output") or {}).get("updated_input", {}).get("job_id"), LIST)
-for v in ("../x", "a b", "x;rm"):
+for v in (None, "", "null", "None", " NULL ", "undefined", "test22w", "latest", LIST, "../x", "a b", "x;rm"):
     check(f"S job_id {v!r} → 거부", hook(SOTERIA, {"tool_name": "backup_status", "tool_input": {"job_id": v}})[0], "block")
 check("S 형식 맞는 job_id는 그대로", hook(SOTERIA, {"tool_name": "backup_status", "tool_input": {"job_id": "bosun-x-20261122T000000-abcdef"}})[0], "pass")
 

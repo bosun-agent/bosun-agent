@@ -9,9 +9,8 @@ tool_response_transform 훅 — 백업 결과 조회(backup_status) 보강 (11/1
   - 시각이 UTC로 나와 AI가 그대로 한국 시간처럼 말했다.
 
 하는 일
-  - 입력 훅이 job_id 없는 조회에 넣은 번호(soteria_common.LIST_JOB)면: 결과를 기록 파일의 최근 백업 목록(한국 시간)으로 바꾼다.
   - 창구가 작업을 찾았으면: 결과 끝에 시작·끝 시각의 한국 시간을 덧붙인다.
-  - 창구가 못 찾았으면: 기록 파일에서 같은 job_id를 찾아 덧붙인다. 기록에도 없으면 "지어내지 말 것"과 최근 목록을 덧붙인다.
+  - 창구가 못 찾았으면: 기록 파일에서 같은 job_id를 찾아 덧붙인다. 기록에도 없으면 "지어내지 말 것"과 설정 > 백업 화면 안내를 덧붙인다(11/22, 정책표 5.9).
   이 훅 종류는 결과를 막지 못한다. 오류가 나면 결과를 그대로 둔다.
 
 등록: tool_response_transform, matcher "backup_status", env SOTERIA_RECORD
@@ -43,23 +42,21 @@ def main():
     text = resp if isinstance(resp, str) else json.dumps(resp, ensure_ascii=False)
     if sc.tool_not_run(text):
         return "{}"
-    if job == sc.LIST_JOB:
-        new = "[백업 목록] " + sc.records_text()
+    # 11/22: 정책표 5.9(조회는 작업 1건) — 목록 조회(LIST_JOB)와, 못 찾았을 때 최근 목록을 붙이던 것을 뺐다
+    r = find_result(resp)
+    if r and r.get("status"):
+        note = times_note(r)
+        if not note:
+            return "{}"
+        new = text + note
     else:
-        r = find_result(resp)
-        if r and r.get("status"):
-            note = times_note(r)
-            if not note:
-                return "{}"
-            new = text + note
+        rec = sc.find_record(job) if isinstance(job, str) else None
+        if rec:
+            new = (text + "\n\n[백업 기록] 백업 창구가 다시 시작되어 작업 목록에서는 사라졌지만, 기록 파일에 성공한 백업으로 남아 있습니다.\n"
+                   + sc.record_line(rec))
         else:
-            rec = sc.find_record(job) if isinstance(job, str) else None
-            if rec:
-                new = (text + "\n\n[백업 기록] 백업 창구가 다시 시작되어 작업 목록에서는 사라졌지만, 기록 파일에 성공한 백업으로 남아 있습니다.\n"
-                       + sc.record_line(rec))
-            else:
-                new = (text + "\n\n[백업 기록] 이 job_id는 기록 파일에도 없습니다. job_id를 지어내지 말고, 아래 목록에 있는 것만 쓰세요.\n"
-                       + sc.records_text())
+            new = (text + "\n\n[백업 기록] 이 job_id는 기록 파일에도 없습니다. job_id를 지어내지 말고, "
+                   "백업 목록은 웹의 설정 > 백업 화면에서 볼 수 있다고 안내하세요.")
     return json.dumps({"hook_specific_output": {"updated_tool_response": new}}, ensure_ascii=False)
 
 
