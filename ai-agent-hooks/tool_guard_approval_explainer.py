@@ -107,7 +107,8 @@ def explain_proxy(a):
                 "high", "volume-delete")
     m = re.fullmatch(r"/networks/([^/]+)", path)
     if method == "DELETE" and m:  # 11/13 정책표 수정본 5.12
-        return (f"'{m.group(1)}' 네트워크를 삭제합니다. 연결된 컨테이너는 없습니다. 이 네트워크를 쓰도록 설정된 앱은 다시 켤 때 영향을 받을 수 있습니다.",
+        # 11/22: 경로 값은 64자리 ID일 때가 많다. 이름은 카드 제목·대상에 나오므로 문장에는 넣지 않는다.
+        return (f"이 네트워크를 삭제합니다. 연결된 컨테이너는 없습니다. 이 네트워크를 쓰도록 설정된 앱은 다시 켤 때 영향을 받을 수 있습니다.",
                 "medium", "network-delete")
     if method == "POST" and path == "/networks/create":
         name = body.get("Name") or body.get("name") or ""

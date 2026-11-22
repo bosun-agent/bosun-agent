@@ -4,6 +4,7 @@
 import type { AgentEvent } from '../src/lib/agentProtocol.ts'
 import type { DAEvent } from './agentClient.ts'
 import { maskText } from './mask.ts'
+import { userDeniedFor } from './policy.ts'
 import { describeTool, portainerLink, toolSummary, type StackInfo } from './tools.ts'
 
 // 도구 호출이 정책으로 막혔을 때 Docker Agent가 도구 결과로 돌려주는 문구(v1.145.0 `pkg/runtime/toolexec`).
@@ -36,7 +37,15 @@ const firstSentence = (s: string) =>
     .replace(/\s*\(예[:\s][^()]*\)/g, '')
     .trim()
 
+// permissions.deny 거부(사유 없음). 사용자가 설정 > 정책에서 금지로 옮긴 항목이면 어디서 바꾸는지 알려준다(11/22 웹 시험 7번).
+const PERMISSIONS_DENIED = /^Tool '([^']+)' is denied by permissions/
+
 export function policyDeniedDetail(response: string): string | undefined {
+  const denied = PERMISSIONS_DENIED.exec(response)
+  if (denied) {
+    const labels = userDeniedFor(denied[1])
+    return labels.length ? `설정 > 정책에서 '막기' 칸에 둔 작업이에요(${labels.join(', ')}). 바꾸려면 설정 > 정책에서 칸을 옮겨 주세요.` : undefined
+  }
   const reason = /\bReason: ([\s\S]*)/.exec(response)?.[1]
   if (!reason) return undefined
   const guide = DENY_GUIDE.exec(reason)

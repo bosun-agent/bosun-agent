@@ -106,6 +106,16 @@ RESTART_NAMES = {"", "no", "always", "unless-stopped", "on-failure"}
 PROTECTED_VOLUME = re.compile(r"portainer", re.I)    # Portainer 데이터(키·설정) 볼륨은 연결 금지
 # 11/19: 설치판 자신(컨테이너 bosun)도 보호한다. 끄거나 지우면 웹과 Agent가 함께 멈춘다
 PROTECTED_CONTAINER = re.compile(r"portainer|^bosun-(backup|soteria)|^bosun$", re.I)  # Portainer 컨테이너 보호. 11/3부터 실제 대상(조회한 이름) 기준이라 ID로 와도 거른다
+
+
+def protected_role(cname):
+    """11/22: 관리 컨테이너의 역할. 거부 안내(deny_guide.py)가 이 말로 이유를 고른다(백업 창구를 Portainer라고 안내하던 문제)."""
+    if re.search(r"portainer", cname, re.I):
+        return "Portainer"
+    if re.search(r"^bosun-(backup|soteria)", cname, re.I):
+        return "BOSUN 백업용"
+    return "BOSUN 설치판"
+
 SEARCH_SELECT = "[*].{name:name,official:is_official,stars:star_count}"  # 설명문(외부 작성 글)은 버린다
 # 상세(inspect)는 안전한 필드만 받는다(11/1, 정책표 "inspect 출력: 안전한 필드만"). 모델이 보낸 select는 무시하고 이것으로 바꾼다.
 # 뺀 것: 호스트 경로(GraphDriver, LogPath, HostsPath, 볼륨 Mountpoint·마운트 Source), HostConfig 대부분(장치·권한 설정),
@@ -545,7 +555,7 @@ def main():
             block(f"'{ref}'라는 컨테이너가 없습니다." if e.status == 404 else f"대상 컨테이너를 확인하지 못했습니다({e}).")
             return
         if PROTECTED_CONTAINER.search(cname) and method != "GET":
-            block(f"관리 도구 컨테이너('{cname}')는 끄거나 지우거나 바꿀 수 없습니다.")
+            block(f"관리 도구 컨테이너('{cname}', {protected_role(cname)})는 끄거나 지우거나 바꿀 수 없습니다.")
             return
         if clean != f"/containers/{full_id}{op}":
             clean = f"/containers/{full_id}{op}"
@@ -580,7 +590,7 @@ def main():
                     raise Reject(f"'{cfg['Container']}'라는 컨테이너가 없습니다." if e.status == 404
                                  else f"대상 컨테이너를 확인하지 못했습니다({e}).") from None
                 if PROTECTED_CONTAINER.search(cname):
-                    raise Reject(f"관리 도구 컨테이너('{cname}')의 네트워크는 바꿀 수 없습니다.")
+                    raise Reject(f"관리 도구 컨테이너('{cname}', {protected_role(cname)})의 네트워크는 바꿀 수 없습니다.")
                 cfg["Container"] = full_id
         except Reject as r:
             block(str(r))

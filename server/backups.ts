@@ -89,21 +89,27 @@ export function backupDbPath(): string {
 const MATCH_WINDOW_MS = 60_000
 const DECISION_WINDOW_MS = MATCH_WINDOW_MS + config.approvalTimeoutMs + 30_000
 
-function outcomeOf(sessionId: string, atMs: number, target: string): BackupRecord['outcome'] {
+// 기록 종류마다 짝이 되는 삭제 카드의 요약 앞말(server/tools.ts의 titled). 이름이 같은 다른 종류 카드와 짝짓지 않는다(11/22).
+const SUMMARY_PREFIX: Record<string, string> = { container: '컨테이너 ', stack: '스택 ', image: '이미지 ', network: '네트워크 ' }
+
+function outcomeOf(sessionId: string, kind: string, atMs: number, target: string): BackupRecord['outcome'] {
   if (!sessionId || !target) return 'unknown'
   // 훅은 경로의 값(이름 또는 64자리 ID)을 저장하고, 카드는 ID를 앞 12자리로 줄이거나 "이름 (ID)"로 보여준다(server/tools.ts).
   const key = (/^[0-9a-f]{64}$/i.test(target) ? target.slice(0, 12) : target).toLowerCase()
+  // 스택 카드는 "이름 (스택 ID 24)"로 보여준다. 스택 기록(11/19, 스택 삭제 전 Compose 저장)은 이름을 저장한다(11/22).
   const keysOf = (cardTarget: string) => {
-    const m = /^(.*) \(([0-9a-f]{12})\)$/i.exec(cardTarget)
+    const m = /^(.*) \(([0-9a-f]{12})\)$/i.exec(cardTarget) ?? /^(.*) \(스택 ID (\d+)\)$/.exec(cardTarget)
     return (m ? [m[1], m[2]] : [cardTarget]).map((k) => k.trim().toLowerCase())
   }
+  const prefix = SUMMARY_PREFIX[kind] ?? ''
+  const isDelete = (summary: string | undefined) => Boolean(summary?.startsWith(prefix) && summary.endsWith(' 삭제'))
   const cards = approvalCardsBetween(sessionId, new Date(atMs - 5_000).toISOString(), new Date(atMs + MATCH_WINDOW_MS).toISOString())
   const match = cards.find(
-    ({ card }) => card.kind === 'approval' && card.summary.endsWith(' 삭제') && keysOf(card.action.target ?? '').includes(key),
+    ({ card }) => card.kind === 'approval' && isDelete(card.summary) && keysOf(card.action.target ?? '').includes(key),
   )
   if (match) return match.status === 'approved' ? 'deleted' : match.status === 'pending' ? 'pending' : 'kept'
   const decided = decisionsBetween(sessionId, new Date(atMs - 5_000).toISOString(), new Date(atMs + DECISION_WINDOW_MS).toISOString()).find(
-    (d) => d.summary?.endsWith(' 삭제') && keysOf(d.target ?? '').includes(key),
+    (d) => isDelete(d.summary) && keysOf(d.target ?? '').includes(key),
   )
   if (!decided) return 'unknown'
   return decided.decision === 'approved' ? 'deleted' : 'kept'
@@ -130,7 +136,7 @@ export function listBackups(limit: number): { available: boolean; records: Backu
         kind: String(r.kind ?? ''),
         target: maskText(String(r.target ?? '')),
         summary: summarize(String(r.kind ?? ''), String(r.inspect_json ?? '')),
-        outcome: outcomeOf(String(r.session_id ?? ''), Number(r.ts) * 1000, String(r.target ?? '')),
+        outcome: outcomeOf(String(r.session_id ?? ''), String(r.kind ?? ''), Number(r.ts) * 1000, String(r.target ?? '')),
       })),
     }
   } finally {

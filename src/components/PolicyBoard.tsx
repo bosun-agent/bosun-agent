@@ -42,6 +42,14 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
   const dirty = Object.keys(draft).length
   const customized = state.items.some((it) => !it.lock && bucketOf(it) !== it.defaultBucket)
   const never = settings?.approvalMode === 'never'
+  // 11/22: 컨테이너 중지와 스택 중지는 둘 다 앱을 끈다(도구만 다르다). 한쪽만 막기 칸이면 다른 쪽으로 꺼질 수 있다고 알린다. 동작은 바꾸지 않는다.
+  const stopItems = ['container_stop', 'stack_stop'].map((id) => state.items.find((it) => it.id === id))
+  const stopHint = (() => {
+    const [c, st] = stopItems
+    if (!c || !st || (bucketOf(c) === 'deny') === (bucketOf(st) === 'deny')) return null
+    const [blocked, open] = bucketOf(c) === 'deny' ? [c, st] : [st, c]
+    return `'${blocked.label}'만 막기 칸에 있어요. '${open.label}'로도 앱이 꺼질 수 있어요. 끄기를 모두 막으려면 '${open.label}'도 막기 칸으로 옮기세요.`
+  })()
 
   const columns = useMemo(
     () =>
@@ -114,6 +122,7 @@ export function PolicyBoard({ initial, settings }: { initial: PolicyState; setti
           지금은 승인 방식이 "묻지 않기"라서 묻기 칸의 작업도 WEB이 대신 승인해 바로 실행돼요.
         </p>
       )}
+      {stopHint && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800">{stopHint}</p>}
       <div className="mt-2 grid gap-2 md:grid-cols-3">
         {columns.map((col) => (
           <section

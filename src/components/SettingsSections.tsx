@@ -682,7 +682,7 @@ export function NotifySection() {
 
 // ---- 백업 ----
 
-const KIND_LABEL: Record<string, string> = { container: '컨테이너', image: '이미지', network: '네트워크' }
+const KIND_LABEL: Record<string, string> = { container: '컨테이너', image: '이미지', network: '네트워크', stack: '앱(스택)' }
 
 // 다시 만들 때 요청에 넣는 값. 모델이 그대로 쓸 수 있는 것만 넣는다. 값이 숨겨진 환경변수나, 대부분 이미지 기본값인 명령까지
 // 넣었더니 모델이 생성 설정을 비우거나 잘못 감싸서 보내며 수십 번 헤맸다(2026-10-28 리허설).
@@ -756,7 +756,8 @@ function VolumeBackupList() {
             <details>
               <summary className="cursor-pointer">
                 <span className="font-medium">볼륨 {r.volume}</span>
-                <span className="ml-2 text-xs text-neutral-500">{new Date(r.at).toLocaleString()}</span>
+                {/* 11/22: 시각 없이 남긴 기록(recorded_at 0, 복원 시험용)은 1970년으로 보였다 */}
+                <span className="ml-2 text-xs text-neutral-500">{Date.parse(r.at) > 0 ? new Date(r.at).toLocaleString() : '시각 모름'}</span>
                 {r.size !== undefined && <span className="ml-2 text-xs text-neutral-500">{sizeText(r.size)}</span>}
               </summary>
               <dl className="mt-1.5 grid grid-cols-[6rem_1fr] gap-y-0.5 text-xs">
@@ -812,7 +813,8 @@ function ConfigBackupList({ onDraft }: { onDraft?: (text: string) => void }) {
               </dl>
               {/* 지우지 않았거나 아직 결정 전이면 다시 만들 대상이 없다. */}
               {/* 네트워크 만들기는 정책으로 막혀 있다. 예전 백업 기록에만 남아 있다. */}
-              {onDraft && r.kind !== 'network' && r.outcome !== 'kept' && r.outcome !== 'pending' && (
+              {/* 스택 기록(11/19)은 Compose를 담지만 비밀값이 가려져 있어 그대로 다시 만들 수 없다. 버튼을 두지 않는다(11/22). */}
+              {onDraft && r.kind !== 'network' && r.kind !== 'stack' && r.outcome !== 'kept' && r.outcome !== 'pending' && (
                 <>
                   <button
                     type="button"

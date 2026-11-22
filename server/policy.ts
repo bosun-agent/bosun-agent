@@ -228,6 +228,13 @@ function check(out: string, baseText: string): void {
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
+// 11/22: 사용자가 정책 칸에서 '금지'로 옮긴 항목 중 이 도구에 해당하는 것의 이름. Docker Agent의 permissions 거부 문구에는
+// 도구 이름만 있어서(docker_proxy는 어느 경로인지 모름) 그 도구의 사용자 금지 항목을 모두 돌려준다. 없으면 빈 배열(기본 정책·훅 거부).
+export function userDeniedFor(tool: string): string[] {
+  const choices = savedChoices()
+  return CATALOG.filter((c) => choices[c.id] === 'deny' && c.patterns?.some((p) => p === tool || p.startsWith(`${tool}:`))).map((c) => c.label)
+}
+
 export function savedChoices(): Record<string, PolicyBucket> {
   try {
     const raw = JSON.parse(getSetting(CHOICES_KEY) ?? '{}') as Record<string, unknown>

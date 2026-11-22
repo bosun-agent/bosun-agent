@@ -113,12 +113,22 @@ def guard_backup(a):
         "source": f"/backup/{vol}", "archive": "/archive", "job_id": job, "volume": vol, "wait": True}}})
 
 
+EMPTY_JOB = {"", "null", "none", "undefined", "nil"}
+PLAIN_WORD = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
 def guard_status(a):
     extra = sorted(k for k, v in a.items() if k != "job_id" and v is not None)
     if extra:
         return block(f"허용되지 않은 항목: {', '.join(extra)}", "결과 조회에는 job_id만 씁니다.", "job_id만 넣어 다시 조회하세요.")
     job = a.get("job_id")
-    if job is None or job == "":   # 11/19: job_id 없이 → 최근 백업 목록(결과 훅이 기록 파일에서 채운다)
+    # 11/19: job_id 없이 → 최근 백업 목록(결과 훅이 기록 파일에서 채운다)
+    # 11/22: 모델이 빈 값 대신 "null"·"None" 같은 글자를 넣기도 한다(웹 시험). 어차피 형식 검사에서 거부되는 값이라 목록 조회로 본다.
+    if job is None or (isinstance(job, str) and job.strip().lower() in EMPTY_JOB):
+        return out({"hook_specific_output": {"updated_input": {"job_id": sc.LIST_JOB}}})
+    # 11/22: 모델이 앱·볼륨 이름(예: "test22w")을 job_id로 넣기도 한다. 낱말뿐인 값은 형식이 틀려도 막지 않고 최근 목록을 준다
+    # (목록에서 그 앱을 찾으면 된다). 경로·기호가 섞인 값(../x 등)은 지금처럼 거부한다.
+    if isinstance(job, str) and not sc.JOB_RE.fullmatch(job) and PLAIN_WORD.fullmatch(job.strip()):
         return out({"hook_specific_output": {"updated_input": {"job_id": sc.LIST_JOB}}})
     if not isinstance(job, str) or not sc.JOB_RE.fullmatch(job):
         return block(f"job_id '{job}'의 형식이 맞지 않습니다.", "백업 작업 번호는 백업할 때 훅이 정해서 결과에 돌려준 값입니다.",

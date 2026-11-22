@@ -141,6 +141,31 @@ def save(db_path, row, ttl_days):
         os.chmod(db_path, 0o600)
 
 
+def save_network_best_effort(payload, args, environment_id, target, inspect_path, path, query):
+    """네트워크 삭제 전 설정 기록(11/22). 어떤 오류가 나도 예외를 밖으로 내보내지 않는다(삭제를 막지 않음)."""
+    try:
+        if environment_id in (None, ""):
+            raise RuntimeError("environment_id가 없습니다")
+        env_file = os.environ.get("AGENT_ENV_FILE", "")
+        file_values = read_env_file(env_file)
+        base_url = setting("PORTAINER_URL", file_values)
+        api_key = setting("PORTAINER_API_KEY", file_values)
+        if not base_url or not api_key:
+            raise RuntimeError("PORTAINER_URL 또는 PORTAINER_API_KEY를 찾지 못했습니다")
+        verify = str(setting("PORTAINER_TLS_VERIFY", file_values, "1")).strip().lower() not in {"0", "false", "no", "off"}
+        inspect_json = fetch_inspect(base_url, api_key, verify, environment_id, inspect_path)
+        json.loads(inspect_json)
+        default_db = os.path.join(os.path.dirname(os.path.abspath(env_file)) if env_file else os.path.dirname(os.path.abspath(__file__)), "backups.sqlite3")
+        db_path = os.environ.get("AI_AGENT_BACKUP_DB", default_db)
+        now = time.time()
+        save(db_path, (now, time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)), str(payload.get("session_id", "")),
+                       str(environment_id), "DELETE", path, json.dumps(query, ensure_ascii=False), "network", target, inspect_json),
+             int(os.environ.get("BACKUP_TTL_DAYS", "30")))
+        sys.stderr.write(f"backup saved: network {target}\n")
+    except Exception as exc:  # noqa: BLE001 — 기록 실패는 경고만 남긴다
+        sys.stderr.write(f"network backup skipped (삭제는 진행): {str(exc)[:200]}\n")
+
+
 def main():
     raw = sys.stdin.read().strip()
     payload = json.loads(raw) if raw else {}
@@ -163,8 +188,14 @@ def main():
     if kind is None:
         block(f"삭제 대상을 식별할 수 없습니다(path={path}).")
         return
-    if kind in ("image", "network", "volume"):
-        out({})  # 10/31: 이미지·네트워크 삭제는 정책 훅과 deny가 막는다. 실행되지 않을 삭제는 백업하지 않는다.
+    if kind in ("image", "volume"):
+        out({})  # 10/31: 이미지 삭제는 정책 훅과 deny가 막는다. 볼륨은 정책 훅이 Soteria 백업(데이터)을 확인한다(11/13).
+        return
+    if kind == "network":
+        # 11/22: 네트워크 삭제는 11/13부터 허용(연결된 컨테이너가 없을 때). 지우기 전 설정을 남기되, 남기지 못해도 삭제는 막지 않는다.
+        # 네트워크에는 데이터가 없고 다시 만들 수 있어서다. 컨테이너 삭제의 fail-closed(아래)와 섞지 않도록 여기서 따로 끝낸다.
+        save_network_best_effort(payload, args, environment_id, target, inspect_path, path, query)
+        out({})
         return
     if environment_id in (None, ""):
         block("environment_id가 없습니다.")
