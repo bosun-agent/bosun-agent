@@ -75,5 +75,24 @@ for name, want in (("portainer", "Portainer)가 멈추면"), ("bosun-soteria-sot
     r = deny_guide.proxy_reason("x", f"관리 도구 컨테이너('{name}', {g.protected_role(name)})는 끄거나 지우거나 바꿀 수 없습니다.", "POST", "/containers/a/stop")
     check(f"G {name} 거부 이유", want in r, True)
 
+# Z(11/23): 크기·메모리 바이트 숫자를 읽기 쉬운 글로(9자리 숫자가 docker-agent 기본 가리기에 걸리지 않게)
+MASKH = os.path.join(D, "tool_response_transform_secret_mask.py")
+def masked(resp, tool="docker_proxy"):
+    o = hook(MASKH, {"tool_name": tool, "tool_response": resp})[1]
+    return (o.get("hook_specific_output") or {}).get("updated_tool_response", resp)
+r = masked(json.dumps([{"RepoTags": ["nginx:latest"], "Size": 183456789}, {"RepoTags": ["redis"], "Size": 39500000}]))
+check("Z1 이미지 크기 9자리 → 'MB (쉼표 bytes)'", "183.5MB (183,456,789 bytes)" in r and "183456789" not in r, True)
+check("Z2 작은 크기도 같은 형식", "39.5MB (39,500,000 bytes)" in r, True)
+r = masked(json.dumps({"memory_stats": {"usage": 268435456, "limit": 4100000000},
+                       "cpu_stats": {"cpu_usage": {"total_usage": 123456789}}, "pids_stats": {"limit": 123456789}}))
+check("Z3 메모리 사용·상한은 바꿈", "268.4MB (268,435,456 bytes)" in r and "4.1GB" in r, True)
+check("Z4 CPU 시간·프로세스 수는 그대로", r.count("123456789") == 2, True)
+r = masked(json.dumps({"memoryLimit": 0, "name": "x"}))
+check("Z5 0(제한 없음)은 그대로", json.loads(r)["memoryLimit"], 0)
+r = masked('{"Size": 183456789, "Env": ["DB_PASSWORD=Secret-123"]}')
+check("Z6 크기를 바꾸면서 비밀값 가리기는 그대로", "183.5MB" in r and "Secret-123" not in r and "[REDACTED]" in r, True)
+check("Z7 JSON이 아니면 크기는 건드리지 않음", masked("Size 183456789 plain"), "Size 183456789 plain")
+check("Z8 StackFileInspect에는 적용하지 않음", "183456789" in masked(json.dumps({"StackFileContent": "x", "Size": 183456789}), "StackFileInspect"), True)
+
 print(f"\n{sum(results)}/{len(results)} 통과")
 sys.exit(0 if all(results) else 1)

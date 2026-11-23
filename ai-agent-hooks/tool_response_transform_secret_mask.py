@@ -84,6 +84,50 @@ def mask_stack_file(text):
     return json.dumps(doc, ensure_ascii=False), count
 
 
+# 11/23: 크기·메모리 바이트 숫자를 읽기 쉬운 글로 바꾼다(가리기와 별개, docker_proxy 결과만).
+# docker-agent 기본 비밀값 가리기가 9자리 숫자(예: 183456789)를 민감 번호로 보고 [REDACTED]로 바꿔서
+# 100MB~1GB 크기·메모리가 화면에 안 보였다(11/23 실측: 8·10자리와 글자 섞인 값은 그대로, 9자리만 가려짐).
+# "183.5MB (183,456,789 bytes)"처럼 쉼표를 넣으면 값은 그대로 전하면서 9자리 숫자가 없어진다.
+# 정해진 필드 이름만 바꾸고(CPU 시간·프로세스 수는 건드리지 않음), 실패하면 원래 결과를 그대로 둔다.
+BYTE_KEYS = {"size", "virtualsize", "sharedsize", "layerssize", "usage", "max_usage", "limit", "cache", "rss",
+             "memory", "memoryreservation", "memoryswap", "memorylimit", "rx_bytes", "tx_bytes"}
+SKIP_PARENTS = {"cpu_stats", "precpu_stats", "pids_stats", "cpu_usage", "blkio_stats", "throttling_data"}
+
+
+def human_bytes(v):
+    unit = "GB" if v >= 1_000_000_000 else "MB"
+    div = 1_000_000_000 if unit == "GB" else 1_000_000
+    return f"{v / div:.1f}{unit} ({v:,} bytes)"
+
+
+def readable_sizes(text):
+    try:
+        doc = json.loads(text)
+    except (ValueError, TypeError):
+        return text, 0
+    count = 0
+
+    def walk(node, skip):
+        nonlocal count
+        if isinstance(node, dict):
+            for k, v in list(node.items()):
+                kl = str(k).lower()
+                if not skip and kl in BYTE_KEYS and isinstance(v, int) and not isinstance(v, bool) and v >= 1_000_000:
+                    node[k] = human_bytes(v)
+                    count += 1
+                else:
+                    walk(v, skip or kl in SKIP_PARENTS)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item, skip)
+
+    try:
+        walk(doc, False)
+    except Exception:  # noqa: BLE001 — 표시만 바꾸는 것이라 실패하면 원래대로
+        return text, 0
+    return (json.dumps(doc, ensure_ascii=False), count) if count else (text, 0)
+
+
 def main():
     raw = sys.stdin.read().strip()
     try:
@@ -92,12 +136,15 @@ def main():
         payload = {}
     resp = payload.get("tool_response", "")
     text = json.dumps(resp, ensure_ascii=False) if isinstance(resp, (dict, list)) else str(resp)
+    sized = 0
     if payload.get("tool_name") == "StackFileInspect":
         new, count = mask_stack_file(text)
     else:
+        text, sized = readable_sizes(text)
         new, count = mask(text)
     if count and new:
         new += f"\n\n[비밀값으로 보이는 값 {count}곳을 {MASK}로 가렸습니다. 실제 값을 추측하지 마세요]"
+    if (count or sized) and new:
         print(json.dumps({"hook_specific_output": {"updated_tool_response": new}}, ensure_ascii=False))
         return
     print("{}")
