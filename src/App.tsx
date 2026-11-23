@@ -336,9 +336,10 @@ function App() {
               updateMessage(id, (m) => ({ notice: event.reason, steps: markTargetChanged(m.steps ?? [], event.detail) }))
               break
             }
-            // 차단이 아니라 훅이 결과를 숨겼거나(RESULT_HIDDEN) Agent에 Portainer 도구가 없는 것이다(TOOLS_MISSING).
+            // 차단이 아니라 훅이 결과를 숨겼거나(RESULT_HIDDEN) Agent에 Portainer 도구가 없거나(TOOLS_MISSING),
+            // AI가 도구 결과 뒤에 아무 말 없이 턴을 끝낸 것이다(NO_FINAL_REPLY, 11/23).
             // 처리 과정 줄은 tool_status로 이미 남았다.
-            if (event.code === 'RESULT_HIDDEN' || event.code === 'TOOLS_MISSING') {
+            if (event.code === 'RESULT_HIDDEN' || event.code === 'TOOLS_MISSING' || event.code === 'NO_FINAL_REPLY') {
               updateMessage(id, () => ({ notice: event.reason }))
               break
             }

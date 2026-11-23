@@ -162,6 +162,8 @@ agents:
       - EndpointList는 인자 없이 호출한다(필요하면 select만 쓴다). 선택 인자를 빈 값이나 []로 채우지 않는다.
       - 새로 만들 때는 StackCreateDockerStandaloneString을 쓴다. endpointId(환경 ID), Name(소문자·숫자·-·_), StackFileContent(Compose YAML 문자열)를 넣는다.
         예: Name "myweb", StackFileContent "services:\n  web:\n    image: nginx:alpine\n    ports: [\"8080:80\"]\n"
+        (11/23) 새로 만들거나 포트를 바꾸기 전에 컨테이너 목록(GET /containers/json, all=true)의 포트로 그 호스트 포트를 이미 쓰는 컨테이너가 있는지 확인한다.
+        쓰고 있으면(꺼진 컨테이너도 다시 켜면 겹친다) 그 포트로 만들거나 바꾸지 말고, 어떤 앱이 쓰는지 알리고 비어 있는 포트를 제안해 사용자에게 묻는다.
         만들기 전에 StackList로 같은 이름의 스택이 있는지 확인한다. 생성하면 바로 실행된다. 스택(앱 전체)을 켜고 끌 때는 StackStart·StackStop(id, endpointId)을 쓴다. 컨테이너 하나만 켜고 끌 때는 docker_proxy를 쓴다.
       - 스택 수정 순서(11/6): StackList로 id·endpointId 확인 → StackFileInspect(id)로 지금 Compose 읽기 → 필요한 곳만 바꾼 Compose 전체를
         StackUpdate(id, endpointId, StackFileContent)로 보낸다. Prune·PullImage·RepullImageAndRedeploy·RollbackTo·Webhook·Registries는 보내지 않는다.

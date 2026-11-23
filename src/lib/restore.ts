@@ -31,7 +31,7 @@ export function toChatMessages(restored: RestoredMessage[], now = Date.now()): C
     // TARGET_CHANGED는 앞 카드의 "취소됨" 줄을 바꾼다(화면에서 받을 때와 같게).
     const steps = cards.reduce<ProcessStep[]>((acc, card) => {
       if (card.kind === 'rejected' && card.code === 'TARGET_CHANGED') return markTargetChanged(acc, card.detail)
-      if (card.kind === 'rejected' && (card.code === 'RESULT_HIDDEN' || card.code === 'TOOLS_MISSING')) return acc
+      if (card.kind === 'rejected' && (card.code === 'RESULT_HIDDEN' || card.code === 'TOOLS_MISSING' || card.code === 'NO_FINAL_REPLY')) return acc
       const step = stepFor(card)
       return step ? [...acc, step] : acc
     }, [])
@@ -39,7 +39,7 @@ export function toChatMessages(restored: RestoredMessage[], now = Date.now()): C
 
     for (const card of cards) {
       if (card.kind !== 'rejected') continue
-      if (card.code === 'TARGET_CHANGED' || card.code === 'RESULT_HIDDEN' || card.code === 'TOOLS_MISSING') {
+      if (card.code === 'TARGET_CHANGED' || card.code === 'RESULT_HIDDEN' || card.code === 'TOOLS_MISSING' || card.code === 'NO_FINAL_REPLY') {
         base.notice ??= card.reason
         continue
       }

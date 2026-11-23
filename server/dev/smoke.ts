@@ -813,6 +813,19 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   await post(`/api/sessions/${b}/approvals/${approvalOf(rb.events)!.approvalId}`, { decision: 'deny' })
 }
 
+// ---- 11/23: 도구 뒤에 말없이 끝난 턴은 답 아래 안내, 끝까지 답한 턴에는 안내 없음 ----
+{
+  const s = await newSession()
+  const r = await post(`/api/sessions/${s}/messages`, { text: '말없이 끝나는 조회' })
+  const notice = r.events.find((e) => e.type === 'rejected')
+  check('도구 뒤 말없이 끝나면 NO_FINAL_REPLY 안내 후 done', notice?.type === 'rejected' && notice.code === 'NO_FINAL_REPLY' && last(r.events) === 'done', r.events)
+  const restored = (await fetch(`${BASE}/api/sessions/${s}/messages`).then((res) => res.json())) as { messages: { cards?: { kind: string; code?: string }[] }[] }
+  check('말없이 끝난 안내는 복원에도 남는다', restored.messages.flatMap((m) => m.cards ?? []).some((c) => c.kind === 'rejected' && c.code === 'NO_FINAL_REPLY'))
+  const s2 = await newSession()
+  const ok = await post(`/api/sessions/${s2}/messages`, { text: '숨김 결과 보여줘' })
+  check('도구 뒤에 답을 쓴 턴에는 말없이 끝 안내가 없다', !ok.events.some((e) => e.type === 'rejected' && e.code === 'NO_FINAL_REPLY'), ok.events)
+}
+
 // ---- 훅이 숨긴 결과, 스택 카드의 자원·재시작 ----
 {
   const s = await newSession()

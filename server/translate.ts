@@ -76,6 +76,7 @@ export const TOOLS_MISSING = 'TOOLS_MISSING'
 const TOOLS_MISSING_REASON =
   'AI Agent가 Portainer 도구를 불러오지 못했어요. Portainer가 켜져 있는지 확인한 뒤 AI Agent를 다시 시작해주세요(npm start 다시 실행).'
 
+const NO_FINAL_REPLY_REASON = "AI가 결과를 말하지 않고 멈췄어요. '계속해줘'라고 보내면 이어서 알려 드려요."
 const HOOK_BLOCKED_REASON = '보안 규칙에 걸려 요청을 처리하지 않았어요.'
 const POLICY_DENIED_REASON = '보안 정책에 따라 이 작업은 실행하지 않았어요.'
 
@@ -321,7 +322,13 @@ export class Translator {
             events: [{ type: 'error', code: TOOL_CALL_AS_TEXT, message: 'AI가 도구를 제대로 부르지 못했어요. 다시 시도해주세요.' }],
           }
         }
-        return { events: [...this.flushHeld(), { type: 'done' }] }
+        {
+          const held = this.flushHeld()
+          // 11/23 웹 시험: 도구 결과(또는 차단) 뒤에 AI가 아무 말 없이 턴을 끝내는 일이 있다(54턴 중 3번).
+          // 화면에는 카드만 남고 답이 없어 멈춘 것처럼 보이므로, 답 아래 안내를 남긴다(복원에도 남는다).
+          const silent = this.toolSinceText ? [{ type: 'rejected' as const, code: 'NO_FINAL_REPLY', reason: NO_FINAL_REPLY_REASON }] : []
+          return { events: [...held, ...silent, { type: 'done' }] }
+        }
 
       default:
         return { events: [] }

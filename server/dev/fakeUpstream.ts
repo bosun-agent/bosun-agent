@@ -226,6 +226,14 @@ const SCENARIOS: { match: RegExp; run: (r: Run) => Promise<void> }[] = [
     },
   },
   {
+    // 11/23 웹 시험: 도구를 부른 뒤 아무 말 없이 턴을 끝내는 경우. 화면에 답 아래 안내(NO_FINAL_REPLY)가 남아야 한다.
+    match: /말없이 끝/,
+    run: async (r) => {
+      await r.say('확인해 보겠습니다.')
+      await r.tool('docker_proxy', { environment_id: 1, method: 'GET', path: '/containers/json' }, { output: '[]' })
+    },
+  },
+  {
     // 모델이 글도 도구 호출도 없이 끝내는 경우(2026-10-28 실제 DeepSeek flash에서 나왔다). stream_stopped만 온다.
     match: /빈 답/,
     run: async () => {},
