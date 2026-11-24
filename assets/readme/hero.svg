@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="t d">
+  <title id="t">BOSUN — 컨테이너 관리를 위한 자연어 에이전트</title>
+  <desc id="d">요청마다 도구와 인자를 보고 허용, 승인, 차단을 판정하는 세 가지 예시</desc>
+  <style>
+    text{font-family:"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic","Segoe UI",sans-serif}
+    .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  </style>
+  <rect width="1200" height="360" rx="20" fill="#0D47A1"/>
+  <g stroke="#90CAF9" stroke-opacity=".14">
+    <path d="M0 90H1200M0 180H1200M0 270H1200"/><path d="M60 0V360"/>
+  </g>
+  <text x="60" y="62" class="mono" font-size="16" letter-spacing="3" fill="#90CAF9">CONTAINER AGENT · NATURAL LANGUAGE</text>
+  <text x="56" y="170" font-size="104" font-weight="800" letter-spacing="-2" fill="#fff">BOSUN</text>
+  <text x="60" y="224" font-size="26" font-weight="700" fill="#E3F2FD">컨테이너 관리를 위한 자연어 에이전트</text>
+  <rect x="60" y="256" width="6" height="66" fill="#2196F3"/>
+  <text x="82" y="280" font-size="19" fill="#BBDEFB">자동화를 극대화하는 대신,</text>
+  <text x="82" y="310" font-size="19" font-weight="700" fill="#fff">자동화가 틀렸을 때의 피해를 최소화한다</text>
+
+  <rect x="660" y="44" width="480" height="272" rx="16" fill="#E3F2FD"/>
+  <text x="688" y="80" class="mono" font-size="14" letter-spacing="2" fill="#0D47A1">POLICY GATE · 판정은 코드가 한다</text>
+
+  <g font-size="19" fill="#0D47A1">
+    <rect x="684" y="100" width="432" height="58" rx="10" fill="#fff"/>
+    <text x="702" y="135">“실행 중인 컨테이너 보여줘”</text>
+    <rect x="1030" y="115" width="68" height="28" rx="14" fill="#2F6F73"/>
+    <text x="1064" y="135" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">허용</text>
+
+    <rect x="684" y="172" width="432" height="58" rx="10" fill="#fff"/>
+    <text x="702" y="207">“이 컨테이너 로그 보여줘”</text>
+    <rect x="1030" y="187" width="68" height="28" rx="14" fill="#B8860B"/>
+    <text x="1064" y="207" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">승인</text>
+
+    <rect x="684" y="244" width="432" height="58" rx="10" fill="#fff"/>
+    <text x="702" y="279">“안 쓰는 자원 한꺼번에 정리해 줘”</text>
+    <rect x="1030" y="259" width="68" height="28" rx="14" fill="#E8472B"/>
+    <text x="1064" y="279" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">차단</text>
+  </g>
+</svg>
